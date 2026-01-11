@@ -12,6 +12,8 @@ dependencies = [
     "optimum-intel>=1.27.0",
     "pillow>=12.1.0",
     "pyaudio>=0.2.14",
+    "pycairo>=1.25.0",
+    "PyGObject>=3.48.0",
     "pynput>=1.8.1",
     "soundfile>=0.13.1",
 ]

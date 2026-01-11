@@ -160,9 +160,6 @@ class DictationApp:
         self.root.attributes("-topmost", True)
         self.root.withdraw()  # Start hidden
 
-        # Prevent window manager from stealing focus aggressively
-        self.root.overrideredirect(False)
-
         # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -254,18 +251,13 @@ class DictationApp:
             print("[DEBUG] Already recording, skipping")
             return
 
-        # Position window near mouse cursor
-        try:
-            mouse_x = self.root.winfo_pointerx()
-            mouse_y = self.root.winfo_pointery()
-            # Offset so window doesn't appear directly under cursor
-            self.root.geometry(f"400x200+{mouse_x + 20}+{mouse_y + 20}")
-        except:
-            pass
-
-        # Show window
+        # Show window first
         self.root.deiconify()
+        self.root.update_idletasks()
         self.root.lift()
+
+        # Now position it (after it's visible, Wayland might respect this)
+        self.position_at_mouse()
 
         # Update status
         self.status_label.config(text="Recording...", foreground="red")
@@ -273,6 +265,29 @@ class DictationApp:
 
         # Start recording
         self.start_recording()
+
+        # Start following mouse
+        self.follow_mouse()
+
+    def position_at_mouse(self):
+        """Position window centered on mouse cursor"""
+        try:
+            mouse_x = self.root.winfo_pointerx()
+            mouse_y = self.root.winfo_pointery()
+            window_width = 400
+            window_height = 200
+            x = mouse_x - (window_width // 2)
+            y = mouse_y - (window_height // 2)
+            self.root.geometry(f"+{x}+{y}")
+        except Exception as e:
+            print(f"[DEBUG] Position error: {e}")
+
+    def follow_mouse(self):
+        """Continuously update window position to follow mouse"""
+        if not self.is_recording:
+            return
+        self.position_at_mouse()
+        self.root.after(50, self.follow_mouse)  # Update every 50ms
 
     def start_recording(self):
         """Start audio recording"""

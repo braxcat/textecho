@@ -102,7 +102,10 @@ start_dictation_app() {
 
     cd "$SCRIPT_DIR"
     echo "Starting dictation app..."
-    YDOTOOL_SOCKET=/tmp/.ydotool_socket PYTHONUNBUFFERED=1 nohup uv run python dictation_app.py > "$APP_LOG_FILE" 2>&1 &
+    GI_TYPELIB_PATH=/usr/local/lib/x86_64-linux-gnu/girepository-1.0 \
+    YDOTOOL_SOCKET=/tmp/.ydotool_socket \
+    PYTHONUNBUFFERED=1 \
+    nohup uv run python dictation_app_gtk.py > "$APP_LOG_FILE" 2>&1 &
     sleep 1
 
     if [ -f "$APP_PID_FILE" ]; then

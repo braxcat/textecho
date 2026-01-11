@@ -187,7 +187,7 @@ class DictationApp:
                         y = int(line.split('=')[1])
                 return x, y
         except Exception as e:
-            print(f"[DEBUG] xdotool failed: {e}")
+            pass
 
         # Fallback to stored position
         return self.mouse_x, self.mouse_y
@@ -270,7 +270,6 @@ class DictationApp:
             except:
                 pass
             self.stream = None
-        print(f"[DEBUG] Recording thread finished, captured {len(self.frames)} frames")
 
     def update_waveform(self):
         """Update waveform visualization."""
@@ -424,7 +423,6 @@ class DictationApp:
             if old_clipboard is not None:
                 subprocess.run(["wl-copy", "--"], input=old_clipboard, timeout=2)
 
-            print("[DEBUG] Pasted text via clipboard")
 
         except Exception as e:
             print(f"Paste error: {e}")

@@ -67,7 +67,7 @@ def get_mouse_position():
                     y = int(line.split('=')[1])
             return x, y
     except Exception as e:
-        print(f"[DEBUG] xdotool failed: {e}")
+        pass
     return 960, 540
 
 
@@ -181,20 +181,45 @@ class DictationOverlay:
     def create_window(self, app):
         """Create the overlay window."""
         self.app = app
+
+        # Get screen center for positioning hint
+        display = Gdk.Display.get_default()
+        monitors = display.get_monitors()
+        if monitors.get_n_items() > 0:
+            monitor = monitors.get_item(0)
+            geom = monitor.get_geometry()
+            self.screen_width = geom.width
+            self.screen_height = geom.height
+        else:
+            self.screen_width = 1920
+            self.screen_height = 1080
+
+        # Check if we're on GNOME
+        import os
+        session = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+        self.is_gnome = 'gnome' in session or 'ubuntu' in session
+
         self.window = Gtk.Window(application=app)
         self.window.set_default_size(self.width, self.height)
         self.window.set_decorated(False)
+        self.window.set_resizable(False)
 
-        # Try layer-shell if available (works on Sway/Hyprland)
-        if LAYER_SHELL_AVAILABLE and LayerShell:
+        # Try layer-shell if available (works on Sway/Hyprland, NOT GNOME)
+        if LAYER_SHELL_AVAILABLE and LayerShell and not self.is_gnome:
             try:
                 LayerShell.init_for_window(self.window)
                 LayerShell.set_layer(self.window, LayerShell.Layer.OVERLAY)
                 LayerShell.set_keyboard_mode(self.window, LayerShell.KeyboardMode.NONE)
+                # Center it on screen using layer-shell margins
+                center_x = (self.screen_width - self.width) // 2
+                center_y = (self.screen_height - self.height) // 2
+                LayerShell.set_anchor(self.window, LayerShell.Edge.TOP, True)
+                LayerShell.set_anchor(self.window, LayerShell.Edge.LEFT, True)
+                LayerShell.set_margin(self.window, LayerShell.Edge.TOP, center_y)
+                LayerShell.set_margin(self.window, LayerShell.Edge.LEFT, center_x)
                 self.use_layer_shell = True
-                print("[DEBUG] Layer shell initialized")
-            except Exception as e:
-                print(f"[DEBUG] Layer shell failed: {e}")
+            except Exception:
+                pass
 
         # Apply CSS for styling
         self._apply_css()
@@ -288,12 +313,11 @@ class DictationOverlay:
                 LayerShell.set_anchor(self.window, LayerShell.Edge.TOP, True)
                 LayerShell.set_anchor(self.window, LayerShell.Edge.LEFT, True)
             except Exception as e:
-                print(f"[DEBUG] Layer shell positioning failed: {e}")
+                pass
 
     def show(self, x, y):
         """Show the overlay at position (centered above the given point)."""
-        print(f"[DEBUG] Overlay.show({x}, {y})")
-
+        
         # Position the window
         self._position_window(x, y)
 
@@ -314,6 +338,9 @@ class DictationOverlay:
 
     def start_following_mouse(self):
         """Start updating position to follow mouse."""
+        # Only follow mouse if layer-shell is working (not on GNOME)
+        if not self.use_layer_shell:
+            return
         if self.follow_mouse_id:
             return
         self.follow_mouse_id = GLib.timeout_add(50, self._update_position)
@@ -353,8 +380,8 @@ class DictationOverlay:
         if audio_chunk and self.waveform:
             # Convert bytes to normalized amplitudes with increased sensitivity
             samples = struct.unpack(f'{len(audio_chunk)//2}h', audio_chunk)
-            # Apply gain (8x) and clamp to 0-1
-            gain = 8.0
+            # Apply gain and clamp to 0-1
+            gain = 12.0
             normalized = [min(1.0, abs(s) / 32768.0 * gain) for s in samples]
             self.waveform.update_audio(normalized)
 
@@ -367,7 +394,6 @@ def test_overlay():
 
         # Show at current mouse position
         x, y = get_mouse_position()
-        print(f"[DEBUG] Initial mouse position: ({x}, {y})")
         overlay.show(x, y)
 
         # Simulate some audio data

@@ -70,7 +70,9 @@ class DictationApp:
         print(f"Monitoring {len(self.mouse_devices)} mouse device(s):")
         for dev in self.mouse_devices:
             print(f"  - {dev.name}")
-        print(f"\nUsing audio device: {self.get_device_name(self.selected_device_index)}")
+        print(
+            f"\nUsing audio device: {self.get_device_name(self.selected_device_index)}"
+        )
         print(f"Press Mouse 4 (BTN_EXTRA) to record, release to transcribe")
         print(f"Press Ctrl+C to quit\n")
 
@@ -141,7 +143,7 @@ class DictationApp:
             try:
                 device = InputDevice(path)
                 # Skip virtual devices
-                if 'virtual' in device.name.lower():
+                if "virtual" in device.name.lower():
                     continue
                 # Must have key capabilities with our button
                 if ecodes.EV_KEY in device.capabilities():
@@ -169,7 +171,7 @@ class DictationApp:
             main_frame,
             text="Recording...",
             font=("Arial", 14, "bold"),
-            foreground="red"
+            foreground="red",
         )
         self.status_label.pack(pady=10)
 
@@ -182,7 +184,7 @@ class DictationApp:
             main_frame,
             text="Release mouse button to transcribe",
             font=("Arial", 10),
-            foreground="gray"
+            foreground="gray",
         )
         self.info_label.pack()
 
@@ -201,7 +203,9 @@ class DictationApp:
         """Queue an action to be processed in the main thread"""
         with self.action_lock:
             self.pending_actions.append(action)
-            print(f"[DEBUG] Queued action: {action}, queue size: {len(self.pending_actions)}")
+            print(
+                f"[DEBUG] Queued action: {action}, queue size: {len(self.pending_actions)}"
+            )
 
     def process_actions(self):
         """Process queued actions in the main thread"""
@@ -210,7 +214,9 @@ class DictationApp:
             self.pending_actions.clear()
 
         for action in actions:
-            print(f"[DEBUG] Processing action: {action}, is_recording={self.is_recording}")
+            print(
+                f"[DEBUG] Processing action: {action}, is_recording={self.is_recording}"
+            )
             if action == "start":
                 self.show_and_start_recording()
             elif action == "stop":
@@ -246,7 +252,9 @@ class DictationApp:
 
     def show_and_start_recording(self):
         """Show window and start recording"""
-        print(f"[DEBUG] show_and_start_recording called, is_recording={self.is_recording}")
+        print(
+            f"[DEBUG] show_and_start_recording called, is_recording={self.is_recording}"
+        )
         if self.is_recording:
             print("[DEBUG] Already recording, skipping")
             return
@@ -302,12 +310,12 @@ class DictationApp:
                 self.RATE,
                 input_device=device_index,
                 input_channels=self.CHANNELS,
-                input_format=self.FORMAT
+                input_format=self.FORMAT,
             ):
                 sample_rate = self.RATE
             else:
                 device_info = self.audio.get_device_info_by_index(device_index)
-                sample_rate = int(device_info['defaultSampleRate'])
+                sample_rate = int(device_info["defaultSampleRate"])
         except:
             sample_rate = self.RATE
 
@@ -388,7 +396,9 @@ class DictationApp:
 
     def stop_and_transcribe(self):
         """Stop recording and transcribe"""
-        print(f"[DEBUG] stop_and_transcribe called, is_recording={self.is_recording}, frames={len(self.frames)}")
+        print(
+            f"[DEBUG] stop_and_transcribe called, is_recording={self.is_recording}, frames={len(self.frames)}"
+        )
         if not self.is_recording:
             print("[DEBUG] Not recording, skipping stop")
             return
@@ -396,7 +406,7 @@ class DictationApp:
         self.is_recording = False
 
         # Wait for recording thread to finish and clean up stream
-        if hasattr(self, 'record_thread') and self.record_thread.is_alive():
+        if hasattr(self, "record_thread") and self.record_thread.is_alive():
             print("[DEBUG] Waiting for recording thread to finish...")
             self.record_thread.join(timeout=1.0)
 
@@ -454,6 +464,7 @@ class DictationApp:
                     self.root.after(0, self.root.withdraw)
                     # Small delay then type
                     import time
+
                     time.sleep(0.2)
                     self.type_text(transcription)
                 else:
@@ -497,23 +508,24 @@ class DictationApp:
             return json.loads(response_data.decode())
 
         except FileNotFoundError:
-            return {"success": False, "error": "Transcription daemon not running. Start it with: ./daemon_control.sh start"}
+            return {
+                "success": False,
+                "error": "Transcription daemon not running. Start it with: ./daemon_control.sh start",
+            }
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     def type_text(self, text):
         """Paste text into active window using clipboard"""
         env = os.environ.copy()
-        env['YDOTOOL_SOCKET'] = '/tmp/.ydotool_socket'
+        env["YDOTOOL_SOCKET"] = "/tmp/.ydotool_socket"
 
         try:
             # Save current clipboard contents
             old_clipboard = None
             try:
                 result = subprocess.run(
-                    ["wl-paste", "-n"],
-                    capture_output=True,
-                    timeout=2
+                    ["wl-paste", "-n"], capture_output=True, timeout=2
                 )
                 if result.returncode == 0:
                     old_clipboard = result.stdout
@@ -521,34 +533,24 @@ class DictationApp:
                 pass  # Clipboard might be empty or contain non-text
 
             # Set clipboard to transcription
-            subprocess.run(
-                ["wl-copy", "--", text],
-                check=True,
-                timeout=2
-            )
+            subprocess.run(["wl-copy", "--", text], check=True, timeout=2)
 
             # Small delay for clipboard to update
             import time
+
             time.sleep(0.05)
 
             # Paste with Shift+Insert (universal - works in terminals and GUI apps)
             subprocess.run(
-                ["ydotool", "key", "shift+insert"],
-                env=env,
-                check=True,
-                timeout=5
+                ["ydotool", "key", "shift+insert"], env=env, check=True, timeout=5
             )
 
-            # Small delay before restoring clipboard
-            time.sleep(0.1)
+            # Wait 5 seconds before restoring clipboard (gives time to paste again if needed)
+            time.sleep(5.0)
 
             # Restore original clipboard
             if old_clipboard is not None:
-                subprocess.run(
-                    ["wl-copy", "--"],
-                    input=old_clipboard,
-                    timeout=2
-                )
+                subprocess.run(["wl-copy", "--"], input=old_clipboard, timeout=2)
 
             print(f"[DEBUG] Pasted text via clipboard")
 

@@ -431,7 +431,8 @@ class DictationApp:
             # Paste with Shift+Insert
             subprocess.run(["ydotool", "key", "shift+insert"], env=env, check=True, timeout=5)
 
-            time.sleep(0.1)
+            # Wait 5 seconds before restoring clipboard (gives time to paste again if needed)
+            time.sleep(5.0)
 
             # Restore clipboard
             if old_clipboard is not None:

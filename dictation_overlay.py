@@ -7,7 +7,7 @@ Features Tokyo Night theme, bar waveform visualization.
 import gi
 gi.require_version('Gtk', '4.0')
 
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, Pango
 import math
 import struct
 import subprocess
@@ -194,6 +194,8 @@ class DictationOverlay:
         self.window = None
         self.waveform = None
         self.status_label = None
+        self.interim_label = None
+        self.info_label = None
         self.is_visible = False
         self.follow_mouse_id = None
         self.use_layer_shell = False
@@ -201,7 +203,11 @@ class DictationOverlay:
 
         # Window dimensions
         self.width = 400
-        self.height = 200
+        self.height_compact = 200
+        self.height_expanded = 280
+        self.height = self.height_compact
+        self.target_height = self.height_compact
+        self.resize_timeout_id = None
 
     def create_window(self, app):
         """Create the overlay window."""
@@ -292,6 +298,15 @@ class DictationOverlay:
             border-radius: {max(0, CORNER_RADIUS - 4)}px;
             padding: 10px;
         }}
+
+        .interim-text {{
+            color: #9ece6a;
+            font-size: 13px;
+            font-style: italic;
+            padding: 6px 10px;
+            background-color: rgba(17, 18, 26, 0.8);
+            border-radius: 6px;
+        }}
         """
 
         css_provider = Gtk.CssProvider()
@@ -326,7 +341,25 @@ class DictationOverlay:
         waveform_frame.set_child(self.waveform)
         main_box.append(waveform_frame)
 
-        # Info label
+        # Middle spacer box - always expands to fill available space
+        # This keeps info_label anchored to the bottom
+        middle_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        middle_box.set_vexpand(True)  # Always absorbs extra vertical space
+        middle_box.set_valign(Gtk.Align.FILL)
+
+        # Interim transcription label (hidden until we have text)
+        self.interim_label = Gtk.Label(label="")
+        self.interim_label.add_css_class("interim-text")
+        self.interim_label.set_wrap(True)
+        self.interim_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.interim_label.set_max_width_chars(45)
+        self.interim_label.set_visible(False)
+        self.interim_label.set_valign(Gtk.Align.START)  # Align to top of middle_box
+        middle_box.append(self.interim_label)
+
+        main_box.append(middle_box)
+
+        # Info label - stays at bottom (no vexpand, so it takes only its natural size)
         self.info_label = Gtk.Label(label="Release mouse button to transcribe")
         self.info_label.add_css_class("status-info")
         main_box.append(self.info_label)
@@ -373,6 +406,10 @@ class DictationOverlay:
     def hide(self):
         """Hide the overlay."""
         self.stop_following_mouse()
+        # Cancel any resize animation
+        if self.resize_timeout_id:
+            GLib.source_remove(self.resize_timeout_id)
+            self.resize_timeout_id = None
         self.window.set_visible(False)
         self.is_visible = False
 
@@ -418,11 +455,67 @@ class DictationOverlay:
             self.status_label.remove_css_class("status-transcribing")
             self.status_label.add_css_class("status-recording")
             self.info_label.set_text("Release mouse button to transcribe")
+            # Clear interim text and reset to compact size
+            if self.interim_label:
+                self.interim_label.set_text("")
+                self.interim_label.set_visible(False)
+            self.height = self.height_compact
+            self.target_height = self.height_compact
+            self.window.set_default_size(self.width, self.height)
         elif status == "transcribing":
             self.status_label.set_text("Transcribing...")
             self.status_label.remove_css_class("status-recording")
             self.status_label.add_css_class("status-transcribing")
             self.info_label.set_text("Please wait...")
+
+    def set_interim_text(self, text):
+        """Update the interim transcription display."""
+        if self.interim_label:
+            if text:
+                self.interim_label.set_text(text)
+                self.interim_label.set_visible(True)
+                # Calculate height: 13px font, 6px padding top/bottom
+                # ~40 chars per line at current width
+                num_lines = max(1, (len(text) + 39) // 40)
+                line_height = 17  # 13px font + line spacing
+                extra_height = 12 + (num_lines * line_height)  # 12px padding + lines
+                target = self.height_compact + extra_height
+                self._animate_to_height(min(target, self.height_expanded))
+            else:
+                self.interim_label.set_text("")
+                self.interim_label.set_visible(False)
+                self._animate_to_height(self.height_compact)
+
+    def _animate_to_height(self, target):
+        """Smoothly animate window height to target."""
+        if self.height == target:
+            return
+
+        self.target_height = target
+
+        # Cancel any existing animation
+        if self.resize_timeout_id:
+            GLib.source_remove(self.resize_timeout_id)
+
+        # Start animation
+        self.resize_timeout_id = GLib.timeout_add(16, self._resize_step)  # ~60fps
+
+    def _resize_step(self):
+        """Single step of height animation."""
+        step = 8  # Pixels per frame
+
+        if self.height < self.target_height:
+            self.height = min(self.height + step, self.target_height)
+        elif self.height > self.target_height:
+            self.height = max(self.height - step, self.target_height)
+
+        self.window.set_default_size(self.width, self.height)
+
+        if self.height == self.target_height:
+            self.resize_timeout_id = None
+            return False  # Stop animation
+
+        return True  # Continue animation
 
     def update_waveform(self, audio_chunk):
         """Update waveform with new audio data."""

@@ -69,6 +69,21 @@ class DictationApp:
         self.RATE = 16000
         self.actual_rate = self.RATE
 
+        # Interim transcription settings (from config)
+        self.pause_threshold = self.config.get("pause_threshold", 1.5)
+        self.silence_amplitude = self.config.get("silence_amplitude", 0.02)
+        self.transcription_mode = self.config.get("transcription_mode", "full")
+        self.interim_enabled = self.config.get("interim_enabled", True)
+
+        # Calculate pause detection threshold in chunks
+        # CHUNK=1024 at 16kHz = ~64ms per chunk, 1.5s = ~23 chunks
+        self.pause_chunks_threshold = int(self.pause_threshold * self.RATE / self.CHUNK)
+
+        # Interim transcription state
+        self.interim_transcriptions = []
+        self.interim_pending = False
+        self.last_interim_frame = 0
+
         # Initialize PyAudio
         self.audio = pyaudio.PyAudio()
         self.devices = self.get_input_devices()
@@ -94,6 +109,10 @@ class DictationApp:
             print("Window positioning: Layer-shell (Sway/Hyprland)")
         else:
             print("Window positioning: Fallback (may not work on Wayland)")
+        if self.interim_enabled:
+            print(f"Interim transcription: enabled (pause={self.pause_threshold}s, mode={self.transcription_mode})")
+        else:
+            print("Interim transcription: disabled")
         print(f"Press Mouse 4 (BTN_EXTRA) to record, release to transcribe")
         print(f"Press Ctrl+C to quit\n")
 
@@ -102,16 +121,23 @@ class DictationApp:
         self.evdev_thread.start()
 
     def load_config(self):
-        """Load configuration from file."""
+        """Load configuration from file with defaults."""
+        defaults = {
+            "pause_threshold": 1.5,
+            "silence_amplitude": 0.02,
+            "transcription_mode": "full",  # "full" or "concatenate"
+            "interim_enabled": True
+        }
+
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     config = json.load(f)
                     if isinstance(config, dict):
-                        return config
+                        return {**defaults, **config}
             except:
                 pass
-        return {}
+        return defaults
 
     def get_input_devices(self):
         """Get list of input devices."""
@@ -230,6 +256,11 @@ class DictationApp:
         self.is_recording = True
         self.frames = []
 
+        # Reset interim transcription state
+        self.interim_transcriptions = []
+        self.interim_pending = False
+        self.last_interim_frame = 0
+
         device_index = self.selected_device_index
 
         try:
@@ -271,11 +302,34 @@ class DictationApp:
         GLib.timeout_add(50, self.update_waveform)
 
     def record_audio(self):
-        """Record audio in background thread."""
+        """Record audio in background thread with pause detection."""
+        consecutive_silent_chunks = 0
+        last_speech_frame = 0  # Track where speech ended
+        MIN_FRAMES_BEFORE_INTERIM = int(0.5 * self.RATE / self.CHUNK)  # 0.5s minimum
+
         while self.is_recording and self.stream:
             try:
                 data = self.stream.read(self.CHUNK, exception_on_overflow=False)
                 self.frames.append(data)
+
+                # Pause detection for interim transcription
+                if self.interim_enabled:
+                    amplitude = self._calculate_chunk_amplitude(data)
+
+                    if amplitude < self.silence_amplitude:
+                        consecutive_silent_chunks += 1
+
+                        # Check if we've hit the pause threshold
+                        if (consecutive_silent_chunks >= self.pause_chunks_threshold
+                            and not self.interim_pending
+                            and last_speech_frame > self.last_interim_frame
+                            and last_speech_frame >= MIN_FRAMES_BEFORE_INTERIM):
+                            # Trigger interim transcription up to where speech ended (exclude silence)
+                            self._trigger_interim_transcription(last_speech_frame)
+                    else:
+                        consecutive_silent_chunks = 0
+                        last_speech_frame = len(self.frames)  # Update speech end marker
+
             except Exception as e:
                 if self.is_recording:
                     print(f"Recording error: {e}")
@@ -289,6 +343,88 @@ class DictationApp:
             except:
                 pass
             self.stream = None
+
+    def _calculate_chunk_amplitude(self, data):
+        """Calculate RMS amplitude for a single audio chunk."""
+        samples = np.frombuffer(data, dtype=np.int16)
+        if len(samples) == 0:
+            return 0.0
+        rms = np.sqrt(np.mean(samples.astype(np.float64) ** 2))
+        return rms / 32768.0  # Normalize to 0-1
+
+    def _trigger_interim_transcription(self, end_frame=None):
+        """Trigger async transcription of audio recorded so far."""
+        if self.interim_pending or not self.frames:
+            return
+
+        self.interim_pending = True
+
+        # Use provided end_frame (where speech ended) or current length
+        frame_end_index = end_frame if end_frame else len(self.frames)
+        frames_to_transcribe = self.frames[self.last_interim_frame:frame_end_index]
+
+        print(f"[Interim] Triggered: frames {self.last_interim_frame}-{frame_end_index} ({len(frames_to_transcribe)} frames)")
+
+        # Launch transcription in separate thread
+        threading.Thread(
+            target=self._perform_interim_transcription,
+            args=(frames_to_transcribe, frame_end_index),
+            daemon=True
+        ).start()
+
+    def _perform_interim_transcription(self, frames, end_index):
+        """Perform interim transcription asynchronously."""
+        try:
+            # Save frames to temp file
+            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            wf = wave.open(temp_wav.name, "wb")
+            wf.setnchannels(self.CHANNELS)
+            wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
+            wf.setframerate(self.actual_rate)
+            wf.writeframes(b"".join(frames))
+            wf.close()
+
+            # Send to daemon
+            result = self.send_to_daemon(temp_wav.name)
+
+            if result.get("success"):
+                transcription = result.get("transcription", "").strip()
+
+                # Filter Whisper hallucinations (common on silence)
+                hallucinations = [
+                    "thanks for watching",
+                    "thank you for watching",
+                    "please subscribe",
+                    "like and subscribe",
+                    "see you next time",
+                    "bye",
+                    "[music]",
+                    "(music)",
+                    "you",
+                ]
+                if transcription.lower() in hallucinations:
+                    print(f"[Interim] Filtered hallucination: {transcription}")
+                    transcription = ""
+
+                if transcription and len(transcription) >= 2:
+                    self.interim_transcriptions.append(transcription)
+                    self.last_interim_frame = end_index
+
+                    # Update UI (must use GLib.idle_add from background thread)
+                    interim_text = " ".join(self.interim_transcriptions)
+                    GLib.idle_add(self.overlay.set_interim_text, interim_text)
+                    print(f"[Interim] Result: {transcription}")
+
+            # Clean up temp file
+            try:
+                os.unlink(temp_wav.name)
+            except:
+                pass
+
+        except Exception as e:
+            print(f"[Interim] Error: {e}")
+        finally:
+            self.interim_pending = False
 
     def update_waveform(self):
         """Update waveform visualization."""
@@ -311,6 +447,12 @@ class DictationApp:
         # Wait for recording thread
         if self.record_thread and self.record_thread.is_alive():
             self.record_thread.join(timeout=1.0)
+
+        # Wait for any pending interim transcription (with timeout)
+        import time
+        wait_start = time.time()
+        while self.interim_pending and (time.time() - wait_start) < 2.0:
+            time.sleep(0.1)
 
         # Check if we have enough audio
         if len(self.frames) < 10:
@@ -343,57 +485,88 @@ class DictationApp:
 
     def save_and_transcribe(self):
         """Save audio and send to transcription daemon."""
+        import time
+
         try:
             # Check audio level - reject if too quiet (likely silence/noise)
             rms = self.calculate_audio_rms()
-            silence_threshold = 0.01  # Adjust this threshold as needed
+            silence_threshold = 0.01
 
             if rms < silence_threshold:
                 print(f"Audio too quiet (RMS={rms:.4f}), skipping transcription")
                 GLib.idle_add(self.overlay.hide)
                 return
 
-            # Save to temp file
-            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-            wf = wave.open(temp_wav.name, "wb")
-            wf.setnchannels(self.CHANNELS)
-            wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-            wf.setframerate(self.actual_rate)
-            wf.writeframes(b"".join(self.frames))
-            wf.close()
+            final_transcription = ""
 
-            print(f"Saved {len(self.frames)} frames (RMS={rms:.4f})")
+            if self.transcription_mode == "concatenate" and self.interim_transcriptions:
+                # Concatenate mode: only transcribe remaining audio, append to interim
+                remaining_frames = self.frames[self.last_interim_frame:]
 
-            # Send to daemon
-            result = self.send_to_daemon(temp_wav.name)
+                if remaining_frames:
+                    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                    wf = wave.open(temp_wav.name, "wb")
+                    wf.setnchannels(self.CHANNELS)
+                    wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
+                    wf.setframerate(self.actual_rate)
+                    wf.writeframes(b"".join(remaining_frames))
+                    wf.close()
 
-            if result.get("success"):
-                transcription = result.get("transcription", "").strip()
+                    print(f"[Concatenate] Transcribing {len(remaining_frames)} remaining frames")
+                    result = self.send_to_daemon(temp_wav.name)
 
-                # Filter if too short (likely noise)
-                if len(transcription) < 2:
-                    print(f"Filtered: too short ({len(transcription)} chars)")
-                    transcription = ""
+                    if result.get("success"):
+                        remaining_text = result.get("transcription", "").strip()
+                        if remaining_text and len(remaining_text) >= 2:
+                            self.interim_transcriptions.append(remaining_text)
 
-                if transcription:
-                    print(f"Transcription: {transcription}")
-                    GLib.idle_add(self.overlay.hide)
-                    import time
-                    time.sleep(0.2)
-                    self.type_text(transcription)
-                else:
-                    print("No transcription")
-                    GLib.idle_add(self.overlay.hide)
+                    try:
+                        os.unlink(temp_wav.name)
+                    except:
+                        pass
+
+                # Combine all interim transcriptions
+                final_transcription = " ".join(self.interim_transcriptions)
+                print(f"[Concatenate] Final: {final_transcription}")
+
             else:
-                error = result.get("error", "Unknown error")
-                print(f"Transcription error: {error}")
-                GLib.idle_add(self.overlay.hide)
+                # Full mode (default): transcribe entire recording
+                temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                wf = wave.open(temp_wav.name, "wb")
+                wf.setnchannels(self.CHANNELS)
+                wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
+                wf.setframerate(self.actual_rate)
+                wf.writeframes(b"".join(self.frames))
+                wf.close()
 
-            # Clean up
-            try:
-                os.unlink(temp_wav.name)
-            except:
-                pass
+                print(f"[Full] Transcribing {len(self.frames)} frames (RMS={rms:.4f})")
+                result = self.send_to_daemon(temp_wav.name)
+
+                if result.get("success"):
+                    final_transcription = result.get("transcription", "").strip()
+
+                try:
+                    os.unlink(temp_wav.name)
+                except:
+                    pass
+
+            # Reset interim state
+            self.interim_transcriptions = []
+            self.last_interim_frame = 0
+
+            # Filter if too short (likely noise)
+            if len(final_transcription) < 2:
+                print(f"Filtered: too short ({len(final_transcription)} chars)")
+                final_transcription = ""
+
+            if final_transcription:
+                print(f"Transcription: {final_transcription}")
+                GLib.idle_add(self.overlay.hide)
+                time.sleep(0.2)
+                self.type_text(final_transcription)
+            else:
+                print("No transcription")
+                GLib.idle_add(self.overlay.hide)
 
         except Exception as e:
             print(f"Error in transcription: {e}")

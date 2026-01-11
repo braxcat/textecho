@@ -305,9 +305,35 @@ class DictationApp:
         # Transcribe in background
         threading.Thread(target=self.save_and_transcribe, daemon=True).start()
 
+    def calculate_audio_rms(self):
+        """Calculate RMS (root mean square) amplitude of recorded audio."""
+        if not self.frames:
+            return 0.0
+
+        # Combine all frames and convert to numpy array
+        audio_data = b"".join(self.frames)
+        samples = np.frombuffer(audio_data, dtype=np.int16)
+
+        if len(samples) == 0:
+            return 0.0
+
+        # Calculate RMS
+        rms = np.sqrt(np.mean(samples.astype(np.float64) ** 2))
+        # Normalize to 0-1 range (16-bit audio max is 32768)
+        return rms / 32768.0
+
     def save_and_transcribe(self):
         """Save audio and send to transcription daemon."""
         try:
+            # Check audio level - reject if too quiet (likely silence/noise)
+            rms = self.calculate_audio_rms()
+            silence_threshold = 0.01  # Adjust this threshold as needed
+
+            if rms < silence_threshold:
+                print(f"Audio too quiet (RMS={rms:.4f}), skipping transcription")
+                GLib.idle_add(self.overlay.hide)
+                return
+
             # Save to temp file
             temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
             wf = wave.open(temp_wav.name, "wb")
@@ -317,7 +343,7 @@ class DictationApp:
             wf.writeframes(b"".join(self.frames))
             wf.close()
 
-            print(f"Saved {len(self.frames)} frames to {temp_wav.name}")
+            print(f"Saved {len(self.frames)} frames (RMS={rms:.4f})")
 
             # Send to daemon
             result = self.send_to_daemon(temp_wav.name)
@@ -325,21 +351,9 @@ class DictationApp:
             if result.get("success"):
                 transcription = result.get("transcription", "").strip()
 
-                # Filter hallucinations (common Whisper artifacts on silence/short audio)
-                hallucination_phrases = [
-                    "thanks for watching", "thank you for watching",
-                    "please subscribe", "like and subscribe",
-                    "see you next time", "see you in the next",
-                    "don't forget to subscribe",
-                    "[music]", "(music)", "[silence]", "[blank_audio]",
-                ]
-                lower_text = transcription.lower()
-                is_hallucination = any(phrase in lower_text for phrase in hallucination_phrases)
-                # Also filter if too short (likely noise)
-                is_too_short = len(transcription) < 2
-
-                if is_hallucination or is_too_short:
-                    print(f"Filtered: '{transcription}' (hallucination={is_hallucination}, too_short={is_too_short})")
+                # Filter if too short (likely noise)
+                if len(transcription) < 2:
+                    print(f"Filtered: too short ({len(transcription)} chars)")
                     transcription = ""
 
                 if transcription:
@@ -349,7 +363,7 @@ class DictationApp:
                     time.sleep(0.2)
                     self.type_text(transcription)
                 else:
-                    print("No transcription (empty or filtered)")
+                    print("No transcription")
                     GLib.idle_add(self.overlay.hide)
             else:
                 error = result.get("error", "Unknown error")

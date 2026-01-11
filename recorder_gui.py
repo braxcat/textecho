@@ -3,10 +3,13 @@
 Recording GUI with waveform visualization
 """
 
+import argparse
 import json
 import os
+import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -19,10 +22,15 @@ import pyaudio
 
 
 class RecorderGUI:
-    def __init__(self):
+    def __init__(self, push_to_talk=False, background=False):
+        self.push_to_talk = push_to_talk
+        self.background = background
+
         self.root = tk.Tk()
-        self.root.title("Dictation Recording")
-        self.root.geometry("500x300")
+        self.root.title("Dictation Recording" + (" [Push-to-Talk]" if push_to_talk else ""))
+
+        # Position window at mouse cursor (will be set when shown)
+        self.root.geometry(f"500x300")
         self.root.attributes("-topmost", True)
 
         # Audio settings
@@ -51,10 +59,57 @@ class RecorderGUI:
         self.devices = self.get_input_devices()
         self.default_device_index = self.get_default_device_index()
 
+        # Initialize selected device index
+        self.selected_device_index = self.default_device_index
+
         self.setup_ui()
 
-        # Auto-start recording
-        self.root.after(100, self.start_recording)
+        # Register signal handlers
+        if self.background:
+            # In background mode: SIGUSR1 = start, SIGUSR2 = stop
+            signal.signal(signal.SIGUSR1, self.signal_start_recording)
+            signal.signal(signal.SIGUSR2, self.signal_stop_recording)
+            # Hide window initially in background mode
+            self.root.withdraw()
+            print(f"GUI started in background mode, using device index {self.selected_device_index}")
+        elif self.push_to_talk:
+            # In push-to-talk mode: SIGUSR1 = stop
+            signal.signal(signal.SIGUSR1, self.signal_stop_recording)
+            # Auto-start recording in non-background push-to-talk mode
+            self.root.after(100, self.start_recording)
+        else:
+            # Normal mode - auto-start recording
+            self.root.after(100, self.start_recording)
+
+    def signal_start_recording(self, signum, frame):
+        """Signal handler to start recording (background mode)"""
+        print("Received start signal, showing window and starting recording...")
+        self.root.after(0, self.show_and_start_recording)
+
+    def signal_stop_recording(self, signum, frame):
+        """Signal handler for push-to-talk stop"""
+        print("Received stop signal, stopping recording...")
+        self.root.after(0, self.stop_recording)
+
+    def show_and_start_recording(self):
+        """Show window at mouse cursor and start recording"""
+        print("Showing GUI and starting recording...")
+
+        # Position window at mouse cursor
+        mouse_x = self.root.winfo_pointerx()
+        mouse_y = self.root.winfo_pointery()
+        window_x = mouse_x + 10
+        window_y = mouse_y + 10
+        self.root.geometry(f"500x300+{window_x}+{window_y}")
+
+        # Show window
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+        # Start recording
+        self.start_recording()
+        print(f"Recording started, is_recording={self.is_recording}")
 
     def get_input_devices(self):
         """Get list of input devices"""
@@ -216,10 +271,13 @@ class RecorderGUI:
         self.frames = []
         self.silence_chunks = 0  # Reset silence counter
 
-        device_index = self.devices[self.device_combo.current()]["index"]
-
-        # Save device preference for next time
-        self.save_device_preference(device_index)
+        # Use pre-selected device in background mode, otherwise get from combo box
+        if self.background:
+            device_index = self.selected_device_index
+        else:
+            device_index = self.devices[self.device_combo.current()]["index"]
+            # Save device preference for next time
+            self.save_device_preference(device_index)
 
         # Get device info to check supported sample rate
         device_info = self.audio.get_device_info_by_index(device_index)
@@ -281,40 +339,48 @@ class RecorderGUI:
                 data = self.stream.read(self.CHUNK, exception_on_overflow=False)
                 self.frames.append(data)
 
-                # Check for silence
-                audio_data = np.frombuffer(data, dtype=np.int16)
-                amplitude = np.abs(audio_data).mean()
+                # Skip silence detection in push-to-talk mode
+                if not self.push_to_talk:
+                    # Check for silence
+                    audio_data = np.frombuffer(data, dtype=np.int16)
+                    amplitude = np.abs(audio_data).mean()
 
-                if amplitude < self.silence_threshold:
-                    self.silence_chunks += 1
+                    if amplitude < self.silence_threshold:
+                        self.silence_chunks += 1
+                    else:
+                        self.silence_chunks = 0
+
+                    # Calculate how many chunks represent the silence duration
+                    # chunks_per_second = sample_rate / chunk_size
+                    chunks_per_second = self.actual_rate / self.CHUNK
+                    required_silent_chunks = int(self.silence_duration * chunks_per_second)
+
+                    # Update silence indicator
+                    current_silence_duration = self.silence_chunks / chunks_per_second
+                    if self.silence_chunks > 0:
+                        # Show silence progress
+                        self.root.after(0, lambda: self.silence_label.config(
+                            text=f"🔇 Silence: {current_silence_duration:.1f}s / {self.silence_duration}s",
+                            foreground="orange"
+                        ))
+                    else:
+                        # Show speaking
+                        self.root.after(0, lambda: self.silence_label.config(
+                            text="🎤 Speaking",
+                            foreground="green"
+                        ))
+
+                    # Auto-stop if silence detected for configured duration
+                    if self.silence_chunks >= required_silent_chunks:
+                        print(f"Silence detected for {self.silence_duration}s, auto-stopping...")
+                        self.root.after(0, self.stop_recording)
+                        break
                 else:
-                    self.silence_chunks = 0
-
-                # Calculate how many chunks represent the silence duration
-                # chunks_per_second = sample_rate / chunk_size
-                chunks_per_second = self.actual_rate / self.CHUNK
-                required_silent_chunks = int(self.silence_duration * chunks_per_second)
-
-                # Update silence indicator
-                current_silence_duration = self.silence_chunks / chunks_per_second
-                if self.silence_chunks > 0:
-                    # Show silence progress
+                    # In push-to-talk mode, show recording status
                     self.root.after(0, lambda: self.silence_label.config(
-                        text=f"🔇 Silence: {current_silence_duration:.1f}s / {self.silence_duration}s",
-                        foreground="orange"
+                        text="🔴 Recording (release key to stop)",
+                        foreground="red"
                     ))
-                else:
-                    # Show speaking
-                    self.root.after(0, lambda: self.silence_label.config(
-                        text="🎤 Speaking",
-                        foreground="green"
-                    ))
-
-                # Auto-stop if silence detected for configured duration
-                if self.silence_chunks >= required_silent_chunks:
-                    print(f"Silence detected for {self.silence_duration}s, auto-stopping...")
-                    self.root.after(0, self.stop_recording)
-                    break
 
             except Exception as e:
                 print(f"Recording error: {e}")
@@ -355,12 +421,33 @@ class RecorderGUI:
 
     def stop_recording(self):
         """Stop recording and transcribe"""
+        # Guard: only stop if we're actually recording
+        if not self.is_recording:
+            print("WARNING: stop_recording called but not recording")
+            return
+
+        # Guard: only transcribe if we have actual audio data
+        if not self.frames or len(self.frames) < 5:
+            print(f"WARNING: Insufficient audio data ({len(self.frames)} frames), skipping transcription")
+            self.is_recording = False
+            if self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
+            # Hide window in background mode
+            if self.background:
+                self.root.withdraw()
+            else:
+                self.root.destroy()
+            return
+
         self.is_recording = False
         self.status_label.config(text="Processing...", foreground="orange")
 
         if self.stream:
             self.stream.stop_stream()
             self.stream.close()
+
+        print(f"Recorded {len(self.frames)} frames, starting transcription...")
 
         # Save to temporary file
         temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
@@ -423,10 +510,14 @@ class RecorderGUI:
                     ),
                 )
 
-                # Close GUI immediately so it doesn't capture the typed text
-                self.root.after(0, self.root.destroy)
+                # In background mode, hide window instead of destroying
+                if self.background:
+                    self.root.after(0, self.root.withdraw)
+                else:
+                    # Close GUI immediately so it doesn't capture the typed text
+                    self.root.after(0, self.root.destroy)
 
-                # Wait a bit for GUI to close, then type
+                # Wait a bit for GUI to close/hide, then type
                 import time
                 time.sleep(0.3)
 
@@ -491,7 +582,12 @@ class RecorderGUI:
         if self.stream:
             self.stream.stop_stream()
             self.stream.close()
-        self.root.destroy()
+
+        # In background mode, hide instead of destroy
+        if self.background:
+            self.root.withdraw()
+        else:
+            self.root.destroy()
 
     def run(self):
         self.root.mainloop()
@@ -499,5 +595,12 @@ class RecorderGUI:
 
 
 if __name__ == "__main__":
-    app = RecorderGUI()
+    parser = argparse.ArgumentParser(description="Dictation recorder GUI")
+    parser.add_argument("--push-to-talk", action="store_true",
+                        help="Enable push-to-talk mode (no silence detection)")
+    parser.add_argument("--background", action="store_true",
+                        help="Start in background mode (hidden until signal)")
+    args = parser.parse_args()
+
+    app = RecorderGUI(push_to_talk=args.push_to_talk, background=args.background)
     app.run()

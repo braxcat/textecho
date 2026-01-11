@@ -1,9 +1,12 @@
 #!/bin/bash
-# Controls the transcription daemon and ydotool daemon for the dictation app
+# Controls the dictation app and transcription daemon
+# New simplified architecture: 2 processes instead of 3
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRANSCRIPTION_PID_FILE=~/.dictation_transcription.pid
 TRANSCRIPTION_LOG_FILE=~/.dictation_transcription.log
+APP_PID_FILE=~/.dictation_app.pid
+APP_LOG_FILE=~/.dictation_app.log
 YDOTOOL_LOG_FILE=~/.ydotool.log
 YDOTOOL_SOCKET=/tmp/.ydotool_socket
 
@@ -49,61 +52,119 @@ stop_ydotoold() {
     fi
 }
 
+start_transcription_daemon() {
+    if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Transcription daemon already running (PID $PID)"
+            return 0
+        else
+            rm -f "$TRANSCRIPTION_PID_FILE"
+        fi
+    fi
+
+    cd "$SCRIPT_DIR"
+    echo "Starting transcription daemon..."
+    nohup uv run python transcription_daemon.py > "$TRANSCRIPTION_LOG_FILE" 2>&1 &
+    sleep 1
+
+    if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
+        echo "Transcription daemon started (PID $(cat "$TRANSCRIPTION_PID_FILE"))"
+    else
+        echo "Warning: Transcription daemon may not have started correctly"
+    fi
+}
+
+stop_transcription_daemon() {
+    if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            kill $PID
+            echo "Transcription daemon stopped"
+        else
+            rm -f "$TRANSCRIPTION_PID_FILE"
+        fi
+    else
+        pkill -f transcription_daemon.py 2>/dev/null && echo "Transcription daemon stopped"
+    fi
+}
+
+start_dictation_app() {
+    if [ -f "$APP_PID_FILE" ]; then
+        PID=$(cat "$APP_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Dictation app already running (PID $PID)"
+            return 0
+        else
+            rm -f "$APP_PID_FILE"
+        fi
+    fi
+
+    cd "$SCRIPT_DIR"
+    echo "Starting dictation app..."
+    YDOTOOL_SOCKET=/tmp/.ydotool_socket PYTHONUNBUFFERED=1 nohup uv run python dictation_app.py > "$APP_LOG_FILE" 2>&1 &
+    sleep 1
+
+    if [ -f "$APP_PID_FILE" ]; then
+        echo "Dictation app started (PID $(cat "$APP_PID_FILE"))"
+        echo "Press Mouse 4 (side button) to record"
+    else
+        echo "Warning: Dictation app may not have started correctly"
+        echo "Check logs: tail -f $APP_LOG_FILE"
+    fi
+}
+
+stop_dictation_app() {
+    if [ -f "$APP_PID_FILE" ]; then
+        PID=$(cat "$APP_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            kill $PID
+            echo "Dictation app stopped"
+        else
+            rm -f "$APP_PID_FILE"
+        fi
+    else
+        pkill -f dictation_app.py 2>/dev/null && echo "Dictation app stopped"
+    fi
+
+    # Also kill old daemon/GUI if running
+    pkill -f dictation_daemon.py 2>/dev/null
+    pkill -f "recorder_gui.py.*--background" 2>/dev/null
+}
+
 case "$1" in
     start)
+        echo "Starting dictation system..."
+        echo ""
+
         # Start ydotoold first
         start_ydotoold
+        echo ""
 
         # Start transcription daemon
-        if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
-            PID=$(cat "$TRANSCRIPTION_PID_FILE")
-            if ps -p $PID > /dev/null 2>&1; then
-                echo "Transcription daemon already running (PID $PID)"
-                exit 0
-            fi
-        fi
+        start_transcription_daemon
+        echo ""
 
-        cd "$SCRIPT_DIR"
-        echo "Starting transcription daemon..."
-        nohup uv run python transcription_daemon.py > "$TRANSCRIPTION_LOG_FILE" 2>&1 &
-        sleep 1
+        # Start dictation app (unified evdev + GUI)
+        start_dictation_app
+        echo ""
 
-        if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
-            PID=$(cat "$TRANSCRIPTION_PID_FILE")
-            if ps -p $PID > /dev/null 2>&1; then
-                echo "Transcription daemon started (PID $PID)"
-            else
-                echo "Failed to start daemon - check $TRANSCRIPTION_LOG_FILE"
-                exit 1
-            fi
-        else
-            echo "Failed to start daemon - no PID file created"
-            exit 1
-        fi
+        echo "Dictation system ready!"
         ;;
 
     stop)
+        echo "Stopping dictation system..."
+
+        # Stop dictation app
+        stop_dictation_app
+
         # Stop transcription daemon
-        if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
-            PID=$(cat "$TRANSCRIPTION_PID_FILE")
-            if ps -p $PID > /dev/null 2>&1; then
-                kill $PID
-                echo "Transcription daemon stopped"
-            else
-                echo "Daemon not running (stale PID file)"
-                rm -f "$TRANSCRIPTION_PID_FILE"
-            fi
-        else
-            # Try to kill by process name as fallback
-            if pkill -f transcription_daemon.py; then
-                echo "Transcription daemon stopped"
-            else
-                echo "Transcription daemon not running"
-            fi
-        fi
+        stop_transcription_daemon
 
         # Stop ydotoold
         stop_ydotoold
+
+        echo "Dictation system stopped"
         ;;
 
     restart)
@@ -113,6 +174,20 @@ case "$1" in
         ;;
 
     status)
+        echo "=== Dictation App ==="
+        if [ -f "$APP_PID_FILE" ]; then
+            PID=$(cat "$APP_PID_FILE")
+            if ps -p $PID > /dev/null 2>&1; then
+                echo "Running (PID $PID)"
+                echo "Hotkey: Mouse 4 (side button) - hold to record, release to transcribe"
+            else
+                echo "Not running (stale PID file)"
+            fi
+        else
+            echo "Not running"
+        fi
+
+        echo ""
         echo "=== ydotoold ==="
         if pgrep -x ydotoold > /dev/null 2>&1; then
             echo "Running (PID $(pgrep -x ydotoold))"
@@ -138,13 +213,6 @@ case "$1" in
                 else
                     echo "Socket: /tmp/dictation_transcription.sock (not found)"
                 fi
-
-                # Show last few log lines
-                if [ -f "$TRANSCRIPTION_LOG_FILE" ]; then
-                    echo ""
-                    echo "Recent logs:"
-                    tail -n 5 "$TRANSCRIPTION_LOG_FILE"
-                fi
             else
                 echo "Not running (stale PID file)"
             fi
@@ -154,22 +222,35 @@ case "$1" in
         ;;
 
     logs)
-        if [ -f "$TRANSCRIPTION_LOG_FILE" ]; then
-            tail -f "$TRANSCRIPTION_LOG_FILE"
-        else
-            echo "No log file found at $TRANSCRIPTION_LOG_FILE"
-        fi
+        echo "Following logs (Ctrl+C to stop)..."
+        echo "=== App Log ==="
+        tail -f "$APP_LOG_FILE" "$TRANSCRIPTION_LOG_FILE" 2>/dev/null
+        ;;
+
+    app-logs)
+        tail -f "$APP_LOG_FILE"
+        ;;
+
+    transcription-logs)
+        tail -f "$TRANSCRIPTION_LOG_FILE"
         ;;
 
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs}"
+        echo "Usage: $0 {start|stop|restart|status|logs|app-logs|transcription-logs}"
         echo ""
         echo "Commands:"
-        echo "  start   - Start ydotoold and transcription daemon"
-        echo "  stop    - Stop all daemons"
-        echo "  restart - Restart all daemons"
-        echo "  status  - Show daemon status and recent logs"
-        echo "  logs    - Follow transcription daemon logs in real-time"
+        echo "  start              - Start all components"
+        echo "  stop               - Stop all components"
+        echo "  restart            - Restart all components"
+        echo "  status             - Show status of all components"
+        echo "  logs               - Follow all logs"
+        echo "  app-logs           - Follow dictation app logs only"
+        echo "  transcription-logs - Follow transcription daemon logs only"
+        echo ""
+        echo "Architecture:"
+        echo "  1. ydotoold         - Types text into active window"
+        echo "  2. transcription    - Keeps Whisper model warm, handles transcription"
+        echo "  3. dictation_app    - Monitors mouse button, shows GUI, records audio"
         exit 1
         ;;
 esac

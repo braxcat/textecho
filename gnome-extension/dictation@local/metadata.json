@@ -1,0 +1,7 @@
+{
+  "name": "Dictation Window Positioner",
+  "description": "Positions dictation overlay window at mouse cursor (Wayland workaround)",
+  "uuid": "dictation@local",
+  "shell-version": ["45", "46", "47"],
+  "version": 1
+}

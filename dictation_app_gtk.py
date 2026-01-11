@@ -29,7 +29,13 @@ import pyaudio
 from evdev import InputDevice, categorize, ecodes, list_devices
 
 # Import our overlay
-from dictation_overlay import DictationOverlay, LAYER_SHELL_AVAILABLE
+from dictation_overlay import DictationOverlay, LAYER_SHELL_AVAILABLE, GNOME_EXTENSION_AVAILABLE
+
+# Import window positioner for Wayland support
+try:
+    from window_positioner import get_mouse_position as extension_get_mouse_position
+except ImportError:
+    extension_get_mouse_position = None
 
 # Configuration
 PID_FILE = os.path.expanduser("~/.dictation_app.pid")
@@ -82,6 +88,12 @@ class DictationApp:
         for dev in self.mouse_devices:
             print(f"  - {dev.name}")
         print(f"\nUsing audio device: {self.get_device_name(self.selected_device_index)}")
+        if GNOME_EXTENSION_AVAILABLE:
+            print("Window positioning: GNOME extension (Wayland)")
+        elif LAYER_SHELL_AVAILABLE:
+            print("Window positioning: Layer-shell (Sway/Hyprland)")
+        else:
+            print("Window positioning: Fallback (may not work on Wayland)")
         print(f"Press Mouse 4 (BTN_EXTRA) to record, release to transcribe")
         print(f"Press Ctrl+C to quit\n")
 
@@ -172,7 +184,14 @@ class DictationApp:
                     print(f"Error in mouse monitoring: {e}")
 
     def get_mouse_position(self):
-        """Get current mouse position using xdotool."""
+        """Get current mouse position."""
+        # Try GNOME extension first (works on Wayland/GNOME)
+        if GNOME_EXTENSION_AVAILABLE and extension_get_mouse_position:
+            pos = extension_get_mouse_position()
+            if pos:
+                return pos
+
+        # Fallback to xdotool (works on X11)
         try:
             result = subprocess.run(
                 ["xdotool", "getmouselocation", "--shell"],
@@ -422,11 +441,22 @@ class DictationApp:
             except:
                 pass
 
-            # Set clipboard
+            # Set both clipboards (regular and primary for terminal compatibility)
             subprocess.run(["wl-copy", "--", text], check=True, timeout=2)
+            subprocess.run(["wl-copy", "--primary", "--", text], check=True, timeout=2)
 
             import time
             time.sleep(0.05)
+
+            # Verify clipboard was set correctly before pasting
+            try:
+                verify = subprocess.run(["wl-paste", "-n"], capture_output=True, timeout=2)
+                if verify.returncode != 0 or verify.stdout.decode().strip() != text.strip():
+                    print("[DEBUG] Clipboard verification failed, skipping paste")
+                    return
+            except Exception as e:
+                print(f"[DEBUG] Clipboard verification error: {e}, skipping paste")
+                return
 
             # Paste with Shift+Insert
             subprocess.run(["ydotool", "key", "shift+insert"], env=env, check=True, timeout=5)
@@ -437,7 +467,6 @@ class DictationApp:
             # Restore clipboard
             if old_clipboard is not None:
                 subprocess.run(["wl-copy", "--"], input=old_clipboard, timeout=2)
-
 
         except Exception as e:
             print(f"Paste error: {e}")

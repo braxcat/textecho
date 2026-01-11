@@ -23,6 +23,20 @@ try:
 except:
     LayerShell = None
 
+# Try to load GNOME extension for window positioning (works on GNOME/Wayland)
+GNOME_EXTENSION_AVAILABLE = False
+try:
+    from window_positioner import (
+        position_window_at_mouse,
+        get_mouse_position as extension_get_mouse_position,
+        start_following as extension_start_following,
+        stop_following as extension_stop_following,
+        is_extension_available
+    )
+    GNOME_EXTENSION_AVAILABLE = is_extension_available()
+except ImportError:
+    pass
+
 
 # =============================================================================
 # Tokyo Night Theme Colors
@@ -52,7 +66,14 @@ CORNER_RADIUS = 16  # Set to 0 for sharp corners
 
 
 def get_mouse_position():
-    """Get current mouse position using xdotool."""
+    """Get current mouse position."""
+    # Try GNOME extension first (works on Wayland/GNOME)
+    if GNOME_EXTENSION_AVAILABLE:
+        pos = extension_get_mouse_position()
+        if pos:
+            return pos
+
+    # Fallback to xdotool (works on X11)
     try:
         result = subprocess.run(
             ["xdotool", "getmouselocation", "--shell"],
@@ -165,6 +186,9 @@ class WaveformDrawingArea(Gtk.DrawingArea):
 class DictationOverlay:
     """GTK4 overlay window for dictation."""
 
+    # WM_CLASS used by GNOME extension to find this window
+    WM_CLASS = "dictation-overlay"
+
     def __init__(self):
         self.app = None
         self.window = None
@@ -173,6 +197,7 @@ class DictationOverlay:
         self.is_visible = False
         self.follow_mouse_id = None
         self.use_layer_shell = False
+        self.use_gnome_extension = False
 
         # Window dimensions
         self.width = 400
@@ -204,6 +229,9 @@ class DictationOverlay:
         self.window.set_decorated(False)
         self.window.set_resizable(False)
 
+        # Set WM_CLASS so GNOME extension can find this window
+        self.window.set_title(self.WM_CLASS)
+
         # Try layer-shell if available (works on Sway/Hyprland, NOT GNOME)
         if LAYER_SHELL_AVAILABLE and LayerShell and not self.is_gnome:
             try:
@@ -220,6 +248,10 @@ class DictationOverlay:
                 self.use_layer_shell = True
             except Exception:
                 pass
+
+        # Use GNOME extension for positioning if on GNOME and extension is available
+        if self.is_gnome and GNOME_EXTENSION_AVAILABLE:
+            self.use_gnome_extension = True
 
         # Apply CSS for styling
         self._apply_css()
@@ -303,6 +335,14 @@ class DictationOverlay:
 
     def _position_window(self, x, y):
         """Position the window centered above the given point."""
+        # Use GNOME extension for positioning (works on Wayland/GNOME)
+        if self.use_gnome_extension:
+            # Extension positions at mouse, so just call it
+            # The window title is used as WM_CLASS match
+            position_window_at_mouse(self.WM_CLASS)
+            return
+
+        # Use layer-shell for positioning (works on Sway/Hyprland)
         pos_x = x - self.width // 2
         pos_y = y - self.height - 20  # 20px above cursor
 
@@ -338,15 +378,24 @@ class DictationOverlay:
 
     def start_following_mouse(self):
         """Start updating position to follow mouse."""
-        # Only follow mouse if layer-shell is working (not on GNOME)
+        # Use GNOME extension's internal tracking (smoother, no D-Bus per-frame)
+        if self.use_gnome_extension:
+            extension_start_following(self.WM_CLASS)
+            return
+
+        # Follow mouse if layer-shell is available
         if not self.use_layer_shell:
             return
         if self.follow_mouse_id:
             return
-        self.follow_mouse_id = GLib.timeout_add(50, self._update_position)
+        self.follow_mouse_id = GLib.timeout_add(16, self._update_position)  # ~60 FPS
 
     def stop_following_mouse(self):
         """Stop following mouse."""
+        # Stop GNOME extension tracking
+        if self.use_gnome_extension:
+            extension_stop_following()
+
         if self.follow_mouse_id:
             GLib.source_remove(self.follow_mouse_id)
             self.follow_mouse_id = None

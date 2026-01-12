@@ -584,11 +584,8 @@ class DictationOverlay:
         # Animate to the calculated height
         self._animate_to_height(target_height)
 
-        # Enable confirmation mode after a brief delay to let events settle
-        def enable_confirmation():
-            self.awaiting_confirmation = True
-            return False
-        GLib.timeout_add(100, enable_confirmation)
+        # Enable confirmation mode immediately
+        self.awaiting_confirmation = True
 
     def handle_click(self, is_left_click):
         """Handle mouse click during confirmation mode.

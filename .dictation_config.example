@@ -1,0 +1,18 @@
+{
+  "device_index": 13,
+  
+  // Model settings (requires daemon restart to change)
+  "model_path": "./whisper-small-ov",
+  "transcription_device": "CPU",
+  "model_idle_timeout": 3600,
+  
+  // Recording settings (no restart needed)
+  "silence_duration": 2.5,
+  
+  // Transcription quality settings (requires daemon restart to change)
+  // For accent optimization, try:
+  //   "num_beams": 5     - Uses beam search for better accuracy (slower but more accurate)
+  //   "num_beams": 1     - Default greedy decoding (faster, slightly less accurate)
+  "num_beams": 1,
+  "max_new_tokens": 100
+}

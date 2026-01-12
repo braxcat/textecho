@@ -31,12 +31,42 @@ class TranscriptionDaemon:
 
         # Load config
         self.config = self.load_config()
-        self.idle_timeout = self.config.get("model_idle_timeout", 3600)  # Default 1 hour
+        self.idle_timeout = self.config.get(
+            "model_idle_timeout", 3600
+        )  # Default 1 hour
         self.device = self.config.get("transcription_device", "CPU")
         self.model_path = self.config.get("model_path", "./whisper-base-cpu")
 
+        # Transcription quality parameters (all optional, for accent optimization)
+        self.num_beams = self.config.get(
+            "num_beams", None
+        )  # None = greedy (default), 5 = beam search
+        self.temperature = self.config.get(
+            "temperature", None
+        )  # None = default, 0.0 = deterministic
+        self.repetition_penalty = self.config.get(
+            "repetition_penalty", None
+        )  # None = default, >1.0 reduces repetition
+        self.length_penalty = self.config.get(
+            "length_penalty", None
+        )  # None = default, >0 favors longer outputs
+        self.language = self.config.get(
+            "language", None
+        )  # None = auto-detect, "en" = force English
+        self.task = self.config.get(
+            "task", None
+        )  # None = default, "transcribe" or "translate"
+        self.initial_prompt = self.config.get(
+            "initial_prompt", None
+        )  # Hint for style/spelling
+        self.hotwords = self.config.get(
+            "hotwords", None
+        )  # Words to favor (space-separated)
+
         print(f"Transcription daemon initialized")
-        print(f"Model idle timeout: {self.idle_timeout}s ({self.idle_timeout/60:.1f} minutes)")
+        print(
+            f"Model idle timeout: {self.idle_timeout}s ({self.idle_timeout / 60:.1f} minutes)"
+        )
         print(f"Device: {self.device}")
         print(f"Model path: {self.model_path}")
 
@@ -66,7 +96,9 @@ class TranscriptionDaemon:
             start_time = time.time()
 
             # Suppress deprecation warnings
-            warnings.filterwarnings('ignore', message='Whisper decoder models with past is deprecated')
+            warnings.filterwarnings(
+                "ignore", message="Whisper decoder models with past is deprecated"
+            )
 
             try:
                 self.model = ov_genai.WhisperPipeline(self.model_path, self.device)
@@ -115,17 +147,38 @@ class TranscriptionDaemon:
             if samplerate != 16000:
                 ratio = 16000 / samplerate
                 new_length = int(len(data) * ratio)
-                data = np.interp(np.linspace(0, len(data), new_length), np.arange(len(data)), data)
+                data = np.interp(
+                    np.linspace(0, len(data), new_length), np.arange(len(data)), data
+                )
 
             # Generate transcription
             with self.lock:
-                result = self.model.generate(data.tolist(), max_new_tokens=100)
+                # Build generate kwargs from config
+                kwargs = {"max_new_tokens": 100}
+                if self.num_beams:
+                    kwargs["num_beams"] = self.num_beams
+                if self.temperature is not None:
+                    kwargs["temperature"] = self.temperature
+                if self.repetition_penalty:
+                    kwargs["repetition_penalty"] = self.repetition_penalty
+                if self.length_penalty is not None:
+                    kwargs["length_penalty"] = self.length_penalty
+                if self.language:
+                    kwargs["language"] = self.language
+                if self.task:
+                    kwargs["task"] = self.task
+                if self.initial_prompt:
+                    kwargs["initial_prompt"] = self.initial_prompt
+                if self.hotwords:
+                    kwargs["hotwords"] = self.hotwords
+
+                result = self.model.generate(data.tolist(), **kwargs)
 
                 # Extract text from WhisperDecodedResults object
-                if hasattr(result, 'texts'):
+                if hasattr(result, "texts"):
                     # Result has multiple texts, join them
-                    transcription = ' '.join(result.texts)
-                elif hasattr(result, 'text'):
+                    transcription = " ".join(result.texts)
+                elif hasattr(result, "text"):
                     # Result has single text attribute
                     transcription = result.text
                 else:
@@ -166,7 +219,7 @@ class TranscriptionDaemon:
                 status = {
                     "model_loaded": self.model_loaded,
                     "last_request": self.last_request_time,
-                    "idle_timeout": self.idle_timeout
+                    "idle_timeout": self.idle_timeout,
                 }
                 response = json.dumps(status) + "\n"
                 conn.sendall(response.encode())
@@ -211,7 +264,9 @@ class TranscriptionDaemon:
             while True:
                 conn, _ = server.accept()
                 # Handle each client in a thread
-                client_thread = threading.Thread(target=self.handle_client, args=(conn,))
+                client_thread = threading.Thread(
+                    target=self.handle_client, args=(conn,)
+                )
                 client_thread.daemon = True
                 client_thread.start()
         except KeyboardInterrupt:

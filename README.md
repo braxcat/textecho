@@ -86,7 +86,7 @@ Edit or create `~/.dictation_config`:
 }
 ```
 
-### Configuration Options
+### Basic Configuration Options
 
 - `silence_duration`: Seconds of silence before auto-stopping recording (default: 2.5)
 - `model_idle_timeout`: Seconds before unloading model from RAM (default: 3600 = 1 hour)
@@ -95,7 +95,36 @@ Edit or create `~/.dictation_config`:
   - Set to `0` to disable auto-unload (keep model always loaded)
 - `transcription_device`: Device for Whisper model (default: "CPU", options: "NPU")
 - `model_path`: Path to Whisper model directory (default: "./whisper-base-cpu")
+  - `./whisper-base-cpu` - Fastest (286MB)
+  - `./whisper-small-ov` - Better accuracy (932MB)
+  - `./whisper-medium-cpu` - Best for accents (3GB+, slower)
 - `device_index`: Last used audio input device (auto-saved)
+
+### Advanced Transcription Quality Options
+
+All optional parameters for improving accuracy (especially with accents). Omit for fastest speed. See `config.example.json` for detailed examples.
+
+**Accent Optimization:**
+- `num_beams`: `5` for beam search (better accuracy, slower) vs default greedy decoding
+- `language`: `"en"` to force English detection (prevents accent misidentification)
+- `hotwords`: `"colour favour harbour"` - space-separated words to favor specific spellings
+
+**Fine-tuning:**
+- `temperature`: `0.0` for deterministic output, higher for more variation
+- `repetition_penalty`: `1.1-1.5` to reduce repetition
+- `length_penalty`: `1.0` to favor longer outputs, `<1.0` for shorter
+- `initial_prompt`: Hint text for style/spelling (e.g., `"G'day mate"` for Australian)
+- `task`: `"transcribe"` (default) or `"translate"` to translate to English
+
+**Example for Australian accent:**
+```json
+{
+  "model_path": "./whisper-small-ov",
+  "num_beams": 5,
+  "language": "en",
+  "hotwords": "colour favour harbour"
+}
+```
 
 **Note:** Changes to `model_idle_timeout`, `transcription_device`, and `model_path` require restarting the transcription daemon:
 

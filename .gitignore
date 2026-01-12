@@ -8,3 +8,38 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Model directories
+whisper-*/
+
+# Audio files
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# Configuration files (keep examples)
+config.json
+.dictation_config
+dictation.conf
+
+# Intel NPU drivers and dependencies
+*.deb
+*.ddeb
+*.asc
+*.tar.gz
+linux-npu-driver-*/
+
+# Log files
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

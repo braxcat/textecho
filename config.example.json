@@ -1,0 +1,61 @@
+{
+  "_comment": "Dictation Configuration - Copy to ~/.dictation_config and edit",
+
+  "device_index": 13,
+
+  "_model_settings": "These settings require daemon restart to take effect",
+  "model_path": "./whisper-base-cpu",
+  "transcription_device": "CPU",
+  "model_idle_timeout": 3600,
+
+  "_recording_settings": "These settings take effect immediately (no restart needed)",
+  "silence_duration": 2.5,
+
+  "_transcription_quality": "All optional - omit for fastest speed, add for better accuracy",
+
+  "num_beams": null,
+  "_num_beams_help": "null=greedy(fastest), 5=beam search (better for accents, slower)",
+
+  "temperature": null,
+  "_temperature_help": "null=default, 0.0=deterministic, higher=more random",
+
+  "repetition_penalty": null,
+  "_repetition_penalty_help": "null=default, 1.1-1.5=reduce repetition",
+
+  "length_penalty": null,
+  "_length_penalty_help": "null=default, 1.0=favor longer outputs, <1.0=shorter",
+
+  "language": null,
+  "_language_help": "null=auto-detect, 'en'=force English (prevents accent misidentification)",
+
+  "task": null,
+  "_task_help": "null=default, 'transcribe'=transcribe, 'translate'=translate to English",
+
+  "initial_prompt": null,
+  "_initial_prompt_help": "null=none, 'G'day mate'=hint for Australian style/spelling",
+
+  "hotwords": null,
+  "_hotwords_help": "null=none, 'colour favour harbour'=space-separated words to favor",
+
+  "_examples": "Example configurations below",
+
+  "_example_fastest": {
+    "model_path": "./whisper-base-cpu",
+    "comment": "Fastest - default greedy decoding"
+  },
+
+  "_example_australian_accent": {
+    "model_path": "./whisper-small-ov",
+    "num_beams": 5,
+    "language": "en",
+    "hotwords": "colour favour harbour",
+    "comment": "Optimized for Australian accent - slower but more accurate"
+  },
+
+  "_example_balanced": {
+    "model_path": "./whisper-base-cpu",
+    "num_beams": 3,
+    "language": "en",
+    "comment": "Balanced - slight accuracy boost without major slowdown"
+  }
+}

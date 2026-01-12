@@ -68,6 +68,9 @@ class DictationApp:
         self.early_left_click = False
         self.early_right_click = False
 
+        # Volume dimming state
+        self.original_volume = None
+
         # Load config
         self.config = self.load_config()
 
@@ -138,7 +141,9 @@ class DictationApp:
             "pause_threshold": 1.5,
             "silence_amplitude": 0.02,
             "transcription_mode": "full",  # "full" or "concatenate"
-            "interim_enabled": True
+            "interim_enabled": True,
+            "volume_dimming_enabled": False,
+            "dimmed_volume": 0.10,  # 10% volume while recording
         }
 
         if os.path.exists(CONFIG_FILE):
@@ -150,6 +155,55 @@ class DictationApp:
             except:
                 pass
         return defaults
+
+    def get_system_volume(self):
+        """Get current system volume using wpctl (PipeWire)."""
+        try:
+            result = subprocess.run(
+                ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
+                capture_output=True, text=True, timeout=1
+            )
+            if result.returncode == 0:
+                # Output format: "Volume: 0.50" or "Volume: 0.50 [MUTED]"
+                parts = result.stdout.strip().split()
+                if len(parts) >= 2:
+                    return float(parts[1])
+        except Exception as e:
+            print(f"Error getting volume: {e}")
+        return None
+
+    def set_system_volume(self, level):
+        """Set system volume using wpctl (PipeWire)."""
+        try:
+            subprocess.run(
+                ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", str(level)],
+                timeout=1
+            )
+            return True
+        except Exception as e:
+            print(f"Error setting volume: {e}")
+            return False
+
+    def dim_volume(self):
+        """Dim system volume for recording."""
+        if not self.config.get("volume_dimming_enabled", False):
+            return
+
+        self.original_volume = self.get_system_volume()
+        if self.original_volume is not None:
+            dimmed = self.config.get("dimmed_volume", 0.10)
+            if self.set_system_volume(dimmed):
+                print(f"Volume dimmed: {self.original_volume:.0%} -> {dimmed:.0%}")
+
+    def restore_volume(self):
+        """Restore system volume after recording."""
+        if not self.config.get("volume_dimming_enabled", False):
+            return
+
+        if self.original_volume is not None:
+            if self.set_system_volume(self.original_volume):
+                print(f"Volume restored: {self.original_volume:.0%}")
+            self.original_volume = None
 
     def get_input_devices(self):
         """Get list of input devices."""
@@ -330,6 +384,9 @@ class DictationApp:
         self.is_recording = True
         self.frames = []
 
+        # Dim system volume if enabled
+        self.dim_volume()
+
         # Reset early click detection
         self.early_left_click = False
         self.early_right_click = False
@@ -370,6 +427,7 @@ class DictationApp:
         except Exception as e:
             print(f"Error opening audio stream: {e}")
             self.is_recording = False
+            self.restore_volume()  # Restore volume on error
             self.overlay.hide()
             return
 
@@ -526,6 +584,9 @@ class DictationApp:
         # Wait for recording thread
         if self.record_thread and self.record_thread.is_alive():
             self.record_thread.join(timeout=1.0)
+
+        # Restore system volume if it was dimmed
+        self.restore_volume()
 
         # Wait for any pending interim transcription (with timeout)
         import time

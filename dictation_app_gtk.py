@@ -68,6 +68,11 @@ class DictationApp:
         self.early_left_click = False
         self.early_right_click = False
 
+        # Modifier key state for hotkeys
+        self.ctrl_pressed = False
+        self.alt_pressed = False
+        self.settings_dialog = None
+
         # Volume dimming state
         self.original_volume = None
 
@@ -129,6 +134,7 @@ class DictationApp:
         else:
             print("Interim transcription: disabled")
         print(f"Press Mouse 4 (BTN_EXTRA) to record, release to transcribe")
+        print(f"Press Ctrl+Alt+Space to open settings")
         print(f"Press Ctrl+C to quit\n")
 
         # Start evdev monitoring in a thread
@@ -144,6 +150,7 @@ class DictationApp:
             "interim_enabled": True,
             "volume_dimming_enabled": False,
             "dimmed_volume": 0.10,  # 10% volume while recording
+            "input_gain": 1.0,  # Input gain multiplier (0.5 - 4.0)
         }
 
         if os.path.exists(CONFIG_FILE):
@@ -322,8 +329,19 @@ class DictationApp:
                                     print("Right-click detected - canceling")
                                     GLib.idle_add(lambda: self.overlay.handle_click(False))
 
+                            # Track modifier keys for Ctrl+Alt+Space hotkey (always track, not an elif)
+                            if dev_type == 'keyboard':
+                                if event.code in (ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL):
+                                    self.ctrl_pressed = key_event.keystate in (key_event.key_down, key_event.key_hold)
+                                elif event.code in (ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT):
+                                    self.alt_pressed = key_event.keystate in (key_event.key_down, key_event.key_hold)
+                                elif event.code == ecodes.KEY_SPACE and key_event.keystate == key_event.key_down:
+                                    if self.ctrl_pressed and self.alt_pressed:
+                                        print("Ctrl+Alt+Space pressed - opening settings")
+                                        GLib.idle_add(self.show_settings_dialog)
+
                             # Escape key during transcription (early cancel)
-                            elif dev_type == 'keyboard' and self.is_transcribing and key_event.keystate == key_event.key_down:
+                            if dev_type == 'keyboard' and self.is_transcribing and key_event.keystate == key_event.key_down:
                                 if event.code == ecodes.KEY_ESC:
                                     print("Early escape detected during transcription")
                                     self.early_right_click = True
@@ -438,6 +456,17 @@ class DictationApp:
         # Start waveform updates
         GLib.timeout_add(50, self.update_waveform)
 
+    def apply_gain(self, data):
+        """Apply input gain to audio data."""
+        gain = self.config.get("input_gain", 1.0)
+        if gain == 1.0:
+            return data
+        # Convert to numpy, apply gain, clip, convert back
+        samples = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+        samples *= gain
+        samples = np.clip(samples, -32768, 32767).astype(np.int16)
+        return samples.tobytes()
+
     def record_audio(self):
         """Record audio in background thread with pause detection."""
         consecutive_silent_chunks = 0
@@ -447,6 +476,7 @@ class DictationApp:
         while self.is_recording and self.stream:
             try:
                 data = self.stream.read(self.CHUNK, exception_on_overflow=False)
+                data = self.apply_gain(data)  # Apply input gain
                 self.frames.append(data)
 
                 # Pause detection for interim transcription
@@ -866,6 +896,195 @@ class DictationApp:
         self.old_clipboard = None
         self.pending_transcription = None
         self.overlay.hide()
+
+    def show_settings_dialog(self):
+        """Show the settings dialog."""
+        # Don't open if already open or recording
+        if self.settings_dialog and self.settings_dialog.get_visible():
+            self.settings_dialog.present()
+            return
+        if self.is_recording:
+            print("Cannot open settings while recording")
+            return
+
+        # Create dialog window
+        dialog = Gtk.Window(title="Dictation Settings")
+        dialog.set_default_size(400, 350)
+        dialog.set_modal(False)
+        dialog.set_resizable(False)
+        self.settings_dialog = dialog
+
+        # Main container with padding
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        main_box.set_margin_top(20)
+        main_box.set_margin_bottom(20)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+
+        # --- Input Device Section ---
+        device_label = Gtk.Label(label="Input Device")
+        device_label.set_halign(Gtk.Align.START)
+        device_label.add_css_class("heading")
+        main_box.append(device_label)
+
+        # Create device dropdown
+        device_strings = Gtk.StringList()
+        selected_idx = 0
+        for i, dev in enumerate(self.devices):
+            device_strings.append(f"{dev['name']}")
+            if dev['index'] == self.selected_device_index:
+                selected_idx = i
+
+        device_dropdown = Gtk.DropDown(model=device_strings)
+        device_dropdown.set_selected(selected_idx)
+
+        # Device dropdown row with refresh button
+        device_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        device_dropdown.set_hexpand(True)
+        device_row.append(device_dropdown)
+
+        refresh_btn = Gtk.Button()
+        refresh_btn.set_icon_name("view-refresh-symbolic")
+        refresh_btn.set_tooltip_text("Refresh device list")
+
+        def on_refresh(btn):
+            # Re-enumerate devices
+            self.devices = self.get_input_devices()
+            # Rebuild the string list
+            new_strings = Gtk.StringList()
+            new_selected = 0
+            for i, dev in enumerate(self.devices):
+                new_strings.append(f"{dev['name']}")
+                if dev['index'] == self.selected_device_index:
+                    new_selected = i
+            device_dropdown.set_model(new_strings)
+            device_dropdown.set_selected(new_selected)
+            print(f"Refreshed devices: {len(self.devices)} found")
+
+        refresh_btn.connect("clicked", on_refresh)
+        device_row.append(refresh_btn)
+
+        main_box.append(device_row)
+
+        # --- Input Gain Section ---
+        gain_label = Gtk.Label(label="Input Gain")
+        gain_label.set_halign(Gtk.Align.START)
+        gain_label.add_css_class("heading")
+        gain_label.set_margin_top(12)
+        main_box.append(gain_label)
+
+        gain_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        gain_adj = Gtk.Adjustment(
+            value=self.config.get("input_gain", 1.0),
+            lower=0.5,
+            upper=4.0,
+            step_increment=0.1,
+            page_increment=0.5
+        )
+        gain_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=gain_adj)
+        gain_scale.set_hexpand(True)
+        gain_scale.set_digits(1)
+        gain_scale.add_mark(1.0, Gtk.PositionType.BOTTOM, "1.0x")
+        gain_scale.add_mark(2.0, Gtk.PositionType.BOTTOM, "2.0x")
+        gain_scale.add_mark(3.0, Gtk.PositionType.BOTTOM, "3.0x")
+        gain_box.append(gain_scale)
+
+        gain_value_label = Gtk.Label(label=f"{gain_adj.get_value():.1f}x")
+        gain_value_label.set_size_request(45, -1)
+        gain_box.append(gain_value_label)
+
+        def on_gain_changed(adj):
+            gain_value_label.set_label(f"{adj.get_value():.1f}x")
+        gain_adj.connect("value-changed", on_gain_changed)
+
+        main_box.append(gain_box)
+
+        # --- Volume Dimming Section ---
+        dim_label = Gtk.Label(label="Volume Dimming While Recording")
+        dim_label.set_halign(Gtk.Align.START)
+        dim_label.add_css_class("heading")
+        dim_label.set_margin_top(12)
+        main_box.append(dim_label)
+
+        # Enable checkbox
+        dim_check = Gtk.CheckButton(label="Enable volume dimming")
+        dim_check.set_active(self.config.get("volume_dimming_enabled", False))
+        main_box.append(dim_check)
+
+        # Dimmed volume slider
+        dim_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        dim_adj = Gtk.Adjustment(
+            value=self.config.get("dimmed_volume", 0.10) * 100,
+            lower=0,
+            upper=100,
+            step_increment=5,
+            page_increment=10
+        )
+        dim_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=dim_adj)
+        dim_scale.set_hexpand(True)
+        dim_scale.set_digits(0)
+        dim_scale.add_mark(0, Gtk.PositionType.BOTTOM, "0%")
+        dim_scale.add_mark(50, Gtk.PositionType.BOTTOM, "50%")
+        dim_scale.add_mark(100, Gtk.PositionType.BOTTOM, "100%")
+        dim_box.append(dim_scale)
+
+        dim_value_label = Gtk.Label(label=f"{int(dim_adj.get_value())}%")
+        dim_value_label.set_size_request(45, -1)
+        dim_box.append(dim_value_label)
+
+        def on_dim_changed(adj):
+            dim_value_label.set_label(f"{int(adj.get_value())}%")
+        dim_adj.connect("value-changed", on_dim_changed)
+
+        main_box.append(dim_box)
+
+        # --- Buttons ---
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        button_box.set_halign(Gtk.Align.END)
+        button_box.set_margin_top(20)
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda b: dialog.close())
+        button_box.append(cancel_btn)
+
+        save_btn = Gtk.Button(label="Save")
+        save_btn.add_css_class("suggested-action")
+
+        def on_save(btn):
+            # Get selected device
+            sel_idx = device_dropdown.get_selected()
+            if sel_idx < len(self.devices):
+                new_device_index = self.devices[sel_idx]['index']
+                if new_device_index != self.selected_device_index:
+                    self.selected_device_index = new_device_index
+                    print(f"Changed input device to: {self.get_device_name(new_device_index)}")
+
+            # Update config
+            self.config["device_index"] = self.selected_device_index
+            self.config["input_gain"] = gain_adj.get_value()
+            self.config["volume_dimming_enabled"] = dim_check.get_active()
+            self.config["dimmed_volume"] = dim_adj.get_value() / 100.0
+
+            # Save to file
+            self.save_config()
+            print(f"Settings saved: device={self.selected_device_index}, gain={self.config['input_gain']:.1f}x, dim={self.config['volume_dimming_enabled']}, dim_vol={self.config['dimmed_volume']:.0%}")
+            dialog.close()
+
+        save_btn.connect("clicked", on_save)
+        button_box.append(save_btn)
+
+        main_box.append(button_box)
+
+        dialog.set_child(main_box)
+        dialog.present()
+
+    def save_config(self):
+        """Save current configuration to file."""
+        try:
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            print(f"Error saving config: {e}")
 
     def cleanup(self):
         """Clean up resources."""

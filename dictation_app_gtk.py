@@ -771,8 +771,8 @@ class DictationApp:
 
             print(f"Pasted: {self.pending_transcription}")
 
-            # Restore clipboard after a short delay
-            time.sleep(0.3)
+            # Restore clipboard immediately (minimal delay for paste to complete)
+            time.sleep(0.05)
             if self.old_clipboard is not None and len(self.old_clipboard) > 0:
                 try:
                     print(f"[DEBUG] Restoring clipboard: {len(self.old_clipboard)} bytes")

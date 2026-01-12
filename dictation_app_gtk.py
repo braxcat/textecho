@@ -59,6 +59,15 @@ class DictationApp:
         self.mouse_x = 960  # Track mouse position
         self.mouse_y = 540
 
+        # Confirmation mode state
+        self.pending_transcription = None
+        self.old_clipboard = None
+
+        # Early click detection during transcription
+        self.is_transcribing = False
+        self.early_left_click = False
+        self.early_right_click = False
+
         # Load config
         self.config = self.load_config()
 
@@ -98,6 +107,9 @@ class DictationApp:
             print("ERROR: No mouse devices with side buttons found!")
             print("Make sure you're in the 'input' group: sudo usermod -aG input $USER")
             sys.exit(1)
+
+        # Find keyboard devices for Escape key
+        self.keyboard_devices = self.find_keyboard_devices()
 
         print(f"Monitoring {len(self.mouse_devices)} mouse device(s):")
         for dev in self.mouse_devices:
@@ -183,31 +195,83 @@ class DictationApp:
                 continue
         return devices
 
+    def find_keyboard_devices(self):
+        """Find keyboard devices for Escape key monitoring."""
+        devices = []
+        for path in list_devices():
+            try:
+                device = InputDevice(path)
+                if 'virtual' in device.name.lower():
+                    continue
+                if ecodes.EV_KEY in device.capabilities():
+                    keys = device.capabilities()[ecodes.EV_KEY]
+                    # Look for devices with Escape key (keyboards)
+                    if ecodes.KEY_ESC in keys and ecodes.KEY_A in keys:
+                        devices.append(device)
+            except:
+                continue
+        return devices
+
     def monitor_mouse(self):
-        """Monitor mouse devices for button events (runs in background thread)."""
-        device_map = {dev.fd: dev for dev in self.mouse_devices}
+        """Monitor mouse and keyboard devices for button events (runs in background thread)."""
+        # Combine mouse and keyboard devices
+        device_map = {dev.fd: ('mouse', dev) for dev in self.mouse_devices}
+        device_map.update({dev.fd: ('keyboard', dev) for dev in self.keyboard_devices})
 
         while self.running:
             try:
                 r, _, _ = select.select(list(device_map.keys()), [], [], 0.1)
 
                 for fd in r:
-                    device = device_map[fd]
+                    dev_type, device = device_map[fd]
                     for event in device.read():
                         # Handle button press/release
-                        if event.type == ecodes.EV_KEY and event.code == MOUSE_BUTTON:
+                        if event.type == ecodes.EV_KEY:
                             key_event = categorize(event)
-                            if key_event.keystate == key_event.key_down:
-                                # Get mouse position right when button is pressed
-                                x, y = self.get_mouse_position()
-                                print(f"Mouse button pressed at ({x}, {y})")
-                                GLib.idle_add(self.start_recording_at_mouse)
-                            elif key_event.keystate == key_event.key_up:
-                                print("Mouse button released - stopping recording")
-                                GLib.idle_add(self.stop_and_transcribe)
+
+                            # Side button for recording (mouse only)
+                            if dev_type == 'mouse' and event.code == MOUSE_BUTTON:
+                                if key_event.keystate == key_event.key_down:
+                                    # Get mouse position right when button is pressed
+                                    x, y = self.get_mouse_position()
+                                    print(f"Mouse button pressed at ({x}, {y})")
+                                    GLib.idle_add(self.start_recording_at_mouse)
+                                elif key_event.keystate == key_event.key_up:
+                                    print("Mouse button released - stopping recording")
+                                    GLib.idle_add(self.stop_and_transcribe)
+
+                            # Left/Right click during transcription (early detection)
+                            elif dev_type == 'mouse' and self.is_transcribing and key_event.keystate == key_event.key_down:
+                                if event.code == ecodes.BTN_LEFT:
+                                    print("Early left-click detected during transcription")
+                                    self.early_left_click = True
+                                elif event.code == ecodes.BTN_RIGHT:
+                                    print("Early right-click detected during transcription")
+                                    self.early_right_click = True
+
+                            # Left/Right click during confirmation mode (mouse only)
+                            elif dev_type == 'mouse' and self.overlay.awaiting_confirmation and key_event.keystate == key_event.key_down:
+                                if event.code == ecodes.BTN_LEFT:
+                                    print("Left-click detected - confirming paste")
+                                    GLib.idle_add(lambda: self.overlay.handle_click(True))
+                                elif event.code == ecodes.BTN_RIGHT:
+                                    print("Right-click detected - canceling")
+                                    GLib.idle_add(lambda: self.overlay.handle_click(False))
+
+                            # Escape key during transcription (early cancel)
+                            elif dev_type == 'keyboard' and self.is_transcribing and key_event.keystate == key_event.key_down:
+                                if event.code == ecodes.KEY_ESC:
+                                    print("Early escape detected during transcription")
+                                    self.early_right_click = True
+
+                            # Escape key during confirmation mode (keyboard only)
+                            elif dev_type == 'keyboard' and self.overlay.awaiting_confirmation and key_event.keystate == key_event.key_down:
+                                if event.code == ecodes.KEY_ESC:
+                                    print("Escape pressed - canceling")
+                                    GLib.idle_add(lambda: self.overlay.handle_click(False))
             except Exception as e:
                 if self.running:
-                    print(f"Error in mouse monitoring: {e}")
+                    print(f"Error in input monitoring: {e}")
 
     def get_mouse_position(self):
         """Get current mouse position."""
@@ -255,6 +319,11 @@ class DictationApp:
         """Start audio recording."""
         self.is_recording = True
         self.frames = []
+
+        # Reset early click detection
+        self.early_left_click = False
+        self.early_right_click = False
+        self.is_transcribing = False
 
         # Reset interim transcription state
         self.interim_transcriptions = []
@@ -460,8 +529,9 @@ class DictationApp:
             self.overlay.hide()
             return
 
-        # Update status
+        # Update status and start transcription phase
         self.overlay.set_status("transcribing")
+        self.is_transcribing = True
 
         # Transcribe in background
         threading.Thread(target=self.save_and_transcribe, daemon=True).start()
@@ -494,6 +564,7 @@ class DictationApp:
 
             if rms < silence_threshold:
                 print(f"Audio too quiet (RMS={rms:.4f}), skipping transcription")
+                self.is_transcribing = False
                 GLib.idle_add(self.overlay.hide)
                 return
 
@@ -559,17 +630,44 @@ class DictationApp:
                 print(f"Filtered: too short ({len(final_transcription)} chars)")
                 final_transcription = ""
 
+            # End transcription phase
+            self.is_transcribing = False
+
             if final_transcription:
                 print(f"Transcription: {final_transcription}")
-                GLib.idle_add(self.overlay.hide)
-                time.sleep(0.2)
-                self.type_text(final_transcription)
+
+                # Check for early click detection
+                if self.early_right_click:
+                    print("Early cancel detected - skipping paste")
+                    self.early_right_click = False
+                    self.early_left_click = False
+                    GLib.idle_add(self.overlay.hide)
+                elif self.early_left_click:
+                    print("Early confirm detected - pasting immediately")
+                    self.early_right_click = False
+                    self.early_left_click = False
+                    self.pending_transcription = final_transcription
+                    self.prepare_clipboard_for_confirmation(final_transcription)
+                    GLib.idle_add(self.overlay.hide)
+                    time.sleep(0.1)
+                    self._do_paste()
+                else:
+                    # No early click - show confirmation dialog
+                    self.pending_transcription = final_transcription
+                    self.prepare_clipboard_for_confirmation(final_transcription)
+                    GLib.idle_add(
+                        self.overlay.show_confirmation,
+                        final_transcription,
+                        self.on_confirm_paste,
+                        self.on_cancel_paste
+                    )
             else:
                 print("No transcription")
                 GLib.idle_add(self.overlay.hide)
 
         except Exception as e:
             print(f"Error in transcription: {e}")
+            self.is_transcribing = False
             GLib.idle_add(self.overlay.hide)
 
     def send_to_daemon(self, audio_file):
@@ -599,50 +697,123 @@ class DictationApp:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def type_text(self, text):
-        """Paste text using clipboard."""
+    def prepare_clipboard_for_confirmation(self, text):
+        """Save current clipboard and copy transcription text for confirmation."""
+        # First, save current clipboard (don't let later errors erase this)
+        try:
+            result = subprocess.run(["wl-paste", "-n"], capture_output=True, timeout=0.5)
+            if result.returncode == 0 and result.stdout:
+                self.old_clipboard = result.stdout
+                print(f"[DEBUG] Saved clipboard: {len(self.old_clipboard)} bytes")
+            else:
+                self.old_clipboard = None
+                print(f"[DEBUG] No clipboard to save (returncode={result.returncode})")
+        except subprocess.TimeoutExpired:
+            print(f"[DEBUG] wl-paste timed out - skipping clipboard save")
+            self.old_clipboard = None
+        except Exception as e:
+            print(f"[DEBUG] Error saving clipboard: {e}")
+            self.old_clipboard = None
+
+        # Then, copy transcription to clipboard (errors here shouldn't affect saved clipboard)
+        try:
+            subprocess.run(["wl-copy", "--", text], check=True, timeout=0.5)
+            subprocess.run(["wl-copy", "--primary", "--", text], timeout=0.5)
+            print(f"[DEBUG] Set clipboard to transcription")
+        except subprocess.TimeoutExpired:
+            print(f"[DEBUG] wl-copy timed out (will retry in _do_paste)")
+        except Exception as e:
+            print(f"[DEBUG] Error setting clipboard: {e} (will retry in _do_paste)")
+
+    def on_confirm_paste(self):
+        """Handle user confirmation to paste the transcription."""
+        # Hide overlay first
+        self.overlay.hide()
+
+        # Run paste operation in background thread (don't block GTK main thread)
+        threading.Thread(target=self._do_paste, daemon=True).start()
+
+    def _do_paste(self):
+        """Perform the actual paste operation (runs in background thread)."""
+        import time
         env = os.environ.copy()
         env['YDOTOOL_SOCKET'] = '/tmp/.ydotool_socket'
 
+        # Debug: check what we have saved
+        if self.old_clipboard is not None:
+            print(f"[DEBUG] _do_paste: old_clipboard = {len(self.old_clipboard)} bytes")
+        else:
+            print(f"[DEBUG] _do_paste: old_clipboard = None")
+
         try:
-            # Save clipboard
-            old_clipboard = None
-            try:
-                result = subprocess.run(["wl-paste", "-n"], capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    old_clipboard = result.stdout
-            except:
-                pass
+            # Delay to let window/focus events settle (terminals need more time)
+            time.sleep(0.15)
 
-            # Set both clipboards (regular and primary for terminal compatibility)
-            subprocess.run(["wl-copy", "--", text], check=True, timeout=2)
-            subprocess.run(["wl-copy", "--primary", "--", text], check=True, timeout=2)
-
-            import time
-            time.sleep(0.05)
-
-            # Verify clipboard was set correctly before pasting
-            try:
-                verify = subprocess.run(["wl-paste", "-n"], capture_output=True, timeout=2)
-                if verify.returncode != 0 or verify.stdout.decode().strip() != text.strip():
-                    print("[DEBUG] Clipboard verification failed, skipping paste")
-                    return
-            except Exception as e:
-                print(f"[DEBUG] Clipboard verification error: {e}, skipping paste")
-                return
+            # Verify clipboard still has our text before pasting
+            text = self.pending_transcription
+            if text:
+                try:
+                    verify = subprocess.run(["wl-paste", "-n"], capture_output=True, timeout=2)
+                    if verify.returncode != 0 or verify.stdout.decode().strip() != text.strip():
+                        # Re-set clipboard if it changed
+                        print("[DEBUG] Re-setting clipboard before paste")
+                        subprocess.run(["wl-copy", "--", text], check=True, timeout=2)
+                        subprocess.run(["wl-copy", "--primary", "--", text], check=True, timeout=2)
+                        time.sleep(0.1)
+                    else:
+                        # Clipboard verified OK, small delay before paste
+                        time.sleep(0.05)
+                except Exception as e:
+                    print(f"[DEBUG] Clipboard verification error: {e}")
+                    # Try to set clipboard anyway
+                    subprocess.run(["wl-copy", "--", text], check=True, timeout=2)
+                    subprocess.run(["wl-copy", "--primary", "--", text], check=True, timeout=2)
+                    time.sleep(0.1)
 
             # Paste with Shift+Insert
             subprocess.run(["ydotool", "key", "shift+insert"], env=env, check=True, timeout=5)
 
-            # Wait 5 seconds before restoring clipboard (gives time to paste again if needed)
-            time.sleep(5.0)
+            print(f"Pasted: {self.pending_transcription}")
 
-            # Restore clipboard
-            if old_clipboard is not None:
-                subprocess.run(["wl-copy", "--"], input=old_clipboard, timeout=2)
+            # Restore clipboard after a short delay
+            time.sleep(0.3)
+            if self.old_clipboard is not None and len(self.old_clipboard) > 0:
+                try:
+                    subprocess.run(["wl-copy"], input=self.old_clipboard, timeout=2)
+                    print("[DEBUG] Clipboard restored")
+                except Exception as e:
+                    print(f"[DEBUG] Failed to restore clipboard: {e}")
+            else:
+                # Clear clipboard if there was nothing before
+                try:
+                    subprocess.run(["wl-copy", "--clear"], timeout=2)
+                    print("[DEBUG] Clipboard cleared")
+                except:
+                    pass
 
         except Exception as e:
             print(f"Paste error: {e}")
+        finally:
+            self.old_clipboard = None
+            self.pending_transcription = None
+
+    def on_cancel_paste(self):
+        """Handle user cancellation - restore original clipboard."""
+        try:
+            # Restore original clipboard
+            if self.old_clipboard is not None and len(self.old_clipboard) > 0:
+                subprocess.run(["wl-copy"], input=self.old_clipboard, timeout=2)
+                print("Cancelled - clipboard restored")
+            else:
+                # Clear clipboard if we didn't have anything saved
+                subprocess.run(["wl-copy", "--clear"], timeout=2)
+                print("Cancelled - clipboard cleared")
+        except Exception as e:
+            print(f"Error restoring clipboard: {e}")
+        finally:
+            self.old_clipboard = None
+            self.pending_transcription = None
+            self.overlay.hide()
 
     def cleanup(self):
         """Clean up resources."""

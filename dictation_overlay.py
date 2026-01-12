@@ -193,18 +193,27 @@ class DictationOverlay:
         self.app = None
         self.window = None
         self.waveform = None
+        self.waveform_frame = None
+        self.middle_box = None
         self.status_label = None
         self.interim_label = None
         self.info_label = None
+        self.transcription_label = None
         self.is_visible = False
         self.follow_mouse_id = None
         self.use_layer_shell = False
         self.use_gnome_extension = False
 
+        # Confirmation mode state
+        self.awaiting_confirmation = False
+        self.on_confirm_callback = None
+        self.on_cancel_callback = None
+
         # Window dimensions
         self.width = 400
         self.height_compact = 200
         self.height_expanded = 280
+        self.height_confirmation = 120  # Smaller for confirmation (just text + instructions)
         self.height = self.height_compact
         self.target_height = self.height_compact
         self.resize_timeout_id = None
@@ -265,8 +274,21 @@ class DictationOverlay:
         # Create content
         self._create_content()
 
+        # Add keyboard event controller for Escape to cancel
+        key_controller = Gtk.EventControllerKey()
+        key_controller.connect('key-pressed', self._on_key_pressed)
+        self.window.add_controller(key_controller)
+
         # Start hidden
         self.window.set_visible(False)
+
+    def _on_key_pressed(self, controller, keyval, keycode, state):
+        """Handle keyboard events on the overlay window."""
+        if self.awaiting_confirmation and keyval == Gdk.KEY_Escape:
+            print("Escape pressed - canceling")
+            self.handle_click(False)
+            return True  # Event handled
+        return False
 
     def _apply_css(self):
         """Apply CSS styling for Tokyo Night theme."""
@@ -307,6 +329,29 @@ class DictationOverlay:
             background-color: rgba(17, 18, 26, 0.8);
             border-radius: 6px;
         }}
+
+        .status-confirmation {{
+            color: #7aa2f7;
+            font-size: 18px;
+            font-weight: bold;
+        }}
+
+        .transcription-text {{
+            color: #c0caf5;
+            font-size: 14px;
+            padding: 8px 10px;
+            background-color: rgba(17, 18, 26, 0.95);
+            border-radius: 8px;
+            margin-bottom: 6px;
+        }}
+
+        .info-confirm {{
+            color: #9ece6a;
+        }}
+
+        .info-cancel {{
+            color: #f7768e;
+        }}
         """
 
         css_provider = Gtk.CssProvider()
@@ -332,20 +377,30 @@ class DictationOverlay:
         self.status_label.add_css_class("status-recording")
         main_box.append(self.status_label)
 
-        # Waveform container
-        waveform_frame = Gtk.Frame()
-        waveform_frame.add_css_class("waveform-container")
+        # Waveform container (hidden during confirmation)
+        self.waveform_frame = Gtk.Frame()
+        self.waveform_frame.add_css_class("waveform-container")
 
         self.waveform = WaveformDrawingArea()
         self.waveform.set_size_request(self.width - 50, 100)
-        waveform_frame.set_child(self.waveform)
-        main_box.append(waveform_frame)
+        self.waveform_frame.set_child(self.waveform)
+        main_box.append(self.waveform_frame)
+
+        # Transcription display label (shown during confirmation, hidden otherwise)
+        self.transcription_label = Gtk.Label(label="")
+        self.transcription_label.add_css_class("transcription-text")
+        self.transcription_label.set_wrap(True)
+        self.transcription_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.transcription_label.set_max_width_chars(45)
+        self.transcription_label.set_visible(False)
+        self.transcription_label.set_selectable(True)
+        main_box.append(self.transcription_label)
 
         # Middle spacer box - always expands to fill available space
         # This keeps info_label anchored to the bottom
-        middle_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        middle_box.set_vexpand(True)  # Always absorbs extra vertical space
-        middle_box.set_valign(Gtk.Align.FILL)
+        self.middle_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.middle_box.set_vexpand(True)  # Always absorbs extra vertical space
+        self.middle_box.set_valign(Gtk.Align.FILL)
 
         # Interim transcription label (hidden until we have text)
         self.interim_label = Gtk.Label(label="")
@@ -355,9 +410,9 @@ class DictationOverlay:
         self.interim_label.set_max_width_chars(45)
         self.interim_label.set_visible(False)
         self.interim_label.set_valign(Gtk.Align.START)  # Align to top of middle_box
-        middle_box.append(self.interim_label)
+        self.middle_box.append(self.interim_label)
 
-        main_box.append(middle_box)
+        main_box.append(self.middle_box)
 
         # Info label - stays at bottom (no vexpand, so it takes only its natural size)
         self.info_label = Gtk.Label(label="Release mouse button to transcribe")
@@ -451,10 +506,20 @@ class DictationOverlay:
     def set_status(self, status):
         """Set the status display."""
         if status == "recording":
+            self.awaiting_confirmation = False
+            self.status_label.set_visible(True)
             self.status_label.set_text("Recording...")
             self.status_label.remove_css_class("status-transcribing")
+            self.status_label.remove_css_class("status-confirmation")
             self.status_label.add_css_class("status-recording")
             self.info_label.set_text("Release mouse button to transcribe")
+            self.info_label.remove_css_class("info-confirm")
+            self.info_label.remove_css_class("info-cancel")
+            # Show waveform and spacer, hide transcription
+            self.waveform_frame.set_visible(True)
+            self.middle_box.set_visible(True)
+            self.middle_box.set_vexpand(True)  # Re-enable expand for recording mode
+            self.transcription_label.set_visible(False)
             # Clear interim text and reset to compact size
             if self.interim_label:
                 self.interim_label.set_text("")
@@ -463,10 +528,89 @@ class DictationOverlay:
             self.target_height = self.height_compact
             self.window.set_default_size(self.width, self.height)
         elif status == "transcribing":
+            self.awaiting_confirmation = False
+            self.status_label.set_visible(True)
             self.status_label.set_text("Transcribing...")
             self.status_label.remove_css_class("status-recording")
+            self.status_label.remove_css_class("status-confirmation")
             self.status_label.add_css_class("status-transcribing")
             self.info_label.set_text("Please wait...")
+            self.info_label.remove_css_class("info-confirm")
+            self.info_label.remove_css_class("info-cancel")
+            # Hide interim text and reset to compact size
+            if self.interim_label:
+                self.interim_label.set_text("")
+                self.interim_label.set_visible(False)
+            self._animate_to_height(self.height_compact)
+
+    def show_confirmation(self, text, on_confirm, on_cancel):
+        """Show confirmation mode with transcribed text.
+
+        Args:
+            text: The transcribed text to display
+            on_confirm: Callback to call when user left-clicks (paste)
+            on_cancel: Callback to call when user right-clicks (dismiss)
+        """
+        self.on_confirm_callback = on_confirm
+        self.on_cancel_callback = on_cancel
+
+        # Cancel any pending resize animation
+        if self.resize_timeout_id:
+            GLib.source_remove(self.resize_timeout_id)
+            self.resize_timeout_id = None
+
+        # Hide status label entirely in confirmation mode
+        self.status_label.set_visible(False)
+
+        # Hide waveform and spacer, show transcription
+        self.waveform_frame.set_visible(False)
+        self.middle_box.set_visible(False)
+        self.middle_box.set_vexpand(False)  # Disable expand so it doesn't take space when hidden
+        self.interim_label.set_visible(False)
+        self.transcription_label.set_text(text)
+        self.transcription_label.set_visible(True)
+
+        # Update info label with instructions
+        self.info_label.set_text("Left-click to paste  •  Right-click/Esc to cancel")
+
+        # Calculate target height based on text content
+        # ~40 chars per line at current width, ~18px per line
+        num_lines = max(1, (len(text) + 39) // 40)
+        text_height = 16 + (num_lines * 18) + 16  # padding + lines + padding
+        info_height = 30  # info label height
+        margins = 30  # top + bottom margins
+        target_height = text_height + info_height + margins
+
+        # Animate to the calculated height
+        self._animate_to_height(target_height)
+
+        # Enable confirmation mode after a brief delay to let events settle
+        def enable_confirmation():
+            self.awaiting_confirmation = True
+            return False
+        GLib.timeout_add(100, enable_confirmation)
+
+    def handle_click(self, is_left_click):
+        """Handle mouse click during confirmation mode.
+
+        Args:
+            is_left_click: True for left-click (paste), False for right-click (cancel)
+        """
+        if not self.awaiting_confirmation:
+            return False
+
+        self.awaiting_confirmation = False
+
+        if is_left_click and self.on_confirm_callback:
+            self.on_confirm_callback()
+        elif not is_left_click and self.on_cancel_callback:
+            self.on_cancel_callback()
+
+        # Clear callbacks
+        self.on_confirm_callback = None
+        self.on_cancel_callback = None
+
+        return True
 
     def set_interim_text(self, text):
         """Update the interim transcription display."""

@@ -310,6 +310,48 @@ class DictationOverlay:
             font-weight: bold;
         }}
 
+        .status-thinking {{
+            color: #7dcfff;
+            font-size: 18px;
+            font-weight: bold;
+        }}
+
+        .prompt-text {{
+            color: #565f89;
+            font-size: 12px;
+            font-style: italic;
+            padding: 4px 10px;
+            margin-bottom: 4px;
+        }}
+
+        .register-box {{
+            padding: 4px 8px;
+            margin-bottom: 6px;
+        }}
+
+        .register-indicator {{
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2px 6px;
+            margin: 0 2px;
+            border-radius: 4px;
+        }}
+
+        .register-filled {{
+            background-color: rgba(122, 162, 247, 0.3);
+            color: #7aa2f7;
+        }}
+
+        .register-empty {{
+            background-color: rgba(86, 95, 137, 0.2);
+            color: #565f89;
+        }}
+
+        .register-clipboard {{
+            background-color: rgba(158, 206, 106, 0.3);
+            color: #9ece6a;
+        }}
+
         .status-info {{
             color: #a9b1d6;
             font-size: 12px;
@@ -385,6 +427,38 @@ class DictationOverlay:
         self.waveform.set_size_request(self.width - 50, 100)
         self.waveform_frame.set_child(self.waveform)
         main_box.append(self.waveform_frame)
+
+        # Register indicators (shows which registers have content during LLM mode)
+        self.register_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        self.register_box.add_css_class("register-box")
+        self.register_box.set_halign(Gtk.Align.CENTER)
+        self.register_box.set_visible(False)
+
+        # Clipboard indicator
+        self.clipboard_indicator = Gtk.Label(label="CB")
+        self.clipboard_indicator.add_css_class("register-indicator")
+        self.clipboard_indicator.add_css_class("register-empty")
+        self.register_box.append(self.clipboard_indicator)
+
+        # Register 1-9 indicators
+        self.register_indicators = {}
+        for i in range(1, 10):
+            indicator = Gtk.Label(label=str(i))
+            indicator.add_css_class("register-indicator")
+            indicator.add_css_class("register-empty")
+            self.register_indicators[i] = indicator
+            self.register_box.append(indicator)
+
+        main_box.append(self.register_box)
+
+        # Prompt label (shows spoken prompt during LLM streaming)
+        self.prompt_label = Gtk.Label(label="")
+        self.prompt_label.add_css_class("prompt-text")
+        self.prompt_label.set_wrap(True)
+        self.prompt_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.prompt_label.set_max_width_chars(45)
+        self.prompt_label.set_visible(False)
+        main_box.append(self.prompt_label)
 
         # Transcription display label (shown during confirmation, hidden otherwise)
         self.transcription_label = Gtk.Label(label="")
@@ -515,11 +589,13 @@ class DictationOverlay:
             self.info_label.set_text("Release mouse button to transcribe")
             self.info_label.remove_css_class("info-confirm")
             self.info_label.remove_css_class("info-cancel")
-            # Show waveform and spacer, hide transcription
+            # Show waveform and spacer, hide transcription, prompt, and registers
             self.waveform_frame.set_visible(True)
             self.middle_box.set_visible(True)
             self.middle_box.set_vexpand(True)  # Re-enable expand for recording mode
             self.transcription_label.set_visible(False)
+            self.prompt_label.set_visible(False)
+            self.register_box.set_visible(False)
             # Clear interim text and reset to compact size
             if self.interim_label:
                 self.interim_label.set_text("")
@@ -533,6 +609,7 @@ class DictationOverlay:
             self.status_label.set_text("Transcribing...")
             self.status_label.remove_css_class("status-recording")
             self.status_label.remove_css_class("status-confirmation")
+            self.status_label.remove_css_class("status-thinking")
             self.status_label.add_css_class("status-transcribing")
             self.info_label.set_text("Please wait...")
             self.info_label.remove_css_class("info-confirm")
@@ -542,6 +619,87 @@ class DictationOverlay:
                 self.interim_label.set_text("")
                 self.interim_label.set_visible(False)
             self._animate_to_height(self.height_compact)
+        elif status == "thinking":
+            self.awaiting_confirmation = False
+            self.status_label.set_visible(True)
+            self.status_label.set_text("Thinking...")
+            self.status_label.remove_css_class("status-recording")
+            self.status_label.remove_css_class("status-confirmation")
+            self.status_label.remove_css_class("status-transcribing")
+            self.status_label.add_css_class("status-thinking")
+            self.info_label.set_text("Processing with LLM...")
+            self.info_label.remove_css_class("info-confirm")
+            self.info_label.remove_css_class("info-cancel")
+            # Hide waveform, show streaming text area
+            self.waveform_frame.set_visible(False)
+            self.middle_box.set_visible(False)
+            self.transcription_label.set_text("")
+            self.transcription_label.set_visible(True)
+            self._animate_to_height(self.height_compact)
+
+    def update_register_indicators(self, has_clipboard=False, filled_registers=None):
+        """Update which register indicators are shown as filled.
+
+        Args:
+            has_clipboard: True if primary clipboard has content
+            filled_registers: Set or list of register numbers (1-9) that have content
+        """
+        if filled_registers is None:
+            filled_registers = set()
+
+        # Update clipboard indicator
+        self.clipboard_indicator.remove_css_class("register-empty")
+        self.clipboard_indicator.remove_css_class("register-clipboard")
+        if has_clipboard:
+            self.clipboard_indicator.add_css_class("register-clipboard")
+        else:
+            self.clipboard_indicator.add_css_class("register-empty")
+
+        # Update register indicators
+        for i in range(1, 10):
+            indicator = self.register_indicators[i]
+            indicator.remove_css_class("register-empty")
+            indicator.remove_css_class("register-filled")
+            if i in filled_registers:
+                indicator.add_css_class("register-filled")
+            else:
+                indicator.add_css_class("register-empty")
+
+    def show_llm_recording(self, has_clipboard=False, filled_registers=None):
+        """Show LLM recording mode with register indicators."""
+        self.set_status("recording")
+        self.status_label.set_text("Recording prompt...")
+        self.info_label.set_text("Release to send to LLM")
+        # Show register indicators
+        self.update_register_indicators(has_clipboard, filled_registers)
+        self.register_box.set_visible(True)
+
+    def start_streaming(self, prompt=""):
+        """Initialize streaming mode - hide waveform, show prompt, prepare for response."""
+        self.set_status("thinking")
+        self.streaming_text = ""
+        # Hide register indicators during streaming
+        self.register_box.set_visible(False)
+        # Show the prompt above the response
+        if prompt:
+            self.prompt_label.set_text(f'"{prompt}"')
+            self.prompt_label.set_visible(True)
+        else:
+            self.prompt_label.set_visible(False)
+        self.transcription_label.set_text("")
+
+    def append_streaming_token(self, token):
+        """Append a token to the streaming display."""
+        if not hasattr(self, 'streaming_text'):
+            self.streaming_text = ""
+        self.streaming_text += token
+        self.transcription_label.set_text(self.streaming_text)
+        # Adjust height based on content
+        num_lines = max(1, (len(self.streaming_text) + 39) // 40)
+        text_height = 50 + (num_lines * 18)
+        target = min(text_height + 80, 400)  # Cap at 400px
+        if target > self.height:
+            self._animate_to_height(target)
 
     def show_confirmation(self, text, on_confirm, on_cancel):
         """Show confirmation mode with transcribed text.

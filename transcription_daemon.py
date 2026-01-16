@@ -63,12 +63,20 @@ class TranscriptionDaemon:
             "hotwords", None
         )  # Words to favor (space-separated)
 
+        # Preload model option (load at startup instead of on first use)
+        self.preload_model = self.config.get("preload_transcription_model", False)
+
         print(f"Transcription daemon initialized")
         print(
             f"Model idle timeout: {self.idle_timeout}s ({self.idle_timeout / 60:.1f} minutes)"
         )
         print(f"Device: {self.device}")
         print(f"Model path: {self.model_path}")
+
+        # Preload model if configured
+        if self.preload_model:
+            print("Preloading model at startup...")
+            self.load_model()
 
     def load_config(self):
         """Load configuration from file"""
@@ -172,7 +180,72 @@ class TranscriptionDaemon:
                 if self.hotwords:
                     kwargs["hotwords"] = self.hotwords
 
+                print(f"[DEBUG] Calling model.generate() with kwargs: {kwargs}")
                 result = self.model.generate(data.tolist(), **kwargs)
+                print(f"[DEBUG] generate() returned: {type(result)}")
+
+                # Extract text from WhisperDecodedResults object
+                if hasattr(result, "texts"):
+                    # Result has multiple texts, join them
+                    transcription = " ".join(result.texts)
+                elif hasattr(result, "text"):
+                    # Result has single text attribute
+                    transcription = result.text
+                else:
+                    # Fall back to string conversion
+                    transcription = str(result)
+
+            return {"success": True, "transcription": transcription}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def transcribe_raw(self, audio_data, sample_rate):
+        """Transcribe raw audio data (no disk I/O)"""
+        try:
+            # Load model if not loaded
+            if not self.model_loaded:
+                self.load_model()
+
+            # Update last request time and reset unload timer
+            self.last_request_time = time.time()
+            self.reset_unload_timer()
+
+            # Convert bytes to numpy array
+            data = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+
+            # Resample if needed
+            if sample_rate != 16000:
+                ratio = 16000 / sample_rate
+                new_length = int(len(data) * ratio)
+                data = np.interp(
+                    np.linspace(0, len(data), new_length), np.arange(len(data)), data
+                )
+
+            # Generate transcription
+            with self.lock:
+                # Build generate kwargs from config
+                kwargs = {"max_new_tokens": 100}
+                if self.num_beams:
+                    kwargs["num_beams"] = self.num_beams
+                if self.temperature is not None:
+                    kwargs["temperature"] = self.temperature
+                if self.repetition_penalty:
+                    kwargs["repetition_penalty"] = self.repetition_penalty
+                if self.length_penalty is not None:
+                    kwargs["length_penalty"] = self.length_penalty
+                if self.language:
+                    kwargs["language"] = self.language
+                if self.task:
+                    kwargs["task"] = self.task
+                if self.initial_prompt:
+                    kwargs["initial_prompt"] = self.initial_prompt
+                if self.hotwords:
+                    kwargs["hotwords"] = self.hotwords
+
+                print(f"[DEBUG] Calling model.generate() with kwargs: {kwargs}")
+                result = self.model.generate(data.tolist(), **kwargs)
+                print(f"[DEBUG] generate() returned: {type(result)}")
 
                 # Extract text from WhisperDecodedResults object
                 if hasattr(result, "texts"):
@@ -193,25 +266,55 @@ class TranscriptionDaemon:
     def handle_client(self, conn):
         """Handle client connection"""
         try:
-            # Receive request
+            # Receive request header (JSON until newline)
             data = b""
             while True:
                 chunk = conn.recv(4096)
                 if not chunk:
                     break
                 data += chunk
-                if b"\n" in chunk:  # Use newline as message delimiter
+                if b"\n" in data:  # Use newline as message delimiter
                     break
 
             if not data:
                 return
 
-            request = json.loads(data.decode())
+            # Split at newline - only decode the JSON part
+            json_end = data.index(b"\n")
+            json_bytes = data[:json_end]
+            extra_bytes = data[json_end + 1:]  # Any audio data that came with the header
+
+            request = json.loads(json_bytes.decode())
             command = request.get("command")
 
             if command == "transcribe":
                 audio_file = request.get("audio_file")
                 result = self.transcribe(audio_file)
+                response = json.dumps(result) + "\n"
+                conn.sendall(response.encode())
+
+            elif command == "transcribe_raw":
+                # Receive raw audio data (no disk I/O)
+                sample_rate = request.get("sample_rate")
+                data_length = request.get("data_length")
+
+                # Start with any extra bytes that came with the header
+                audio_data = extra_bytes
+                remaining = data_length - len(audio_data)
+
+                # Receive the rest of the audio data
+                while remaining > 0:
+                    chunk = conn.recv(min(remaining, 65536))
+                    if not chunk:
+                        break
+                    audio_data += chunk
+                    remaining -= len(chunk)
+
+                if len(audio_data) != data_length:
+                    result = {"success": False, "error": f"Incomplete audio data: expected {data_length}, got {len(audio_data)}"}
+                else:
+                    result = self.transcribe_raw(audio_data, sample_rate)
+
                 response = json.dumps(result) + "\n"
                 conn.sendall(response.encode())
 

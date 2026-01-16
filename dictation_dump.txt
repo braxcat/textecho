@@ -1,0 +1,955 @@
+============================================================
+LLM PROMPT DUMP (STREAMING)
+============================================================
+
+System Prompt:
+None
+
+------------------------------------------------------------
+Context:
+[Current Clipboard]:
+<?php
+namespace App\Security;
+
+
+if (!defined('APP_RUNNING')) {
+    die('Direct access is not allowed.');
+}
+
+class Authentication {
+    private $secretKey;
+    private const REMEMBER_COOKIE_PREFIX = 'project_auth_';
+    private const REMEMBER_DURATION = 7776000; // 90 days in seconds
+    private const TOKENS_FILE = __DIR__ . '/../../data/remember_tokens.json';
+    private const DEVICE_LOG_FILE = __DIR__ . '/../../data/device_log.json';
+
+    public function __construct() {
+        $this->secretKey = SECRET_KEY;
+        $dataDir = __DIR__ . '/../../data';
+        
+        // Ensure the data directory exists with proper permissions
+        if (!file_exists($dataDir)) {
+            if (!@mkdir($dataDir, 0775, true)) {
+                error_log('Failed to create data directory. Please create it manually and ensure www-data has write permissions.');
+                throw new \RuntimeException('Failed to create data directory. Check error log for details.');
+            }
+            
+            // Try to set proper ownership if running as root (e.g. during deployment)
+            if (function_exists('posix_getpwnam')) {
+                $webUser = posix_getpwnam('www-data');
+                if ($webUser && posix_geteuid() === 0) {
+                    chown($dataDir, $webUser['uid']);
+                    chgrp($dataDir, $webUser['gid']);
+                }
+            }
+        }
+        
+        // Ensure directory is writable
+        if (!is_writable($dataDir)) {
+            error_log("Data directory is not writable. Please ensure www-data has write permissions: $dataDir");
+            throw new \RuntimeException('Data directory is not writable. Check error log for details.');
+        }
+        
+        // Create tokens file if it doesn't exist
+        if (!file_exists(self::TOKENS_FILE)) {
+            if (!@file_put_contents(self::TOKENS_FILE, '{}')) {
+                error_log('Failed to create tokens file. Please check directory permissions.');
+                throw new \RuntimeException('Failed to create tokens file. Check error log for details.');
+            }
+            // Set proper permissions for the tokens file
+            chmod(self::TOKENS_FILE, 0664);
+            
+            // Try to set proper ownership if running as root
+            if (function_exists('posix_getpwnam')) {
+                $webUser = posix_getpwnam('www-data');
+                if ($webUser && posix_geteuid() === 0) {
+                    chown(self::TOKENS_FILE, $webUser['uid']);
+                    chgrp(self::TOKENS_FILE, $webUser['gid']);
+                }
+            }
+        }
+
+        // Create device log file if it doesn't exist
+        if (!file_exists(self::DEVICE_LOG_FILE)) {
+            if (!@file_put_contents(self::DEVICE_LOG_FILE, '{}')) {
+                error_log('Failed to create device log file. Please check directory permissions.');
+                throw new \RuntimeException('Failed to create device log file. Check error log for details.');
+            }
+            chmod(self::DEVICE_LOG_FILE, 0664);
+            if (function_exists('posix_getpwnam')) {
+                $webUser = posix_getpwnam('www-data');
+                if ($webUser && posix_geteuid() === 0) {
+                    chown(self::DEVICE_LOG_FILE, $webUser['uid']);
+                    chgrp(self::DEVICE_LOG_FILE, $webUser['gid']);
+                }
+            }
+        }
+    }
+
+    private function findMatchingDevice($currentFingerprint) {
+        $tokens = $this->getTokensFromFile();
+        foreach ($tokens as $projectTokens) {
+            foreach ($projectTokens as $token) {
+                if (isset($token['fingerprint']) && 
+                    !$this->isSignificantFingerprintChange($token['fingerprint'], $currentFingerprint)) {
+                    return $token['fingerprint']; // Return the stored fingerprint as device identifier
+                }
+            }
+        }
+        return null;
+    }
+
+    private function logDeviceEvent($fingerprint, $eventType, $projectId = null) {
+        $deviceLogs = json_decode(file_get_contents(self::DEVICE_LOG_FILE), true) ?? [];
+        $fingerprintHash = hash('sha256', json_encode($fingerprint));
+        
+        if (!isset($deviceLogs[$fingerprintHash])) {
+            $deviceLogs[$fingerprintHash] = [
+                'first_seen' => time(),
+                'events' => []
+            ];
+        }
+
+        $deviceLogs[$fingerprintHash]['events'][] = [
+            'timestamp' => time(),
+            'type' => $eventType,
+            'project_id' => $projectId,
+            'fingerprint' => $fingerprint,
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+        ];
+
+        if (count($deviceLogs[$fingerprintHash]['events']) > 100) {
+            $deviceLogs[$fingerprintHash]['events'] = array_slice(
+                $deviceLogs[$fingerprintHash]['events'], 
+                -100
+            );
+        }
+
+        file_put_contents(self::DEVICE_LOG_FILE, json_encode($deviceLogs, JSON_PRETTY_PRINT));
+    }
+
+    public function setRememberMeCookie($projectId) {
+        $token = $this->generateRememberToken($projectId);
+        $expiry = time() + self::REMEMBER_DURATION;
+        $fingerprint = $this->getDeviceFingerprint();
+        
+        setcookie(
+            $this->getCookieName($projectId),
+            $token,
+            [
+                'expires' => $expiry,
+                'path' => '/',
+                'domain' => '',
+                'secure' => true,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]
+        );
+        
+        $this->storeRememberToken($projectId, $token, $expiry, $fingerprint);
+        $this->logDeviceEvent($fingerprint, 'remember_me_set', $projectId);
+    }
+
+    private function removeTokensByFingerprint($fingerprint, $projectId = null) {
+        $tokens = $this->getTokensFromFile();
+        $modified = false;
+        $removedCount = 0;
+        
+        foreach ($tokens as $currentProjectId => &$projectTokens) {
+            // If a project ID is specified, only remove tokens for that project
+            if ($projectId !== null && $currentProjectId !== $projectId) {
+                continue;
+            }
+            
+            $originalCount = count($projectTokens);
+            
+            $projectTokens = array_filter($projectTokens, function($token) use ($fingerprint) {
+                return !isset($token['fingerprint']) || 
+                       $this->isSignificantFingerprintChange($token['fingerprint'], $fingerprint);
+            });
+            
+            $tokensRemoved = $originalCount - count($projectTokens);
+            if ($tokensRemoved > 0) {
+                $modified = true;
+                $removedCount += $tokensRemoved;
+                error_log("Removed $tokensRemoved tokens for matching fingerprint in project $currentProjectId");
+            }
+            
+            if (empty($projectTokens)) {
+                unset($tokens[$currentProjectId]);
+                error_log("Removed empty project $currentProjectId after token cleanup");
+            }
+        }
+        
+        if ($modified) {
+            file_put_contents(self::TOKENS_FILE, json_encode($tokens, JSON_PRETTY_PRINT));
+            $scope = $projectId ? "project $projectId" : "all projects";
+            error_log("Total tokens removed for matching fingerprint in $scope: $removedCount");
+        }
+        
+        return $modified;
+    }
+
+    public function checkRememberMeCookie($projectId) {
+        $cookieName = $this->getCookieName($projectId);
+        $currentFingerprint = $this->getDeviceFingerprint();
+        
+        // If no remember me cookie but we find a matching device fingerprint
+        if (!isset($_COOKIE[$cookieName])) {
+            $matchingFingerprint = $this->findMatchingDevice($currentFingerprint);
+            if ($matchingFingerprint) {
+                // We found a matching device but its cookies are gone
+                $this->logDeviceEvent($currentFingerprint, 'cookies_cleared', $projectId);
+                error_log("Cookies cleared detected for device with matching fingerprint on project $projectId");
+                
+                // Remove tokens only for this project
+                if ($this->removeTokensByFingerprint($matchingFingerprint, $projectId)) {
+                    error_log("Successfully removed tokens for device after cookies cleared in project $projectId");
+                }
+            } else {
+                // Truly new device
+                $this->logDeviceEvent($currentFingerprint, 'new_device', $projectId);
+            }
+            return false;
+        }
+
+        $token = $_COOKIE[$cookieName];
+        $tokenData = $this->getStoredToken($projectId);
+        
+        if (!$tokenData) {
+            $this->logDeviceEvent($currentFingerprint, 'invalid_token', $projectId);
+            return false;
+        }
+
+        if (time() > $tokenData['expiry']) {
+            $this->removeStoredToken($projectId);
+            $this->logDeviceEvent($currentFingerprint, 'token_expired', $projectId);
+            return false;
+        }
+
+        // Check if device fingerprint has changed significantly
+        if (isset($tokenData['fingerprint']) && 
+            $this->isSignificantFingerprintChange($tokenData['fingerprint'], $currentFingerprint)) {
+            $this->logDeviceEvent($currentFingerprint, 'fingerprint_mismatch', $projectId);
+            // Only remove tokens for this project on fingerprint mismatch
+            $this->removeTokensByFingerprint($tokenData['fingerprint'], $projectId);
+            return false;
+        }
+
+        return hash_equals($tokenData['hash'], hash('sha256', $token));
+    }
+
+    private function storeRememberToken($projectId, $token, $expiry, $fingerprint) {
+        $tokens = $this->getTokensFromFile();
+        
+        if (!isset($tokens[$projectId])) {
+            $tokens[$projectId] = [];
+        }
+        
+        $tokens[$projectId][] = [
+            'hash' => hash('sha256', $token),
+            'expiry' => $expiry,
+            'fingerprint' => $fingerprint
+        ];
+        
+        $this->cleanupExpiredTokens($tokens);
+        file_put_contents(self::TOKENS_FILE, json_encode($tokens, JSON_PRETTY_PRINT));
+    }
+
+    private function getStoredToken($projectId) {
+        $tokens = $this->getTokensFromFile();
+        
+        if (!isset($tokens[$projectId])) {
+            return null;
+        }
+
+        $cookieName = $this->getCookieName($projectId);
+        $currentToken = $_COOKIE[$cookieName] ?? null;
+        if (!$currentToken) {
+            return null;
+        }
+
+        $currentTokenHash = hash('sha256', $currentToken);
+        
+        // Look through all tokens for this project
+        foreach ($tokens[$projectId] as $token) {
+            if ($token['hash'] === $currentTokenHash) {
+                return $token;
+            }
+        }
+        
+        return null;
+    }
+
+    private function removeStoredToken($projectId) {
+        $tokens = $this->getTokensFromFile();
+        
+        if (!isset($tokens[$projectId])) {
+            return;
+        }
+
+        $cookieName = $this->getCookieName($projectId);
+        $currentToken = $_COOKIE[$cookieName] ?? null;
+        if (!$currentToken) {
+            return;
+        }
+
+        $currentTokenHash = hash('sha256', $currentToken);
+        
+        // Remove only the specific token that matches
+        $tokens[$projectId] = array_filter($tokens[$projectId], function($token) use ($currentTokenHash) {
+            return $token['hash'] !== $currentTokenHash;
+        });
+        
+        // Remove the project entry if no tokens left
+        if (empty($tokens[$projectId])) {
+            unset($tokens[$projectId]);
+        }
+        
+        file_put_contents(self::TOKENS_FILE, json_encode($tokens, JSON_PRETTY_PRINT));
+    }
+
+    private function cleanupExpiredTokens(&$tokens) {
+        $now = time();
+        foreach ($tokens as $projectId => &$projectTokens) {
+            // Remove expired tokens
+            $projectTokens = array_filter($projectTokens, function($token) use ($now) {
+                return $token['expiry'] > $now;
+            });
+            
+            // Remove project entry if no valid tokens remain
+            if (empty($projectTokens)) {
+                unset($tokens[$projectId]);
+            }
+        }
+    }
+
+    private function getTokensFromFile() {
+        $content = file_get_contents(self::TOKENS_FILE);
+        return json_decode($content, true) ?? [];
+    }
+
+    private function generateRememberToken($projectId) {
+        return hash_hmac('sha256', 
+            $projectId . '|' . time() . '|' . uniqid('', true),
+            $this->secretKey
+        );
+    }
+
+    private function getCookieName($projectId) {
+        return self::REMEMBER_COOKIE_PREFIX . $projectId;
+    }
+
+    private function getDeviceFingerprint() {
+        // Get screen info via JavaScript and store in session
+        $screenInfo = $_SESSION['screen_info'] ?? [];
+        
+        return [
+            'user_agent_base' => $this->getBaseUserAgent($_SERVER['HTTP_USER_AGENT'] ?? ''),
+            'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '',
+            'platform' => $_SERVER['HTTP_SEC_CH_UA_PLATFORM'] ?? '',
+            'color_depth' => $screenInfo['colorDepth'] ?? null,
+            'resolution' => ($screenInfo['width'] ?? '0') . 'x' . ($screenInfo['height'] ?? '0'),
+            'timezone' => $screenInfo['timezone'] ?? null,
+            'cores' => $screenInfo['cores'] ?? null,
+            'accept_headers' => [
+                $_SERVER['HTTP_ACCEPT'] ?? '',
+                $_SERVER['HTTP_ACCEPT_ENCODING'] ?? '',
+                $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? ''
+            ],
+            'headers_order' => $this->getHeadersOrder(),
+            'connection_info' => [
+                'port' => $_SERVER['REMOTE_PORT'] ?? '',
+                'protocol' => $_SERVER['SERVER_PROTOCOL'] ?? ''
+            ]
+        ];
+    }
+
+    private function getHeadersOrder() {
+        $headers = getallheaders();
+        return array_keys($headers);
+    }
+
+    private function getBaseUserAgent($userAgent) {
+        // Extract just the browser name and major version
+        if (preg_match('/(Firefox|Chrome|Safari|Edge|Opera)\/(\d+)/', $userAgent, $matches)) {
+            return $matches[1] . '_' . $matches[2];
+        }
+        return $userAgent;
+    }
+
+    private function isSignificantFingerprintChange($stored, $current) {
+        // If we don't have both fingerprints, no comparison possible
+        if (!is_array($stored) || !is_array($current)) {
+            return false;
+        }
+
+        $differences = 0;
+        $totalChecks = 0;
+
+        // Check browser and version (high weight)
+        if (isset($stored['user_agent_base'], $current['user_agent_base'])) {
+            $totalChecks += 3;
+            $oldBrowser = explode('_', $stored['user_agent_base']);
+            $newBrowser = explode('_', $current['user_agent_base']);
+            
+            if ($oldBrowser[0] !== $newBrowser[0]) {
+                $differences += 3; // Different browser is a major change
+            } elseif (isset($oldBrowser[1], $newBrowser[1]) && 
+                abs((int)$newBrowser[1] - (int)$oldBrowser[1]) > 5) {
+                $differences += 2; // Major version change
+            }
+        }
+
+        // Check platform (high weight)
+        if (isset($stored['platform'], $current['platform'])) {
+            $totalChecks += 3;
+            if ($stored['platform'] !== $current['platform']) {
+                $differences += 3;
+            }
+        }
+
+        // Check screen properties (medium weight)
+        if (isset($stored['resolution'], $current['resolution'])) {
+            $totalChecks += 2;
+            if ($stored['resolution'] !== $current['resolution']) {
+                $differences += 2;
+            }
+        }
+
+        if (isset($stored['color_depth'], $current['color_depth'])) {
+            $totalChecks += 2;
+            if ($stored['color_depth'] !== $current['color_depth']) {
+                $differences += 2;
+            }
+        }
+
+        // Check CPU cores (medium weight)
+        if (isset($stored['cores'], $current['cores'])) {
+            $totalChecks += 2;
+            if ($stored['cores'] !== $current['cores']) {
+                $differences += 2;
+            }
+        }
+
+        // Check headers order (low weight but good for distinguishing similar machines)
+        if (isset($stored['headers_order'], $current['headers_order'])) {
+            $totalChecks += 1;
+            if ($stored['headers_order'] !== $current['headers_order']) {
+                $differences += 1;
+            }
+        }
+
+        // Check connection info (low weight)
+        if (isset($stored['connection_info'], $current['connection_info'])) {
+            $totalChecks += 1;
+            if ($stored['connection_info'] !== $current['connection_info']) {
+                $differences += 1;
+            }
+        }
+
+        // Calculate the difference percentage
+        if ($totalChecks === 0) return false;
+        $differencePercentage = ($differences / $totalChecks) * 100;
+
+        // Return true if more than 40% of weighted characteristics have changed
+        return $differencePercentage > 40;
+    }
+
+    public function generateCsrfToken($sessionId) {
+        return hash_hmac('sha256', $sessionId, $this->secretKey);
+    }
+
+    public function validateCsrfToken($token, $sessionId) {
+        return hash_equals(
+            $this->generateCsrfToken($sessionId),
+            $token ?? ''
+        );
+    }
+
+    public function validateSecureKey($providedKey, $expectedKey) {
+        return $providedKey === $expectedKey;
+    }
+}
+
+------------------------------------------------------------
+User Prompt:
+Can you write me a bash script that recursively finds Python files in a given folder?
+
+------------------------------------------------------------
+Full Formatted Prompt:
+<start_of_turn>user
+You are a helpful writing assistant. Respond concisely and directly with just the requested text. Do not include explanations, preambles, or meta-commentary. When context is provided (clipboard, registers), use it to inform your response but never mention or reference the register numbers, clipboard labels, or context structure in your output. Just provide the final text the user is asking for.
+
+Context:
+[Current Clipboard]:
+<?php
+namespace App\Security;
+
+
+if (!defined('APP_RUNNING')) {
+    die('Direct access is not allowed.');
+}
+
+class Authentication {
+    private $secretKey;
+    private const REMEMBER_COOKIE_PREFIX = 'project_auth_';
+    private const REMEMBER_DURATION = 7776000; // 90 days in seconds
+    private const TOKENS_FILE = __DIR__ . '/../../data/remember_tokens.json';
+    private const DEVICE_LOG_FILE = __DIR__ . '/../../data/device_log.json';
+
+    public function __construct() {
+        $this->secretKey = SECRET_KEY;
+        $dataDir = __DIR__ . '/../../data';
+        
+        // Ensure the data directory exists with proper permissions
+        if (!file_exists($dataDir)) {
+            if (!@mkdir($dataDir, 0775, true)) {
+                error_log('Failed to create data directory. Please create it manually and ensure www-data has write permissions.');
+                throw new \RuntimeException('Failed to create data directory. Check error log for details.');
+            }
+            
+            // Try to set proper ownership if running as root (e.g. during deployment)
+            if (function_exists('posix_getpwnam')) {
+                $webUser = posix_getpwnam('www-data');
+                if ($webUser && posix_geteuid() === 0) {
+                    chown($dataDir, $webUser['uid']);
+                    chgrp($dataDir, $webUser['gid']);
+                }
+            }
+        }
+        
+        // Ensure directory is writable
+        if (!is_writable($dataDir)) {
+            error_log("Data directory is not writable. Please ensure www-data has write permissions: $dataDir");
+            throw new \RuntimeException('Data directory is not writable. Check error log for details.');
+        }
+        
+        // Create tokens file if it doesn't exist
+        if (!file_exists(self::TOKENS_FILE)) {
+            if (!@file_put_contents(self::TOKENS_FILE, '{}')) {
+                error_log('Failed to create tokens file. Please check directory permissions.');
+                throw new \RuntimeException('Failed to create tokens file. Check error log for details.');
+            }
+            // Set proper permissions for the tokens file
+            chmod(self::TOKENS_FILE, 0664);
+            
+            // Try to set proper ownership if running as root
+            if (function_exists('posix_getpwnam')) {
+                $webUser = posix_getpwnam('www-data');
+                if ($webUser && posix_geteuid() === 0) {
+                    chown(self::TOKENS_FILE, $webUser['uid']);
+                    chgrp(self::TOKENS_FILE, $webUser['gid']);
+                }
+            }
+        }
+
+        // Create device log file if it doesn't exist
+        if (!file_exists(self::DEVICE_LOG_FILE)) {
+            if (!@file_put_contents(self::DEVICE_LOG_FILE, '{}')) {
+                error_log('Failed to create device log file. Please check directory permissions.');
+                throw new \RuntimeException('Failed to create device log file. Check error log for details.');
+            }
+            chmod(self::DEVICE_LOG_FILE, 0664);
+            if (function_exists('posix_getpwnam')) {
+                $webUser = posix_getpwnam('www-data');
+                if ($webUser && posix_geteuid() === 0) {
+                    chown(self::DEVICE_LOG_FILE, $webUser['uid']);
+                    chgrp(self::DEVICE_LOG_FILE, $webUser['gid']);
+                }
+            }
+        }
+    }
+
+    private function findMatchingDevice($currentFingerprint) {
+        $tokens = $this->getTokensFromFile();
+        foreach ($tokens as $projectTokens) {
+            foreach ($projectTokens as $token) {
+                if (isset($token['fingerprint']) && 
+                    !$this->isSignificantFingerprintChange($token['fingerprint'], $currentFingerprint)) {
+                    return $token['fingerprint']; // Return the stored fingerprint as device identifier
+                }
+            }
+        }
+        return null;
+    }
+
+    private function logDeviceEvent($fingerprint, $eventType, $projectId = null) {
+        $deviceLogs = json_decode(file_get_contents(self::DEVICE_LOG_FILE), true) ?? [];
+        $fingerprintHash = hash('sha256', json_encode($fingerprint));
+        
+        if (!isset($deviceLogs[$fingerprintHash])) {
+            $deviceLogs[$fingerprintHash] = [
+                'first_seen' => time(),
+                'events' => []
+            ];
+        }
+
+        $deviceLogs[$fingerprintHash]['events'][] = [
+            'timestamp' => time(),
+            'type' => $eventType,
+            'project_id' => $projectId,
+            'fingerprint' => $fingerprint,
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+        ];
+
+        if (count($deviceLogs[$fingerprintHash]['events']) > 100) {
+            $deviceLogs[$fingerprintHash]['events'] = array_slice(
+                $deviceLogs[$fingerprintHash]['events'], 
+                -100
+            );
+        }
+
+        file_put_contents(self::DEVICE_LOG_FILE, json_encode($deviceLogs, JSON_PRETTY_PRINT));
+    }
+
+    public function setRememberMeCookie($projectId) {
+        $token = $this->generateRememberToken($projectId);
+        $expiry = time() + self::REMEMBER_DURATION;
+        $fingerprint = $this->getDeviceFingerprint();
+        
+        setcookie(
+            $this->getCookieName($projectId),
+            $token,
+            [
+                'expires' => $expiry,
+                'path' => '/',
+                'domain' => '',
+                'secure' => true,
+                'httponly' => true,
+                'samesite' => 'Lax'
+            ]
+        );
+        
+        $this->storeRememberToken($projectId, $token, $expiry, $fingerprint);
+        $this->logDeviceEvent($fingerprint, 'remember_me_set', $projectId);
+    }
+
+    private function removeTokensByFingerprint($fingerprint, $projectId = null) {
+        $tokens = $this->getTokensFromFile();
+        $modified = false;
+        $removedCount = 0;
+        
+        foreach ($tokens as $currentProjectId => &$projectTokens) {
+            // If a project ID is specified, only remove tokens for that project
+            if ($projectId !== null && $currentProjectId !== $projectId) {
+                continue;
+            }
+            
+            $originalCount = count($projectTokens);
+            
+            $projectTokens = array_filter($projectTokens, function($token) use ($fingerprint) {
+                return !isset($token['fingerprint']) || 
+                       $this->isSignificantFingerprintChange($token['fingerprint'], $fingerprint);
+            });
+            
+            $tokensRemoved = $originalCount - count($projectTokens);
+            if ($tokensRemoved > 0) {
+                $modified = true;
+                $removedCount += $tokensRemoved;
+                error_log("Removed $tokensRemoved tokens for matching fingerprint in project $currentProjectId");
+            }
+            
+            if (empty($projectTokens)) {
+                unset($tokens[$currentProjectId]);
+                error_log("Removed empty project $currentProjectId after token cleanup");
+            }
+        }
+        
+        if ($modified) {
+            file_put_contents(self::TOKENS_FILE, json_encode($tokens, JSON_PRETTY_PRINT));
+            $scope = $projectId ? "project $projectId" : "all projects";
+            error_log("Total tokens removed for matching fingerprint in $scope: $removedCount");
+        }
+        
+        return $modified;
+    }
+
+    public function checkRememberMeCookie($projectId) {
+        $cookieName = $this->getCookieName($projectId);
+        $currentFingerprint = $this->getDeviceFingerprint();
+        
+        // If no remember me cookie but we find a matching device fingerprint
+        if (!isset($_COOKIE[$cookieName])) {
+            $matchingFingerprint = $this->findMatchingDevice($currentFingerprint);
+            if ($matchingFingerprint) {
+                // We found a matching device but its cookies are gone
+                $this->logDeviceEvent($currentFingerprint, 'cookies_cleared', $projectId);
+                error_log("Cookies cleared detected for device with matching fingerprint on project $projectId");
+                
+                // Remove tokens only for this project
+                if ($this->removeTokensByFingerprint($matchingFingerprint, $projectId)) {
+                    error_log("Successfully removed tokens for device after cookies cleared in project $projectId");
+                }
+            } else {
+                // Truly new device
+                $this->logDeviceEvent($currentFingerprint, 'new_device', $projectId);
+            }
+            return false;
+        }
+
+        $token = $_COOKIE[$cookieName];
+        $tokenData = $this->getStoredToken($projectId);
+        
+        if (!$tokenData) {
+            $this->logDeviceEvent($currentFingerprint, 'invalid_token', $projectId);
+            return false;
+        }
+
+        if (time() > $tokenData['expiry']) {
+            $this->removeStoredToken($projectId);
+            $this->logDeviceEvent($currentFingerprint, 'token_expired', $projectId);
+            return false;
+        }
+
+        // Check if device fingerprint has changed significantly
+        if (isset($tokenData['fingerprint']) && 
+            $this->isSignificantFingerprintChange($tokenData['fingerprint'], $currentFingerprint)) {
+            $this->logDeviceEvent($currentFingerprint, 'fingerprint_mismatch', $projectId);
+            // Only remove tokens for this project on fingerprint mismatch
+            $this->removeTokensByFingerprint($tokenData['fingerprint'], $projectId);
+            return false;
+        }
+
+        return hash_equals($tokenData['hash'], hash('sha256', $token));
+    }
+
+    private function storeRememberToken($projectId, $token, $expiry, $fingerprint) {
+        $tokens = $this->getTokensFromFile();
+        
+        if (!isset($tokens[$projectId])) {
+            $tokens[$projectId] = [];
+        }
+        
+        $tokens[$projectId][] = [
+            'hash' => hash('sha256', $token),
+            'expiry' => $expiry,
+            'fingerprint' => $fingerprint
+        ];
+        
+        $this->cleanupExpiredTokens($tokens);
+        file_put_contents(self::TOKENS_FILE, json_encode($tokens, JSON_PRETTY_PRINT));
+    }
+
+    private function getStoredToken($projectId) {
+        $tokens = $this->getTokensFromFile();
+        
+        if (!isset($tokens[$projectId])) {
+            return null;
+        }
+
+        $cookieName = $this->getCookieName($projectId);
+        $currentToken = $_COOKIE[$cookieName] ?? null;
+        if (!$currentToken) {
+            return null;
+        }
+
+        $currentTokenHash = hash('sha256', $currentToken);
+        
+        // Look through all tokens for this project
+        foreach ($tokens[$projectId] as $token) {
+            if ($token['hash'] === $currentTokenHash) {
+                return $token;
+            }
+        }
+        
+        return null;
+    }
+
+    private function removeStoredToken($projectId) {
+        $tokens = $this->getTokensFromFile();
+        
+        if (!isset($tokens[$projectId])) {
+            return;
+        }
+
+        $cookieName = $this->getCookieName($projectId);
+        $currentToken = $_COOKIE[$cookieName] ?? null;
+        if (!$currentToken) {
+            return;
+        }
+
+        $currentTokenHash = hash('sha256', $currentToken);
+        
+        // Remove only the specific token that matches
+        $tokens[$projectId] = array_filter($tokens[$projectId], function($token) use ($currentTokenHash) {
+            return $token['hash'] !== $currentTokenHash;
+        });
+        
+        // Remove the project entry if no tokens left
+        if (empty($tokens[$projectId])) {
+            unset($tokens[$projectId]);
+        }
+        
+        file_put_contents(self::TOKENS_FILE, json_encode($tokens, JSON_PRETTY_PRINT));
+    }
+
+    private function cleanupExpiredTokens(&$tokens) {
+        $now = time();
+        foreach ($tokens as $projectId => &$projectTokens) {
+            // Remove expired tokens
+            $projectTokens = array_filter($projectTokens, function($token) use ($now) {
+                return $token['expiry'] > $now;
+            });
+            
+            // Remove project entry if no valid tokens remain
+            if (empty($projectTokens)) {
+                unset($tokens[$projectId]);
+            }
+        }
+    }
+
+    private function getTokensFromFile() {
+        $content = file_get_contents(self::TOKENS_FILE);
+        return json_decode($content, true) ?? [];
+    }
+
+    private function generateRememberToken($projectId) {
+        return hash_hmac('sha256', 
+            $projectId . '|' . time() . '|' . uniqid('', true),
+            $this->secretKey
+        );
+    }
+
+    private function getCookieName($projectId) {
+        return self::REMEMBER_COOKIE_PREFIX . $projectId;
+    }
+
+    private function getDeviceFingerprint() {
+        // Get screen info via JavaScript and store in session
+        $screenInfo = $_SESSION['screen_info'] ?? [];
+        
+        return [
+            'user_agent_base' => $this->getBaseUserAgent($_SERVER['HTTP_USER_AGENT'] ?? ''),
+            'accept_language' => $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '',
+            'platform' => $_SERVER['HTTP_SEC_CH_UA_PLATFORM'] ?? '',
+            'color_depth' => $screenInfo['colorDepth'] ?? null,
+            'resolution' => ($screenInfo['width'] ?? '0') . 'x' . ($screenInfo['height'] ?? '0'),
+            'timezone' => $screenInfo['timezone'] ?? null,
+            'cores' => $screenInfo['cores'] ?? null,
+            'accept_headers' => [
+                $_SERVER['HTTP_ACCEPT'] ?? '',
+                $_SERVER['HTTP_ACCEPT_ENCODING'] ?? '',
+                $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? ''
+            ],
+            'headers_order' => $this->getHeadersOrder(),
+            'connection_info' => [
+                'port' => $_SERVER['REMOTE_PORT'] ?? '',
+                'protocol' => $_SERVER['SERVER_PROTOCOL'] ?? ''
+            ]
+        ];
+    }
+
+    private function getHeadersOrder() {
+        $headers = getallheaders();
+        return array_keys($headers);
+    }
+
+    private function getBaseUserAgent($userAgent) {
+        // Extract just the browser name and major version
+        if (preg_match('/(Firefox|Chrome|Safari|Edge|Opera)\/(\d+)/', $userAgent, $matches)) {
+            return $matches[1] . '_' . $matches[2];
+        }
+        return $userAgent;
+    }
+
+    private function isSignificantFingerprintChange($stored, $current) {
+        // If we don't have both fingerprints, no comparison possible
+        if (!is_array($stored) || !is_array($current)) {
+            return false;
+        }
+
+        $differences = 0;
+        $totalChecks = 0;
+
+        // Check browser and version (high weight)
+        if (isset($stored['user_agent_base'], $current['user_agent_base'])) {
+            $totalChecks += 3;
+            $oldBrowser = explode('_', $stored['user_agent_base']);
+            $newBrowser = explode('_', $current['user_agent_base']);
+            
+            if ($oldBrowser[0] !== $newBrowser[0]) {
+                $differences += 3; // Different browser is a major change
+            } elseif (isset($oldBrowser[1], $newBrowser[1]) && 
+                abs((int)$newBrowser[1] - (int)$oldBrowser[1]) > 5) {
+                $differences += 2; // Major version change
+            }
+        }
+
+        // Check platform (high weight)
+        if (isset($stored['platform'], $current['platform'])) {
+            $totalChecks += 3;
+            if ($stored['platform'] !== $current['platform']) {
+                $differences += 3;
+            }
+        }
+
+        // Check screen properties (medium weight)
+        if (isset($stored['resolution'], $current['resolution'])) {
+            $totalChecks += 2;
+            if ($stored['resolution'] !== $current['resolution']) {
+                $differences += 2;
+            }
+        }
+
+        if (isset($stored['color_depth'], $current['color_depth'])) {
+            $totalChecks += 2;
+            if ($stored['color_depth'] !== $current['color_depth']) {
+                $differences += 2;
+            }
+        }
+
+        // Check CPU cores (medium weight)
+        if (isset($stored['cores'], $current['cores'])) {
+            $totalChecks += 2;
+            if ($stored['cores'] !== $current['cores']) {
+                $differences += 2;
+            }
+        }
+
+        // Check headers order (low weight but good for distinguishing similar machines)
+        if (isset($stored['headers_order'], $current['headers_order'])) {
+            $totalChecks += 1;
+            if ($stored['headers_order'] !== $current['headers_order']) {
+                $differences += 1;
+            }
+        }
+
+        // Check connection info (low weight)
+        if (isset($stored['connection_info'], $current['connection_info'])) {
+            $totalChecks += 1;
+            if ($stored['connection_info'] !== $current['connection_info']) {
+                $differences += 1;
+            }
+        }
+
+        // Calculate the difference percentage
+        if ($totalChecks === 0) return false;
+        $differencePercentage = ($differences / $totalChecks) * 100;
+
+        // Return true if more than 40% of weighted characteristics have changed
+        return $differencePercentage > 40;
+    }
+
+    public function generateCsrfToken($sessionId) {
+        return hash_hmac('sha256', $sessionId, $this->secretKey);
+    }
+
+    public function validateCsrfToken($token, $sessionId) {
+        return hash_equals(
+            $this->generateCsrfToken($sessionId),
+            $token ?? ''
+        );
+    }
+
+    public function validateSecureKey($providedKey, $expectedKey) {
+        return $providedKey === $expectedKey;
+    }
+}
+
+Request: Can you write me a bash script that recursively finds Python files in a given folder?<end_of_turn>
+<start_of_turn>model
+
+============================================================

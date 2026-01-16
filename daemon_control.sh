@@ -5,10 +5,35 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRANSCRIPTION_PID_FILE=~/.dictation_transcription.pid
 TRANSCRIPTION_LOG_FILE=~/.dictation_transcription.log
+LLM_PID_FILE=~/.dictation_llm.pid
+LLM_LOG_FILE=~/.dictation_llm.log
 APP_PID_FILE=~/.dictation_app.pid
 APP_LOG_FILE=~/.dictation_app.log
 YDOTOOL_LOG_FILE=~/.ydotool.log
 YDOTOOL_SOCKET=/tmp/.ydotool_socket
+CONFIG_FILE=~/.dictation_config
+
+# Check if logging is enabled in config
+is_logging_enabled() {
+    if [ -f "$CONFIG_FILE" ]; then
+        # Use python to parse JSON and check logging_enabled (defaults to true if not set)
+        python3 -c "import json, sys; config = json.load(open('$CONFIG_FILE')); sys.exit(0 if config.get('logging_enabled', True) else 1)" 2>/dev/null
+        return $?
+    else
+        # No config file, default to logging enabled
+        return 0
+    fi
+}
+
+# Get log destination (either log file or /dev/null)
+get_log_file() {
+    local log_file="$1"
+    if is_logging_enabled; then
+        echo "$log_file"
+    else
+        echo "/dev/null"
+    fi
+}
 
 start_ydotoold() {
     # Check if ydotoold is already running
@@ -25,7 +50,8 @@ start_ydotoold() {
     fi
 
     echo "Starting ydotoold..."
-    nohup ydotoold > "$YDOTOOL_LOG_FILE" 2>&1 &
+    LOG_DEST=$(get_log_file "$YDOTOOL_LOG_FILE")
+    nohup ydotoold > "$LOG_DEST" 2>&1 &
     sleep 0.5
 
     if pgrep -x ydotoold > /dev/null 2>&1; then
@@ -65,7 +91,8 @@ start_transcription_daemon() {
 
     cd "$SCRIPT_DIR"
     echo "Starting transcription daemon..."
-    nohup uv run python transcription_daemon.py > "$TRANSCRIPTION_LOG_FILE" 2>&1 &
+    LOG_DEST=$(get_log_file "$TRANSCRIPTION_LOG_FILE")
+    nohup uv run python transcription_daemon.py > "$LOG_DEST" 2>&1 &
     sleep 1
 
     if [ -f "$TRANSCRIPTION_PID_FILE" ]; then
@@ -89,6 +116,45 @@ stop_transcription_daemon() {
     fi
 }
 
+start_llm_daemon() {
+    if [ -f "$LLM_PID_FILE" ]; then
+        PID=$(cat "$LLM_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "LLM daemon already running (PID $PID)"
+            return 0
+        else
+            rm -f "$LLM_PID_FILE"
+        fi
+    fi
+
+    cd "$SCRIPT_DIR"
+    echo "Starting LLM daemon..."
+    LOG_DEST=$(get_log_file "$LLM_LOG_FILE")
+    nohup uv run python llm_daemon.py > "$LOG_DEST" 2>&1 &
+    sleep 1
+
+    if [ -f "$LLM_PID_FILE" ]; then
+        echo "LLM daemon started (PID $(cat "$LLM_PID_FILE"))"
+    else
+        echo "Warning: LLM daemon may not have started correctly"
+        echo "Check logs: tail -f $LLM_LOG_FILE"
+    fi
+}
+
+stop_llm_daemon() {
+    if [ -f "$LLM_PID_FILE" ]; then
+        PID=$(cat "$LLM_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            kill $PID
+            echo "LLM daemon stopped"
+        else
+            rm -f "$LLM_PID_FILE"
+        fi
+    else
+        pkill -f llm_daemon.py 2>/dev/null && echo "LLM daemon stopped"
+    fi
+}
+
 start_dictation_app() {
     if [ -f "$APP_PID_FILE" ]; then
         PID=$(cat "$APP_PID_FILE")
@@ -102,10 +168,11 @@ start_dictation_app() {
 
     cd "$SCRIPT_DIR"
     echo "Starting dictation app..."
+    LOG_DEST=$(get_log_file "$APP_LOG_FILE")
     GI_TYPELIB_PATH=/usr/local/lib/x86_64-linux-gnu/girepository-1.0 \
     YDOTOOL_SOCKET=/tmp/.ydotool_socket \
     PYTHONUNBUFFERED=1 \
-    nohup uv run python dictation_app_gtk.py > "$APP_LOG_FILE" 2>&1 &
+    nohup uv run python dictation_app_gtk.py > "$LOG_DEST" 2>&1 &
     sleep 1
 
     if [ -f "$APP_PID_FILE" ]; then
@@ -148,6 +215,10 @@ case "$1" in
         start_transcription_daemon
         echo ""
 
+        # Start LLM daemon
+        start_llm_daemon
+        echo ""
+
         # Start dictation app (unified evdev + GUI)
         start_dictation_app
         echo ""
@@ -160,6 +231,9 @@ case "$1" in
 
         # Stop dictation app
         stop_dictation_app
+
+        # Stop LLM daemon
+        stop_llm_daemon
 
         # Stop transcription daemon
         stop_transcription_daemon
@@ -222,12 +296,32 @@ case "$1" in
         else
             echo "Not running"
         fi
+
+        echo ""
+        echo "=== LLM Daemon ==="
+        if [ -f "$LLM_PID_FILE" ]; then
+            PID=$(cat "$LLM_PID_FILE")
+            if ps -p $PID > /dev/null 2>&1; then
+                echo "Running (PID $PID)"
+
+                # Check if socket exists
+                if [ -S /tmp/dictation_llm.sock ]; then
+                    echo "Socket: /tmp/dictation_llm.sock (active)"
+                else
+                    echo "Socket: /tmp/dictation_llm.sock (not found)"
+                fi
+            else
+                echo "Not running (stale PID file)"
+            fi
+        else
+            echo "Not running (optional - start with: $0 start-llm)"
+        fi
         ;;
 
     logs)
         echo "Following logs (Ctrl+C to stop)..."
         echo "=== App Log ==="
-        tail -f "$APP_LOG_FILE" "$TRANSCRIPTION_LOG_FILE" 2>/dev/null
+        tail -f "$APP_LOG_FILE" "$TRANSCRIPTION_LOG_FILE" "$LLM_LOG_FILE" 2>/dev/null
         ;;
 
     app-logs)
@@ -238,8 +332,40 @@ case "$1" in
         tail -f "$TRANSCRIPTION_LOG_FILE"
         ;;
 
+    llm-logs)
+        tail -f "$LLM_LOG_FILE"
+        ;;
+
+    start-llm)
+        start_llm_daemon
+        ;;
+
+    stop-llm)
+        stop_llm_daemon
+        ;;
+
+    start-transcription)
+        start_transcription_daemon
+        ;;
+
+    stop-transcription)
+        stop_transcription_daemon
+        ;;
+
+    restart-transcription)
+        stop_transcription_daemon
+        sleep 1
+        start_transcription_daemon
+        ;;
+
+    restart-llm)
+        stop_llm_daemon
+        sleep 1
+        start_llm_daemon
+        ;;
+
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs|app-logs|transcription-logs}"
+        echo "Usage: $0 {start|stop|restart|status|logs|app-logs|transcription-logs|llm-logs|start-llm|stop-llm}"
         echo ""
         echo "Commands:"
         echo "  start              - Start all components"
@@ -249,11 +375,21 @@ case "$1" in
         echo "  logs               - Follow all logs"
         echo "  app-logs           - Follow dictation app logs only"
         echo "  transcription-logs - Follow transcription daemon logs only"
+        echo "  llm-logs           - Follow LLM daemon logs only"
+        echo "  start-llm          - Start LLM daemon (optional, for AI features)"
+        echo "  stop-llm           - Stop LLM daemon"
         echo ""
         echo "Architecture:"
         echo "  1. ydotoold         - Types text into active window"
         echo "  2. transcription    - Keeps Whisper model warm, handles transcription"
         echo "  3. dictation_app    - Monitors mouse button, shows GUI, records audio"
+        echo "  4. llm_daemon       - (Optional) Local LLM for processing transcriptions"
+        echo ""
+        echo "LLM Setup:"
+        echo "  1. Install: pip install llama-cpp-python"
+        echo "  2. Download a GGUF model (e.g., Phi-3 mini)"
+        echo "  3. Set llm_model_path and llm_enabled=true in ~/.dictation_config"
+        echo "  4. Start with: $0 start-llm"
         exit 1
         ;;
 esac

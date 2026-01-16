@@ -20,9 +20,8 @@ import signal
 import socket
 import struct
 import subprocess
-import tempfile
 import threading
-import wave
+import time
 
 import numpy as np
 import pyaudio
@@ -41,6 +40,7 @@ except ImportError:
 PID_FILE = os.path.expanduser("~/.dictation_app.pid")
 CONFIG_FILE = os.path.expanduser("~/.dictation_config")
 DAEMON_SOCKET = "/tmp/dictation_transcription.sock"
+LLM_DAEMON_SOCKET = "/tmp/dictation_llm.sock"
 MOUSE_BUTTON = ecodes.BTN_EXTRA  # Mouse 4 (first side button)
 
 
@@ -75,6 +75,12 @@ class DictationApp:
 
         # Volume dimming state
         self.original_volume = None
+
+        # LLM mode state (Ctrl+Mouse4 triggers LLM instead of paste)
+        self.llm_mode = False
+
+        # Clipboard registers (1-9) for multi-context LLM prompts
+        self.registers = {}
 
         # Load config
         self.config = self.load_config()
@@ -151,6 +157,10 @@ class DictationApp:
             "volume_dimming_enabled": False,
             "dimmed_volume": 0.10,  # 10% volume while recording
             "input_gain": 1.0,  # Input gain multiplier (0.5 - 4.0)
+            # LLM integration settings
+            "llm_enabled": True,  # Enable Ctrl+Mouse4 for LLM mode
+            # Logging settings
+            "logging_enabled": True,  # Enable logging to ~/.dictation_*.log files
         }
 
         if os.path.exists(CONFIG_FILE):
@@ -291,15 +301,26 @@ class DictationApp:
                             key_event = categorize(event)
 
                             # Side button for recording (mouse only)
+                            # Ctrl+Mouse4 = LLM mode, Mouse4 alone = transcription mode
                             if dev_type == 'mouse' and event.code == MOUSE_BUTTON:
                                 if key_event.keystate == key_event.key_down:
                                     # Get mouse position right when button is pressed
                                     x, y = self.get_mouse_position()
-                                    print(f"Mouse button pressed at ({x}, {y})")
+                                    # Check if Ctrl is held for LLM mode
+                                    if self.ctrl_pressed and self.config.get("llm_enabled", True):
+                                        self.llm_mode = True
+                                        print(f"Ctrl+Mouse4 pressed at ({x}, {y}) - LLM mode")
+                                    else:
+                                        self.llm_mode = False
+                                        print(f"Mouse button pressed at ({x}, {y}) - Transcription mode")
                                     GLib.idle_add(self.start_recording_at_mouse)
                                 elif key_event.keystate == key_event.key_up:
-                                    print("Mouse button released - stopping recording")
-                                    GLib.idle_add(self.stop_and_transcribe)
+                                    if self.llm_mode:
+                                        print("Mouse button released - sending to LLM")
+                                        GLib.idle_add(self.stop_and_process_llm)
+                                    else:
+                                        print("Mouse button released - stopping recording")
+                                        GLib.idle_add(self.stop_and_transcribe)
 
                             # Left/Right click during transcription OR confirmation mode
                             elif dev_type == 'mouse' and key_event.keystate == key_event.key_down and (self.is_transcribing or self.overlay.awaiting_confirmation):
@@ -339,6 +360,22 @@ class DictationApp:
                                     if self.ctrl_pressed and self.alt_pressed:
                                         print("Ctrl+Alt+Space pressed - opening settings")
                                         GLib.idle_add(self.show_settings_dialog)
+
+                                # Ctrl+Alt+[0-9] for register management
+                                elif key_event.keystate == key_event.key_down and self.ctrl_pressed and self.alt_pressed:
+                                    # Ctrl+Alt+0 clears all registers
+                                    if event.code == ecodes.KEY_0:
+                                        GLib.idle_add(self.clear_all_registers)
+                                    else:
+                                        # Ctrl+Alt+[1-9] captures clipboard to register
+                                        key_to_register = {
+                                            ecodes.KEY_1: 1, ecodes.KEY_2: 2, ecodes.KEY_3: 3,
+                                            ecodes.KEY_4: 4, ecodes.KEY_5: 5, ecodes.KEY_6: 6,
+                                            ecodes.KEY_7: 7, ecodes.KEY_8: 8, ecodes.KEY_9: 9,
+                                        }
+                                        if event.code in key_to_register:
+                                            reg_num = key_to_register[event.code]
+                                            GLib.idle_add(self.capture_to_register, reg_num)
 
                             # Escape key during transcription (early cancel)
                             if dev_type == 'keyboard' and self.is_transcribing and key_event.keystate == key_event.key_down:
@@ -394,8 +431,27 @@ class DictationApp:
         # Show overlay
         self.overlay.show(x, y)
 
+        # If LLM mode, show register indicators
+        if self.llm_mode:
+            has_clipboard = self.check_clipboard_has_content()
+            filled_registers = set(self.registers.keys())
+            self.overlay.show_llm_recording(has_clipboard, filled_registers)
+
         # Start recording
         self.start_recording()
+
+    def check_clipboard_has_content(self):
+        """Check if the primary clipboard has content."""
+        try:
+            result = subprocess.run(
+                ["wl-paste", "-n"],
+                capture_output=True,
+                text=True,
+                timeout=0.5
+            )
+            return result.returncode == 0 and bool(result.stdout.strip())
+        except:
+            return False
 
     def start_recording(self):
         """Start audio recording."""
@@ -542,17 +598,8 @@ class DictationApp:
     def _perform_interim_transcription(self, frames, end_index):
         """Perform interim transcription asynchronously."""
         try:
-            # Save frames to temp file
-            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-            wf = wave.open(temp_wav.name, "wb")
-            wf.setnchannels(self.CHANNELS)
-            wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-            wf.setframerate(self.actual_rate)
-            wf.writeframes(b"".join(frames))
-            wf.close()
-
-            # Send to daemon
-            result = self.send_to_daemon(temp_wav.name)
+            # Send to daemon (in-RAM, no disk I/O)
+            result = self.send_to_daemon(frames, self.actual_rate)
 
             if result.get("success"):
                 transcription = result.get("transcription", "").strip()
@@ -581,12 +628,6 @@ class DictationApp:
                     interim_text = " ".join(self.interim_transcriptions)
                     GLib.idle_add(self.overlay.set_interim_text, interim_text)
                     print(f"[Interim] Result: {transcription}")
-
-            # Clean up temp file
-            try:
-                os.unlink(temp_wav.name)
-            except:
-                pass
 
         except Exception as e:
             print(f"[Interim] Error: {e}")
@@ -676,26 +717,13 @@ class DictationApp:
                 remaining_frames = self.frames[self.last_interim_frame:]
 
                 if remaining_frames:
-                    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-                    wf = wave.open(temp_wav.name, "wb")
-                    wf.setnchannels(self.CHANNELS)
-                    wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-                    wf.setframerate(self.actual_rate)
-                    wf.writeframes(b"".join(remaining_frames))
-                    wf.close()
-
                     print(f"[Concatenate] Transcribing {len(remaining_frames)} remaining frames")
-                    result = self.send_to_daemon(temp_wav.name)
+                    result = self.send_to_daemon(remaining_frames, self.actual_rate)
 
                     if result.get("success"):
                         remaining_text = result.get("transcription", "").strip()
                         if remaining_text and len(remaining_text) >= 2:
                             self.interim_transcriptions.append(remaining_text)
-
-                    try:
-                        os.unlink(temp_wav.name)
-                    except:
-                        pass
 
                 # Combine all interim transcriptions
                 final_transcription = " ".join(self.interim_transcriptions)
@@ -703,24 +731,11 @@ class DictationApp:
 
             else:
                 # Full mode (default): transcribe entire recording
-                temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-                wf = wave.open(temp_wav.name, "wb")
-                wf.setnchannels(self.CHANNELS)
-                wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
-                wf.setframerate(self.actual_rate)
-                wf.writeframes(b"".join(self.frames))
-                wf.close()
-
                 print(f"[Full] Transcribing {len(self.frames)} frames (RMS={rms:.4f})")
-                result = self.send_to_daemon(temp_wav.name)
+                result = self.send_to_daemon(self.frames, self.actual_rate)
 
                 if result.get("success"):
                     final_transcription = result.get("transcription", "").strip()
-
-                try:
-                    os.unlink(temp_wav.name)
-                except:
-                    pass
 
             # Reset interim state
             self.interim_transcriptions = []
@@ -772,16 +787,28 @@ class DictationApp:
             self.is_transcribing = False
             GLib.idle_add(self.overlay.hide)
 
-    def send_to_daemon(self, audio_file):
-        """Send transcription request to daemon."""
+    def send_to_daemon(self, audio_frames, sample_rate):
+        """Send transcription request to daemon (in-RAM, no disk I/O)."""
         try:
+            # Combine all frames into single bytes object
+            audio_data = b"".join(audio_frames)
+
             client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             client.settimeout(30)
             client.connect(DAEMON_SOCKET)
 
-            request = {"command": "transcribe", "audio_file": audio_file}
+            # Send JSON header with metadata
+            request = {
+                "command": "transcribe_raw",
+                "sample_rate": sample_rate,
+                "data_length": len(audio_data)
+            }
             client.sendall((json.dumps(request) + "\n").encode())
 
+            # Send raw audio data
+            client.sendall(audio_data)
+
+            # Receive response
             response_data = b""
             while True:
                 chunk = client.recv(4096)
@@ -798,6 +825,333 @@ class DictationApp:
             return {"success": False, "error": "Transcription daemon not running"}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def capture_to_register(self, reg_num):
+        """Copy current selection directly to a numbered register (without affecting clipboard)."""
+        try:
+            # Try primary selection first (automatically set when text is selected on Wayland)
+            result = subprocess.run(
+                ["wl-paste", "--primary", "-n"],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                self.registers[reg_num] = result.stdout.strip()
+                preview = self.registers[reg_num][:50].replace('\n', ' ')
+                print(f"[Register {reg_num}] Captured selection: {preview}...")
+                return
+
+            # Fallback: try regular clipboard
+            result = subprocess.run(
+                ["wl-paste", "-n"],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                self.registers[reg_num] = result.stdout.strip()
+                preview = self.registers[reg_num][:50].replace('\n', ' ')
+                print(f"[Register {reg_num}] Captured from clipboard: {preview}...")
+            else:
+                print(f"[Register {reg_num}] No selection or clipboard content")
+
+        except Exception as e:
+            print(f"[Register {reg_num}] Error capturing: {e}")
+
+    def clear_all_registers(self):
+        """Clear all clipboard registers."""
+        count = len(self.registers)
+        self.registers = {}
+        print(f"[Registers] Cleared all ({count} registers)")
+
+    def build_register_context(self):
+        """Build context from all registers and primary clipboard.
+
+        Returns context string with all stored registers plus primary clipboard.
+        All registers are automatically included - no hotword detection needed.
+        """
+        context_parts = []
+
+        # Include primary clipboard first
+        try:
+            result = subprocess.run(
+                ["wl-paste", "-n"],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                context_parts.append(f"[Current Clipboard]:\n{result.stdout.strip()}")
+                print(f"[LLM] Including primary clipboard")
+        except Exception as e:
+            print(f"[LLM] Error getting primary clipboard: {e}")
+
+        # Include all stored registers
+        for reg_num in sorted(self.registers.keys()):
+            content = self.registers[reg_num]
+            if content:
+                context_parts.append(f"[Register {reg_num}]:\n{content}")
+                print(f"[LLM] Including register {reg_num}")
+
+        # Combine context
+        context = '\n\n'.join(context_parts) if context_parts else ""
+
+        return context
+
+    def stop_and_process_llm(self):
+        """Stop recording and process through LLM (Ctrl+Mouse4 flow)."""
+        if not self.is_recording:
+            return
+
+        self.is_recording = False
+
+        # Wait for recording thread
+        if self.record_thread and self.record_thread.is_alive():
+            self.record_thread.join(timeout=1.0)
+
+        # Restore system volume if it was dimmed
+        self.restore_volume()
+
+        # Check if we have enough audio
+        if len(self.frames) < 10:
+            print(f"Too short ({len(self.frames)} frames), skipping")
+            self.overlay.hide()
+            return
+
+        # Update status
+        self.overlay.set_status("transcribing")
+        self.is_transcribing = True
+
+        # Process in background
+        threading.Thread(target=self._process_llm_prompt, daemon=True).start()
+
+    def _process_llm_prompt(self):
+        """Transcribe audio and send to LLM (runs in background thread)."""
+        import time
+
+        try:
+            # Check audio level
+            rms = self.calculate_audio_rms()
+            silence_threshold = 0.01
+
+            if rms < silence_threshold:
+                print(f"Audio too quiet (RMS={rms:.4f}), skipping")
+                self.is_transcribing = False
+                GLib.idle_add(self.overlay.hide)
+                return
+
+            # Transcribe audio (in-RAM, no disk I/O)
+            print(f"[LLM] Transcribing {len(self.frames)} frames...")
+            result = self.send_to_daemon(self.frames, self.actual_rate)
+
+            if not result.get("success"):
+                print(f"[LLM] Transcription failed: {result.get('error')}")
+                self.is_transcribing = False
+                GLib.idle_add(self.overlay.hide)
+                return
+
+            spoken_prompt = result.get("transcription", "").strip()
+            print(f"[LLM] Spoken prompt: {spoken_prompt}")
+
+            if len(spoken_prompt) < 2:
+                print("[LLM] Prompt too short, skipping")
+                self.is_transcribing = False
+                GLib.idle_add(self.overlay.hide)
+                return
+
+            # Check for early cancel
+            if self.early_right_click:
+                print("[LLM] Early cancel detected")
+                self.is_transcribing = False
+                self.early_right_click = False
+                self.early_left_click = False
+                GLib.idle_add(self.overlay.hide)
+                return
+
+            # Build context from all registers and primary clipboard
+            context = self.build_register_context()
+
+            print(f"[LLM] Prompt: {spoken_prompt}")
+            if context:
+                print(f"[LLM] Context length: {len(context)} chars")
+
+            # Send to LLM daemon with streaming, show original spoken prompt
+            llm_response = self.send_to_llm_daemon_streaming(spoken_prompt, context, display_prompt=spoken_prompt)
+
+            # Check if cancelled during streaming
+            if llm_response is None:
+                print("[LLM] Cancelled during streaming")
+                self.is_transcribing = False
+                self.early_right_click = False
+                self.early_left_click = False
+                GLib.idle_add(self.overlay.hide)
+                return
+
+            print(f"[LLM] Response: {llm_response[:100]}...")
+
+            # Check for early cancel again
+            if self.early_right_click:
+                print("[LLM] Early cancel detected after LLM")
+                self.is_transcribing = False
+                self.early_right_click = False
+                self.early_left_click = False
+                GLib.idle_add(self.overlay.hide)
+                return
+
+            # Handle early confirm
+            if self.early_left_click:
+                print("[LLM] Early confirm detected - pasting immediately")
+                self.is_transcribing = False
+                self.early_right_click = False
+                self.early_left_click = False
+                self.pending_transcription = llm_response
+                self.prepare_clipboard_for_confirmation(llm_response)
+                GLib.idle_add(self.overlay.hide)
+                time.sleep(0.1)
+                self._do_paste()
+            else:
+                # Show confirmation with LLM response
+                self.pending_transcription = llm_response
+                self.prepare_clipboard_for_confirmation(llm_response)
+                GLib.idle_add(
+                    self.overlay.show_confirmation,
+                    llm_response,
+                    self.on_confirm_paste,
+                    self.on_cancel_paste
+                )
+
+        except Exception as e:
+            print(f"[LLM] Error: {e}")
+            self.is_transcribing = False
+            GLib.idle_add(self.overlay.hide)
+
+    def send_to_llm_daemon(self, prompt, context=""):
+        """Send prompt to LLM daemon, return response."""
+        try:
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            client.settimeout(180)  # LLM can take longer (especially cold start)
+            client.connect(LLM_DAEMON_SOCKET)
+
+            request = {
+                "command": "generate",
+                "prompt": prompt,
+                "context": context,
+            }
+            client.sendall((json.dumps(request) + "\n").encode())
+
+            response_data = b""
+            while True:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                response_data += chunk
+                if b"\n" in chunk:
+                    break
+
+            client.close()
+            result = json.loads(response_data.decode())
+
+            if result.get("success"):
+                return result.get("response", "")
+            else:
+                error = result.get("error", "Unknown error")
+                print(f"[LLM] Error: {error}")
+                return f"[LLM Error: {error}]"
+
+        except FileNotFoundError:
+            print("[LLM] Daemon not running")
+            return "[LLM daemon not running. Start it with: ./daemon_control.sh start]"
+        except socket.timeout:
+            print("[LLM] Request timed out")
+            return "[LLM request timed out]"
+        except Exception as e:
+            print(f"[LLM] Connection error: {e}")
+            return f"[LLM connection error: {e}]"
+
+    def send_to_llm_daemon_streaming(self, prompt, context="", display_prompt=""):
+        """Send prompt to LLM daemon with streaming, updating overlay as tokens arrive."""
+        try:
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            client.settimeout(180)
+            client.connect(LLM_DAEMON_SOCKET)
+
+            request = {
+                "command": "generate_stream",
+                "prompt": prompt,
+                "context": context,
+            }
+            client.sendall((json.dumps(request) + "\n").encode())
+
+            # Initialize streaming display with the spoken prompt
+            GLib.idle_add(self.overlay.start_streaming, display_prompt or prompt)
+
+            # Set short timeout for cancellation checking
+            client.settimeout(0.1)
+
+            full_response = ""
+            buffer = ""
+
+            while True:
+                # Check for cancel request (right-click)
+                if self.early_right_click:
+                    print("[LLM] Streaming cancelled by user")
+                    client.close()
+                    self.early_right_click = False
+                    return None  # Signal cancellation
+
+                try:
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                except socket.timeout:
+                    continue  # No data yet, loop back to check cancellation
+
+                buffer += chunk.decode()
+
+                # Process complete JSON lines
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    if not line.strip():
+                        continue
+
+                    try:
+                        data = json.loads(line)
+
+                        if "token" in data:
+                            token = data["token"]
+                            full_response += token
+                            # Update overlay with new token
+                            GLib.idle_add(self.overlay.append_streaming_token, token)
+
+                        elif "done" in data:
+                            full_response = data.get("full_response", full_response.strip())
+                            client.close()
+                            return full_response
+
+                        elif "error" in data:
+                            error = data["error"]
+                            print(f"[LLM] Stream error: {error}")
+                            client.close()
+                            return f"[LLM Error: {error}]"
+
+                    except json.JSONDecodeError:
+                        continue
+
+            client.close()
+            return full_response.strip() if full_response else "[LLM: No response]"
+
+        except FileNotFoundError:
+            print("[LLM] Daemon not running")
+            return "[LLM daemon not running. Start it with: ./daemon_control.sh start]"
+        except socket.timeout:
+            print("[LLM] Request timed out")
+            return "[LLM request timed out]"
+        except Exception as e:
+            print(f"[LLM] Connection error: {e}")
+            return f"[LLM connection error: {e}]"
 
     def prepare_clipboard_for_confirmation(self, text):
         """Save current clipboard. Don't set transcription yet - do that only when pasting."""
@@ -909,10 +1263,15 @@ class DictationApp:
 
         # Create dialog window
         dialog = Gtk.Window(title="Dictation Settings")
-        dialog.set_default_size(400, 350)
+        dialog.set_default_size(520, 820)
         dialog.set_modal(False)
-        dialog.set_resizable(False)
+        dialog.set_resizable(True)
         self.settings_dialog = dialog
+
+        # Scrolled window for content
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_vexpand(True)
 
         # Main container with padding
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
@@ -999,6 +1358,83 @@ class DictationApp:
 
         main_box.append(gain_box)
 
+        # --- Transcription Model Section ---
+        transcription_header = Gtk.Label(label="Transcription Model")
+        transcription_header.set_halign(Gtk.Align.START)
+        transcription_header.add_css_class("heading")
+        transcription_header.set_margin_top(12)
+        main_box.append(transcription_header)
+
+        # Model path dropdown - scan for whisper model directories
+        trans_model_label = Gtk.Label(label="Model")
+        trans_model_label.set_halign(Gtk.Align.START)
+        trans_model_label.set_margin_top(8)
+        main_box.append(trans_model_label)
+
+        # Find available Whisper models (directories containing model files)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        current_trans_model_path = self.config.get("model_path", "./whisper-base-cpu")
+        available_trans_models = []
+
+        # Search in script directory for whisper-* directories
+        for item in sorted(os.listdir(script_dir)):
+            item_path = os.path.join(script_dir, item)
+            if os.path.isdir(item_path) and item.startswith("whisper-"):
+                available_trans_models.append(item_path)
+
+        # Ensure current model is in list if it exists
+        if current_trans_model_path:
+            abs_current = os.path.abspath(current_trans_model_path)
+            if os.path.exists(abs_current) and abs_current not in available_trans_models:
+                available_trans_models.insert(0, abs_current)
+
+        trans_model_strings = Gtk.StringList()
+        trans_model_selected_idx = 0
+        if not available_trans_models:
+            trans_model_strings.append("No models found")
+        else:
+            for i, model_path in enumerate(available_trans_models):
+                model_name = os.path.basename(model_path)
+                trans_model_strings.append(model_name)
+                if os.path.abspath(model_path) == os.path.abspath(current_trans_model_path):
+                    trans_model_selected_idx = i
+
+        trans_model_dropdown = Gtk.DropDown(model=trans_model_strings)
+        trans_model_dropdown.set_selected(trans_model_selected_idx)
+        trans_model_dropdown.set_hexpand(True)
+        main_box.append(trans_model_dropdown)
+
+        # Store available models for save handler
+        dialog._available_trans_models = available_trans_models
+
+        # Device selection for transcription
+        trans_device_label = Gtk.Label(label="Device")
+        trans_device_label.set_halign(Gtk.Align.START)
+        trans_device_label.set_margin_top(8)
+        main_box.append(trans_device_label)
+
+        trans_device_strings = Gtk.StringList()
+        trans_devices = ["CPU", "GPU", "NPU"]
+        current_trans_device = self.config.get("transcription_device", "CPU")
+        trans_device_selected_idx = 0
+        for i, device in enumerate(trans_devices):
+            trans_device_strings.append(device)
+            if device == current_trans_device:
+                trans_device_selected_idx = i
+
+        trans_device_dropdown = Gtk.DropDown(model=trans_device_strings)
+        trans_device_dropdown.set_selected(trans_device_selected_idx)
+        trans_device_dropdown.set_hexpand(True)
+        main_box.append(trans_device_dropdown)
+
+        dialog._trans_devices = trans_devices
+
+        # Preload model checkbox
+        preload_check = Gtk.CheckButton(label="Preload model at startup (reduces first transcription delay)")
+        preload_check.set_active(self.config.get("preload_transcription_model", False))
+        preload_check.set_margin_top(8)
+        main_box.append(preload_check)
+
         # --- Volume Dimming Section ---
         dim_label = Gtk.Label(label="Volume Dimming While Recording")
         dim_label.set_halign(Gtk.Align.START)
@@ -1038,6 +1474,243 @@ class DictationApp:
 
         main_box.append(dim_box)
 
+        # --- LLM Settings Section ---
+        llm_header = Gtk.Label(label="LLM Settings")
+        llm_header.set_halign(Gtk.Align.START)
+        llm_header.add_css_class("heading")
+        llm_header.set_margin_top(12)
+        main_box.append(llm_header)
+
+        # Enable LLM checkbox
+        llm_enable_check = Gtk.CheckButton(label="Enable LLM mode (Ctrl+Mouse4)")
+        llm_enable_check.set_active(self.config.get("llm_enabled", True))
+        main_box.append(llm_enable_check)
+
+        # Model path dropdown - scan for .gguf files
+        model_label = Gtk.Label(label="Model")
+        model_label.set_halign(Gtk.Align.START)
+        model_label.set_margin_top(8)
+        main_box.append(model_label)
+
+        # Find available models - search multiple locations
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        models_dir = os.path.join(script_dir, "models")
+        available_models = []
+        current_model_path = self.config.get("llm_model_path", "")
+
+        # Directories to search for .gguf files
+        search_dirs = [models_dir, script_dir]
+
+        # Also search directory of current model if different
+        if current_model_path:
+            current_model_dir = os.path.dirname(current_model_path)
+            if current_model_dir and current_model_dir not in search_dirs:
+                search_dirs.append(current_model_dir)
+
+        # Scan all directories for .gguf files
+        seen_paths = set()
+        for search_dir in search_dirs:
+            if os.path.exists(search_dir):
+                for f in sorted(os.listdir(search_dir)):
+                    if f.endswith(".gguf"):
+                        full_path = os.path.join(search_dir, f)
+                        if full_path not in seen_paths:
+                            available_models.append(full_path)
+                            seen_paths.add(full_path)
+
+        # Ensure current model is in list if it exists
+        if current_model_path and os.path.exists(current_model_path) and current_model_path not in seen_paths:
+            available_models.insert(0, current_model_path)
+
+        model_strings = Gtk.StringList()
+        model_selected_idx = 0
+        if not available_models:
+            model_strings.append("No models found (place .gguf files in models/)")
+        else:
+            for i, model_path in enumerate(available_models):
+                model_name = os.path.basename(model_path)
+                model_strings.append(model_name)
+                if model_path == current_model_path:
+                    model_selected_idx = i
+
+        model_dropdown = Gtk.DropDown(model=model_strings)
+        model_dropdown.set_selected(model_selected_idx)
+        model_dropdown.set_hexpand(True)
+        main_box.append(model_dropdown)
+
+        # Store available models for save handler
+        dialog._available_models = available_models
+
+        # Backend selection
+        backend_label = Gtk.Label(label="Backend")
+        backend_label.set_halign(Gtk.Align.START)
+        backend_label.set_margin_top(8)
+        main_box.append(backend_label)
+
+        backend_strings = Gtk.StringList()
+        backends = [
+            ("cpu", "CPU (llama.cpp)"),
+            ("openvino", "OpenVINO (Intel CPU optimized)"),
+            ("sycl", "SYCL (Intel iGPU)"),
+            ("ipex", "IPEX-LLM (Intel NPU/iGPU)"),
+        ]
+        current_backend = self.config.get("llm_backend", "cpu")
+        backend_selected_idx = 0
+        for i, (key, name) in enumerate(backends):
+            backend_strings.append(name)
+            if key == current_backend:
+                backend_selected_idx = i
+
+        backend_dropdown = Gtk.DropDown(model=backend_strings)
+        backend_dropdown.set_selected(backend_selected_idx)
+        backend_dropdown.set_hexpand(True)
+        main_box.append(backend_dropdown)
+
+        dialog._backends = backends
+
+        # Context length slider
+        ctx_label = Gtk.Label(label="Context Length")
+        ctx_label.set_halign(Gtk.Align.START)
+        ctx_label.set_margin_top(8)
+        main_box.append(ctx_label)
+
+        ctx_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        current_ctx = self.config.get("llm_context_length", 131072)
+        ctx_adj = Gtk.Adjustment(
+            value=current_ctx,
+            lower=2048,
+            upper=131072,
+            step_increment=2048,
+            page_increment=8192
+        )
+        ctx_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=ctx_adj)
+        ctx_scale.set_hexpand(True)
+        ctx_scale.set_digits(0)
+        ctx_scale.add_mark(2048, Gtk.PositionType.BOTTOM, "2K")
+        ctx_scale.add_mark(32768, Gtk.PositionType.BOTTOM, "32K")
+        ctx_scale.add_mark(131072, Gtk.PositionType.BOTTOM, "128K")
+        ctx_box.append(ctx_scale)
+
+        ctx_value_label = Gtk.Label(label=f"{int(current_ctx/1024)}K")
+        ctx_value_label.set_size_request(45, -1)
+        ctx_box.append(ctx_value_label)
+
+        def on_ctx_changed(adj):
+            ctx_value_label.set_label(f"{int(adj.get_value()/1024)}K")
+        ctx_adj.connect("value-changed", on_ctx_changed)
+
+        main_box.append(ctx_box)
+
+        # Thread count slider
+        threads_label = Gtk.Label(label="Threads (0 = auto)")
+        threads_label.set_halign(Gtk.Align.START)
+        threads_label.set_margin_top(8)
+        main_box.append(threads_label)
+
+        threads_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        current_threads = self.config.get("llm_threads", 0)
+        max_threads = os.cpu_count() or 16
+        threads_adj = Gtk.Adjustment(
+            value=current_threads,
+            lower=0,
+            upper=max_threads,
+            step_increment=1,
+            page_increment=4
+        )
+        threads_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=threads_adj)
+        threads_scale.set_hexpand(True)
+        threads_scale.set_digits(0)
+        threads_scale.add_mark(0, Gtk.PositionType.BOTTOM, "Auto")
+        threads_scale.add_mark(max_threads // 2, Gtk.PositionType.BOTTOM, str(max_threads // 2))
+        threads_scale.add_mark(max_threads, Gtk.PositionType.BOTTOM, str(max_threads))
+        threads_box.append(threads_scale)
+
+        threads_value_label = Gtk.Label(label="Auto" if current_threads == 0 else str(current_threads))
+        threads_value_label.set_size_request(45, -1)
+        threads_box.append(threads_value_label)
+
+        def on_threads_changed(adj):
+            val = int(adj.get_value())
+            threads_value_label.set_label("Auto" if val == 0 else str(val))
+        threads_adj.connect("value-changed", on_threads_changed)
+
+        main_box.append(threads_box)
+
+        # Strip reasoning checkbox
+        strip_reasoning_check = Gtk.CheckButton(label="Strip reasoning tokens (<think>, etc.)")
+        strip_reasoning_check.set_active(self.config.get("llm_strip_reasoning", True))
+        strip_reasoning_check.set_tooltip_text("Disable to see model's chain-of-thought reasoning")
+        strip_reasoning_check.set_margin_top(8)
+        main_box.append(strip_reasoning_check)
+
+        # --- System Settings Section ---
+        system_header = Gtk.Label(label="System Settings")
+        system_header.set_halign(Gtk.Align.START)
+        system_header.add_css_class("heading")
+        system_header.set_margin_top(12)
+        main_box.append(system_header)
+
+        # Enable logging checkbox
+        logging_check = Gtk.CheckButton(label="Enable logging to ~/.dictation_*.log files")
+        logging_check.set_active(self.config.get("logging_enabled", True))
+        logging_check.set_tooltip_text("Disable to prevent creation of potentially large log files")
+        main_box.append(logging_check)
+
+        # Daemon control buttons
+        daemon_label = Gtk.Label(label="Daemon Control")
+        daemon_label.set_halign(Gtk.Align.START)
+        daemon_label.add_css_class("heading")
+        daemon_label.set_margin_top(12)
+        main_box.append(daemon_label)
+
+        restart_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        restart_box.set_margin_top(4)
+
+        script_dir_for_btns = os.path.dirname(os.path.abspath(__file__))
+        daemon_script = os.path.join(script_dir_for_btns, "daemon_control.sh")
+
+        # Status label (shared by all buttons)
+        daemon_status_label = Gtk.Label(label="")
+        daemon_status_label.set_hexpand(True)
+        daemon_status_label.set_halign(Gtk.Align.END)
+
+        def run_daemon_cmd(cmd, status_msg):
+            daemon_status_label.set_text(status_msg)
+            def do_restart():
+                try:
+                    subprocess.run([daemon_script, cmd], timeout=10)
+                    print(f"Daemon command: {cmd}")
+                    GLib.idle_add(lambda: daemon_status_label.set_text("Done!"))
+                    GLib.timeout_add(2000, lambda: daemon_status_label.set_text("") or False)
+                except Exception as e:
+                    print(f"Error: {e}")
+                    GLib.idle_add(lambda: daemon_status_label.set_text(f"Error!"))
+            threading.Thread(target=do_restart, daemon=True).start()
+
+        # Restart All button
+        restart_all_btn = Gtk.Button(label="Restart All")
+        restart_all_btn.set_tooltip_text("Restart all daemons (transcription + LLM)")
+        restart_all_btn.connect("clicked", lambda b: run_daemon_cmd("restart", "Restarting..."))
+        restart_box.append(restart_all_btn)
+
+        # Restart LLM button
+        restart_llm_btn = Gtk.Button(label="Restart LLM")
+        restart_llm_btn.set_tooltip_text("Restart LLM daemon only")
+        restart_llm_btn.connect("clicked", lambda b: run_daemon_cmd("restart-llm", "Restarting LLM..."))
+        restart_box.append(restart_llm_btn)
+
+        # Restart Transcription button
+        restart_trans_btn = Gtk.Button(label="Restart Transcription")
+        restart_trans_btn.set_tooltip_text("Restart transcription daemon only")
+        restart_trans_btn.connect("clicked", lambda b: run_daemon_cmd("restart-transcription", "Restarting..."))
+        restart_box.append(restart_trans_btn)
+
+        restart_box.append(daemon_status_label)
+        main_box.append(restart_box)
+
+        # Alias for save handler
+        llm_status_label = daemon_status_label
+
         # --- Buttons ---
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.END)
@@ -1059,23 +1732,91 @@ class DictationApp:
                     self.selected_device_index = new_device_index
                     print(f"Changed input device to: {self.get_device_name(new_device_index)}")
 
-            # Update config
+            # Update config - audio settings
             self.config["device_index"] = self.selected_device_index
             self.config["input_gain"] = gain_adj.get_value()
             self.config["volume_dimming_enabled"] = dim_check.get_active()
             self.config["dimmed_volume"] = dim_adj.get_value() / 100.0
 
-            # Save to file
-            self.save_config()
-            print(f"Settings saved: device={self.selected_device_index}, gain={self.config['input_gain']:.1f}x, dim={self.config['volume_dimming_enabled']}, dim_vol={self.config['dimmed_volume']:.0%}")
-            dialog.close()
+            # Update config - transcription model settings
+            trans_model_sel_idx = trans_model_dropdown.get_selected()
+            trans_model_changed = False
+            if dialog._available_trans_models and trans_model_sel_idx < len(dialog._available_trans_models):
+                new_model_path = dialog._available_trans_models[trans_model_sel_idx]
+                if new_model_path != self.config.get("model_path"):
+                    trans_model_changed = True
+                self.config["model_path"] = new_model_path
+
+            trans_device_sel_idx = trans_device_dropdown.get_selected()
+            if trans_device_sel_idx < len(dialog._trans_devices):
+                new_trans_device = dialog._trans_devices[trans_device_sel_idx]
+                if new_trans_device != self.config.get("transcription_device"):
+                    trans_model_changed = True
+                self.config["transcription_device"] = new_trans_device
+
+            # Preload model setting
+            self.config["preload_transcription_model"] = preload_check.get_active()
+
+            # Update config - LLM settings
+            self.config["llm_enabled"] = llm_enable_check.get_active()
+
+            # Model path
+            model_sel_idx = model_dropdown.get_selected()
+            if dialog._available_models and model_sel_idx < len(dialog._available_models):
+                self.config["llm_model_path"] = dialog._available_models[model_sel_idx]
+
+            # Backend
+            backend_sel_idx = backend_dropdown.get_selected()
+            if backend_sel_idx < len(dialog._backends):
+                self.config["llm_backend"] = dialog._backends[backend_sel_idx][0]
+
+            # Context length, threads, and reasoning
+            self.config["llm_context_length"] = int(ctx_adj.get_value())
+            self.config["llm_threads"] = int(threads_adj.get_value())
+            self.config["llm_strip_reasoning"] = strip_reasoning_check.get_active()
+
+            # System settings
+            self.config["logging_enabled"] = logging_check.get_active()
+
+            # Save to file and restart daemons
+            try:
+                self.save_config()
+                print(f"Settings saved to {CONFIG_FILE}")
+                print(f"  Audio: device={self.selected_device_index}, gain={self.config['input_gain']:.1f}x")
+                print(f"  Transcription: model={self.config.get('model_path')}, device={self.config.get('transcription_device')}, preload={self.config.get('preload_transcription_model')}")
+                print(f"  LLM: enabled={self.config.get('llm_enabled')}")
+                print(f"  LLM: model={self.config.get('llm_model_path', 'none')}")
+                print(f"  LLM: backend={self.config.get('llm_backend')}, ctx={self.config.get('llm_context_length')}, threads={self.config.get('llm_threads')}")
+
+                # Auto-restart daemons to apply changes
+                if trans_model_changed:
+                    llm_status_label.set_text("Saved! Restarting all daemons...")
+                    restart_cmd = "restart"
+                else:
+                    llm_status_label.set_text("Saved! Restarting LLM...")
+                    restart_cmd = "restart-llm"
+
+                def do_restart():
+                    try:
+                        subprocess.run([daemon_script, restart_cmd], timeout=15)
+                        print(f"Daemons restarted after save ({restart_cmd})")
+                        GLib.idle_add(lambda: llm_status_label.set_text("Saved & restarted!"))
+                    except Exception as e:
+                        print(f"Error restarting daemons: {e}")
+                        GLib.idle_add(lambda: llm_status_label.set_text("Saved (restart failed)"))
+                threading.Thread(target=do_restart, daemon=True).start()
+
+            except Exception as e:
+                print(f"Error saving settings: {e}")
+                llm_status_label.set_text(f"Error: {e}")
 
         save_btn.connect("clicked", on_save)
         button_box.append(save_btn)
 
         main_box.append(button_box)
 
-        dialog.set_child(main_box)
+        scrolled.set_child(main_box)
+        dialog.set_child(scrolled)
         dialog.present()
 
     def save_config(self):

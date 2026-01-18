@@ -76,9 +76,6 @@ class DictationApp:
         self.shift_pressed = False
         self.settings_dialog = None
 
-        # Volume dimming state
-        self.original_volume = None
-
         # LLM mode state (Ctrl+Mouse4 triggers LLM instead of paste)
         self.llm_mode = False
 
@@ -168,6 +165,7 @@ class DictationApp:
             "interim_enabled": True,
             "volume_dimming_enabled": False,
             "dimmed_volume": 0.10,  # 10% volume while recording
+            "volume_fade_enabled": False,  # Gradual fade to avoid pops (may not help with Bluetooth)
             "input_gain": 1.0,  # Input gain multiplier (0.5 - 4.0)
             # LLM integration settings
             "llm_enabled": True,  # Enable Ctrl+Mouse4 for LLM mode
@@ -255,26 +253,45 @@ class DictationApp:
             print(f"Error setting volume: {e}")
             return False
 
+    def fade_volume(self, start, end, steps=8, duration_ms=60):
+        """Gradually change volume to avoid audio pops, or instant if fade disabled."""
+        if not self.config.get("volume_fade_enabled", False):
+            self.set_system_volume(end)
+            return
+        import time
+        if steps < 2:
+            self.set_system_volume(end)
+            return
+        step_delay = duration_ms / 1000.0 / steps
+        for i in range(1, steps + 1):
+            level = start + (end - start) * (i / steps)
+            self.set_system_volume(level)
+            if i < steps:
+                time.sleep(step_delay)
+
     def dim_volume(self):
-        """Dim system volume for recording."""
+        """Dim system volume for recording (relative - multiply by dim_factor)."""
         if not self.config.get("volume_dimming_enabled", False):
             return
 
-        self.original_volume = self.get_system_volume()
-        if self.original_volume is not None:
-            dimmed = self.config.get("dimmed_volume", 0.10)
-            if self.set_system_volume(dimmed):
-                print(f"Volume dimmed: {self.original_volume:.0%} -> {dimmed:.0%}")
+        current = self.get_system_volume()
+        if current is not None:
+            dim_factor = self.config.get("dimmed_volume", 0.10)
+            dimmed = current * dim_factor
+            print(f"Volume dimming: {current:.0%} -> {dimmed:.0%}")
+            self.fade_volume(current, dimmed)
 
     def restore_volume(self):
-        """Restore system volume after recording."""
+        """Restore system volume after recording (relative - divide by dim_factor)."""
         if not self.config.get("volume_dimming_enabled", False):
             return
 
-        if self.original_volume is not None:
-            if self.set_system_volume(self.original_volume):
-                print(f"Volume restored: {self.original_volume:.0%}")
-            self.original_volume = None
+        current = self.get_system_volume()
+        if current is not None:
+            dim_factor = self.config.get("dimmed_volume", 0.10)
+            restored = min(current / dim_factor, 1.0)  # Cap at 100%
+            print(f"Volume restoring: {current:.0%} -> {restored:.0%}")
+            self.fade_volume(current, restored)
 
     def get_input_devices(self):
         """Get list of input devices."""
@@ -1630,6 +1647,11 @@ class DictationApp:
         dim_adj.connect("value-changed", on_dim_changed)
 
         main_box.append(dim_box)
+
+        dim_help = Gtk.Label(label="Percentage of current volume (e.g., 10% at 50% volume → 5%)")
+        dim_help.set_halign(Gtk.Align.START)
+        dim_help.add_css_class("dim-label")
+        main_box.append(dim_help)
 
         # --- LLM Settings Section ---
         llm_header = Gtk.Label(label="LLM Settings")

@@ -40,6 +40,8 @@ except ImportError:
 PID_FILE = os.path.expanduser("~/.dictation_app.pid")
 CONFIG_FILE = os.path.expanduser("~/.dictation_config")
 DAEMON_SOCKET = "/tmp/dictation_transcription.sock"
+DAEMON_SOCKET_FAST = "/tmp/dictation_transcription_fast.sock"
+DAEMON_SOCKET_ACCURATE = "/tmp/dictation_transcription_accurate.sock"
 LLM_DAEMON_SOCKET = "/tmp/dictation_llm.sock"
 MOUSE_BUTTON = ecodes.BTN_EXTRA  # Mouse 4 (first side button)
 
@@ -71,6 +73,7 @@ class DictationApp:
         # Modifier key state for hotkeys
         self.ctrl_pressed = False
         self.alt_pressed = False
+        self.shift_pressed = False
         self.settings_dialog = None
 
         # Volume dimming state
@@ -82,8 +85,14 @@ class DictationApp:
         # Clipboard registers (1-9) for multi-context LLM prompts
         self.registers = {}
 
+        # Transcription mode state (for dual-daemon mode)
+        self.transcription_mode_active = None  # Will be set from config
+
         # Load config
         self.config = self.load_config()
+
+        # Initialize transcription mode from config (for dual-daemon mode)
+        self.transcription_mode_active = self.config.get("transcription_mode_active", "fast")
 
         # Audio settings
         self.CHUNK = 1024
@@ -140,6 +149,9 @@ class DictationApp:
         else:
             print("Interim transcription: disabled")
         print(f"Press Mouse 4 (BTN_EXTRA) to record, release to transcribe")
+        print(f"Press Ctrl+Mouse4 for LLM mode")
+        if self.config.get("dual_daemon_enabled", False):
+            print(f"Press Ctrl+Alt+Mouse4 to toggle between fast/accurate modes")
         print(f"Press Ctrl+Alt+Space to open settings")
         print(f"Press Ctrl+C to quit\n")
 
@@ -161,6 +173,13 @@ class DictationApp:
             "llm_enabled": True,  # Enable Ctrl+Mouse4 for LLM mode
             # Logging settings
             "logging_enabled": True,  # Enable logging to ~/.dictation_*.log files
+            # Dual-daemon mode settings
+            "dual_daemon_enabled": False,  # Enable fast/accurate model switching
+            "transcription_model_fast": "./whisper-base-npu",
+            "transcription_device_fast": "NPU",
+            "transcription_model_accurate": "./whisper-small-npu",
+            "transcription_device_accurate": "NPU",
+            "transcription_mode_active": "fast",  # "fast" or "accurate"
         }
 
         if os.path.exists(CONFIG_FILE):
@@ -172,6 +191,41 @@ class DictationApp:
             except:
                 pass
         return defaults
+
+    def get_active_daemon_socket(self):
+        """Get the socket path for the currently active transcription daemon."""
+        if not self.config.get("dual_daemon_enabled", False):
+            # Single daemon mode - use legacy socket
+            return DAEMON_SOCKET
+
+        # Dual daemon mode - use appropriate socket based on active mode
+        if self.transcription_mode_active == "accurate":
+            return DAEMON_SOCKET_ACCURATE
+        else:
+            return DAEMON_SOCKET_FAST
+
+    def toggle_transcription_mode(self):
+        """Toggle between fast and accurate transcription modes."""
+        if not self.config.get("dual_daemon_enabled", False):
+            print("Dual-daemon mode not enabled")
+            return
+
+        # Toggle mode
+        if self.transcription_mode_active == "fast":
+            self.transcription_mode_active = "accurate"
+            mode_text = "ACCURATE"
+            print("Switched to ACCURATE mode")
+        else:
+            self.transcription_mode_active = "fast"
+            mode_text = "FAST"
+            print("Switched to FAST mode")
+
+        # Save preference to config
+        self.config["transcription_mode_active"] = self.transcription_mode_active
+        self.save_config()
+
+        # Flash mode indicator at mouse position
+        GLib.idle_add(self.overlay.flash_mode_indicator, mode_text)
 
     def get_system_volume(self):
         """Get current system volume using wpctl (PipeWire)."""
@@ -306,14 +360,19 @@ class DictationApp:
                                 if key_event.keystate == key_event.key_down:
                                     # Get mouse position right when button is pressed
                                     x, y = self.get_mouse_position()
+                                    # Check if Ctrl+Alt is held for mode toggle
+                                    if self.ctrl_pressed and self.alt_pressed and self.config.get("dual_daemon_enabled", False):
+                                        print(f"Ctrl+Alt+Mouse4 pressed - toggling transcription mode")
+                                        GLib.idle_add(self.toggle_transcription_mode)
                                     # Check if Ctrl is held for LLM mode
-                                    if self.ctrl_pressed and self.config.get("llm_enabled", True):
+                                    elif self.ctrl_pressed and self.config.get("llm_enabled", True):
                                         self.llm_mode = True
                                         print(f"Ctrl+Mouse4 pressed at ({x}, {y}) - LLM mode")
+                                        GLib.idle_add(self.start_recording_at_mouse)
                                     else:
                                         self.llm_mode = False
                                         print(f"Mouse button pressed at ({x}, {y}) - Transcription mode")
-                                    GLib.idle_add(self.start_recording_at_mouse)
+                                        GLib.idle_add(self.start_recording_at_mouse)
                                 elif key_event.keystate == key_event.key_up:
                                     if self.llm_mode:
                                         print("Mouse button released - sending to LLM")
@@ -350,12 +409,14 @@ class DictationApp:
                                     print("Right-click detected - canceling")
                                     GLib.idle_add(lambda: self.overlay.handle_click(False))
 
-                            # Track modifier keys for Ctrl+Alt+Space hotkey (always track, not an elif)
+                            # Track modifier keys for hotkeys (always track, not an elif)
                             if dev_type == 'keyboard':
                                 if event.code in (ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL):
                                     self.ctrl_pressed = key_event.keystate in (key_event.key_down, key_event.key_hold)
                                 elif event.code in (ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT):
                                     self.alt_pressed = key_event.keystate in (key_event.key_down, key_event.key_hold)
+                                elif event.code in (ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT):
+                                    self.shift_pressed = key_event.keystate in (key_event.key_down, key_event.key_hold)
                                 elif event.code == ecodes.KEY_SPACE and key_event.keystate == key_event.key_down:
                                     if self.ctrl_pressed and self.alt_pressed:
                                         print("Ctrl+Alt+Space pressed - opening settings")
@@ -795,7 +856,7 @@ class DictationApp:
 
             client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             client.settimeout(30)
-            client.connect(DAEMON_SOCKET)
+            client.connect(self.get_active_daemon_socket())
 
             # Send JSON header with metadata
             request = {
@@ -1435,6 +1496,102 @@ class DictationApp:
         preload_check.set_margin_top(8)
         main_box.append(preload_check)
 
+        # --- Dual-Daemon Mode Section ---
+        dual_daemon_header = Gtk.Label(label="Dual-Daemon Mode (Fast/Accurate Toggle)")
+        dual_daemon_header.set_halign(Gtk.Align.START)
+        dual_daemon_header.add_css_class("heading")
+        dual_daemon_header.set_margin_top(12)
+        main_box.append(dual_daemon_header)
+
+        # Enable dual-daemon mode checkbox
+        dual_daemon_check = Gtk.CheckButton(label="Enable dual-daemon mode (Ctrl+Alt+Mouse4 to toggle)")
+        dual_daemon_check.set_active(self.config.get("dual_daemon_enabled", False))
+        main_box.append(dual_daemon_check)
+
+        # Fast mode configuration
+        fast_model_label = Gtk.Label(label="Fast Model")
+        fast_model_label.set_halign(Gtk.Align.START)
+        fast_model_label.set_margin_top(8)
+        main_box.append(fast_model_label)
+
+        current_fast_model_path = self.config.get("transcription_model_fast", "./whisper-base-npu")
+        fast_model_strings = Gtk.StringList()
+        fast_model_selected_idx = 0
+        if not available_trans_models:
+            fast_model_strings.append("No models found")
+        else:
+            for i, model_path in enumerate(available_trans_models):
+                model_name = os.path.basename(model_path)
+                fast_model_strings.append(model_name)
+                if os.path.abspath(model_path) == os.path.abspath(current_fast_model_path):
+                    fast_model_selected_idx = i
+
+        fast_model_dropdown = Gtk.DropDown(model=fast_model_strings)
+        fast_model_dropdown.set_selected(fast_model_selected_idx)
+        fast_model_dropdown.set_hexpand(True)
+        main_box.append(fast_model_dropdown)
+
+        fast_device_label = Gtk.Label(label="Fast Device")
+        fast_device_label.set_halign(Gtk.Align.START)
+        fast_device_label.set_margin_top(4)
+        main_box.append(fast_device_label)
+
+        fast_device_strings = Gtk.StringList()
+        for device in trans_devices:
+            fast_device_strings.append(device)
+        current_fast_device = self.config.get("transcription_device_fast", "NPU")
+        fast_device_selected_idx = 0
+        for i, device in enumerate(trans_devices):
+            if device == current_fast_device:
+                fast_device_selected_idx = i
+
+        fast_device_dropdown = Gtk.DropDown(model=fast_device_strings)
+        fast_device_dropdown.set_selected(fast_device_selected_idx)
+        fast_device_dropdown.set_hexpand(True)
+        main_box.append(fast_device_dropdown)
+
+        # Accurate mode configuration
+        accurate_model_label = Gtk.Label(label="Accurate Model")
+        accurate_model_label.set_halign(Gtk.Align.START)
+        accurate_model_label.set_margin_top(8)
+        main_box.append(accurate_model_label)
+
+        current_accurate_model_path = self.config.get("transcription_model_accurate", "./whisper-small-npu")
+        accurate_model_strings = Gtk.StringList()
+        accurate_model_selected_idx = 0
+        if not available_trans_models:
+            accurate_model_strings.append("No models found")
+        else:
+            for i, model_path in enumerate(available_trans_models):
+                model_name = os.path.basename(model_path)
+                accurate_model_strings.append(model_name)
+                if os.path.abspath(model_path) == os.path.abspath(current_accurate_model_path):
+                    accurate_model_selected_idx = i
+
+        accurate_model_dropdown = Gtk.DropDown(model=accurate_model_strings)
+        accurate_model_dropdown.set_selected(accurate_model_selected_idx)
+        accurate_model_dropdown.set_hexpand(True)
+        main_box.append(accurate_model_dropdown)
+
+        accurate_device_label = Gtk.Label(label="Accurate Device")
+        accurate_device_label.set_halign(Gtk.Align.START)
+        accurate_device_label.set_margin_top(4)
+        main_box.append(accurate_device_label)
+
+        accurate_device_strings = Gtk.StringList()
+        for device in trans_devices:
+            accurate_device_strings.append(device)
+        current_accurate_device = self.config.get("transcription_device_accurate", "NPU")
+        accurate_device_selected_idx = 0
+        for i, device in enumerate(trans_devices):
+            if device == current_accurate_device:
+                accurate_device_selected_idx = i
+
+        accurate_device_dropdown = Gtk.DropDown(model=accurate_device_strings)
+        accurate_device_dropdown.set_selected(accurate_device_selected_idx)
+        accurate_device_dropdown.set_hexpand(True)
+        main_box.append(accurate_device_dropdown)
+
         # --- Volume Dimming Section ---
         dim_label = Gtk.Label(label="Volume Dimming While Recording")
         dim_label.set_halign(Gtk.Align.START)
@@ -1757,6 +1914,44 @@ class DictationApp:
             # Preload model setting
             self.config["preload_transcription_model"] = preload_check.get_active()
 
+            # Update config - dual-daemon settings
+            dual_daemon_changed = False
+            new_dual_daemon_enabled = dual_daemon_check.get_active()
+            if new_dual_daemon_enabled != self.config.get("dual_daemon_enabled", False):
+                dual_daemon_changed = True
+                trans_model_changed = True  # Need to restart daemons
+            self.config["dual_daemon_enabled"] = new_dual_daemon_enabled
+
+            # Fast mode settings
+            fast_model_sel_idx = fast_model_dropdown.get_selected()
+            if dialog._available_trans_models and fast_model_sel_idx < len(dialog._available_trans_models):
+                new_fast_model = dialog._available_trans_models[fast_model_sel_idx]
+                if new_fast_model != self.config.get("transcription_model_fast"):
+                    trans_model_changed = True
+                self.config["transcription_model_fast"] = new_fast_model
+
+            fast_device_sel_idx = fast_device_dropdown.get_selected()
+            if fast_device_sel_idx < len(dialog._trans_devices):
+                new_fast_device = dialog._trans_devices[fast_device_sel_idx]
+                if new_fast_device != self.config.get("transcription_device_fast"):
+                    trans_model_changed = True
+                self.config["transcription_device_fast"] = new_fast_device
+
+            # Accurate mode settings
+            accurate_model_sel_idx = accurate_model_dropdown.get_selected()
+            if dialog._available_trans_models and accurate_model_sel_idx < len(dialog._available_trans_models):
+                new_accurate_model = dialog._available_trans_models[accurate_model_sel_idx]
+                if new_accurate_model != self.config.get("transcription_model_accurate"):
+                    trans_model_changed = True
+                self.config["transcription_model_accurate"] = new_accurate_model
+
+            accurate_device_sel_idx = accurate_device_dropdown.get_selected()
+            if accurate_device_sel_idx < len(dialog._trans_devices):
+                new_accurate_device = dialog._trans_devices[accurate_device_sel_idx]
+                if new_accurate_device != self.config.get("transcription_device_accurate"):
+                    trans_model_changed = True
+                self.config["transcription_device_accurate"] = new_accurate_device
+
             # Update config - LLM settings
             self.config["llm_enabled"] = llm_enable_check.get_active()
 
@@ -1783,7 +1978,13 @@ class DictationApp:
                 self.save_config()
                 print(f"Settings saved to {CONFIG_FILE}")
                 print(f"  Audio: device={self.selected_device_index}, gain={self.config['input_gain']:.1f}x")
-                print(f"  Transcription: model={self.config.get('model_path')}, device={self.config.get('transcription_device')}, preload={self.config.get('preload_transcription_model')}")
+                if self.config.get("dual_daemon_enabled", False):
+                    print(f"  Transcription: dual-daemon mode ENABLED")
+                    print(f"    Fast: {self.config.get('transcription_model_fast')} on {self.config.get('transcription_device_fast')}")
+                    print(f"    Accurate: {self.config.get('transcription_model_accurate')} on {self.config.get('transcription_device_accurate')}")
+                    print(f"    Preload: {self.config.get('preload_transcription_model')}")
+                else:
+                    print(f"  Transcription: model={self.config.get('model_path')}, device={self.config.get('transcription_device')}, preload={self.config.get('preload_transcription_model')}")
                 print(f"  LLM: enabled={self.config.get('llm_enabled')}")
                 print(f"  LLM: model={self.config.get('llm_model_path', 'none')}")
                 print(f"  LLM: backend={self.config.get('llm_backend')}, ctx={self.config.get('llm_context_length')}, threads={self.config.get('llm_threads')}")

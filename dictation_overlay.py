@@ -209,11 +209,17 @@ class DictationOverlay:
         self.on_confirm_callback = None
         self.on_cancel_callback = None
 
+        # Flash mode state (for mode indicator)
+        self.is_flashing = False
+        self.flash_timeout_id = None
+
         # Window dimensions
         self.width = 400
         self.height_compact = 200
         self.height_expanded = 280
         self.height_confirmation = 120  # Smaller for confirmation (just text + instructions)
+        self.height_flash = 80  # Small for mode indicator flash
+        self.width_flash = 180  # Narrower for mode indicator flash
         self.height = self.height_compact
         self.target_height = self.height_compact
         self.resize_timeout_id = None
@@ -519,7 +525,20 @@ class DictationOverlay:
 
     def show(self, x, y):
         """Show the overlay at position (centered above the given point)."""
-        
+
+        # Cancel any pending flash
+        if self.flash_timeout_id:
+            GLib.source_remove(self.flash_timeout_id)
+            self.flash_timeout_id = None
+        self.is_flashing = False
+
+        # Restore normal window size (in case we were showing flash)
+        self.window.set_default_size(self.width, self.height_compact)
+        self.height = self.height_compact
+
+        # Restore info label visibility (in case we were showing flash)
+        self.info_label.set_visible(True)
+
         # Position the window
         self._position_window(x, y)
 
@@ -539,6 +558,11 @@ class DictationOverlay:
         if self.resize_timeout_id:
             GLib.source_remove(self.resize_timeout_id)
             self.resize_timeout_id = None
+        # Cancel any pending flash
+        if self.flash_timeout_id:
+            GLib.source_remove(self.flash_timeout_id)
+            self.flash_timeout_id = None
+        self.is_flashing = False
         self.window.set_visible(False)
         self.is_visible = False
 
@@ -766,6 +790,78 @@ class DictationOverlay:
         self.on_cancel_callback = None
 
         return True
+
+    def flash_mode_indicator(self, mode_text):
+        """Flash a mode indicator above the mouse cursor.
+
+        Args:
+            mode_text: Text to display (e.g., "FAST" or "ACCURATE")
+        """
+        # Don't flash if we're currently recording or transcribing
+        if self.is_visible and not self.is_flashing:
+            return
+
+        # Cancel any existing flash timeout
+        if self.flash_timeout_id:
+            GLib.source_remove(self.flash_timeout_id)
+            self.flash_timeout_id = None
+
+        # Get fresh mouse position
+        try:
+            x, y = get_mouse_position()
+        except:
+            x, y = 960, 540  # Fallback to screen center
+
+        print(f"[DEBUG] Flashing mode indicator at mouse position: ({x}, {y})")
+
+        # Set the status label to show the mode
+        self.status_label.set_text(mode_text)
+        self.status_label.remove_css_class("status-recording")
+        self.status_label.remove_css_class("status-transcribing")
+        self.status_label.add_css_class("status-transcribing")  # Use cyan color
+        self.status_label.set_visible(True)
+
+        # Hide everything else
+        self.waveform_frame.set_visible(False)
+        self.middle_box.set_visible(False)
+        self.transcription_label.set_visible(False)
+        self.interim_label.set_visible(False)
+        self.register_box.set_visible(False)
+        self.prompt_label.set_visible(False)
+        self.info_label.set_visible(False)  # Hide the info label too
+
+        # Resize window to smaller flash size
+        self.window.set_default_size(self.width_flash, self.height_flash)
+        self.height = self.height_flash
+
+        # Show window first
+        self.window.set_visible(True)
+        self.is_visible = True
+        self.is_flashing = True
+
+        # THEN position it at mouse (GNOME extension needs window to be visible first)
+        self._position_window(x, y)
+
+        # Start following mouse briefly to trigger positioning
+        if self.use_gnome_extension:
+            self.start_following_mouse()
+
+        # Auto-hide after 1 second
+        def hide_flash():
+            if self.is_flashing:  # Only hide if still in flash mode
+                self.stop_following_mouse()  # Stop following before hiding
+                self.window.set_visible(False)
+                self.is_visible = False
+                self.is_flashing = False
+                self.flash_timeout_id = None
+                # Restore normal window size
+                self.window.set_default_size(self.width, self.height_compact)
+                self.height = self.height_compact
+                # Restore info label visibility (will be set by next show/set_status)
+                self.info_label.set_visible(True)
+            return False
+
+        self.flash_timeout_id = GLib.timeout_add(1000, hide_flash)
 
     def set_interim_text(self, text):
         """Update the interim transcription display."""

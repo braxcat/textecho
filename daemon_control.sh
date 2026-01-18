@@ -5,6 +5,10 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRANSCRIPTION_PID_FILE=~/.dictation_transcription.pid
 TRANSCRIPTION_LOG_FILE=~/.dictation_transcription.log
+TRANSCRIPTION_FAST_PID_FILE=~/.dictation_transcription_fast.pid
+TRANSCRIPTION_FAST_LOG_FILE=~/.dictation_transcription_fast.log
+TRANSCRIPTION_ACCURATE_PID_FILE=~/.dictation_transcription_accurate.pid
+TRANSCRIPTION_ACCURATE_LOG_FILE=~/.dictation_transcription_accurate.log
 LLM_PID_FILE=~/.dictation_llm.pid
 LLM_LOG_FILE=~/.dictation_llm.log
 APP_PID_FILE=~/.dictation_app.pid
@@ -22,6 +26,16 @@ is_logging_enabled() {
     else
         # No config file, default to logging enabled
         return 0
+    fi
+}
+
+# Check if dual-daemon mode is enabled in config
+is_dual_daemon_enabled() {
+    if [ -f "$CONFIG_FILE" ]; then
+        python3 -c "import json, sys; config = json.load(open('$CONFIG_FILE')); sys.exit(0 if config.get('dual_daemon_enabled', False) else 1)" 2>/dev/null
+        return $?
+    else
+        return 1
     fi
 }
 
@@ -112,7 +126,93 @@ stop_transcription_daemon() {
             rm -f "$TRANSCRIPTION_PID_FILE"
         fi
     else
-        pkill -f transcription_daemon.py 2>/dev/null && echo "Transcription daemon stopped"
+        pkill -f "transcription_daemon.py$" 2>/dev/null && echo "Transcription daemon stopped"
+    fi
+}
+
+start_transcription_fast_daemon() {
+    if [ -f "$TRANSCRIPTION_FAST_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_FAST_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Fast transcription daemon already running (PID $PID)"
+            return 0
+        else
+            rm -f "$TRANSCRIPTION_FAST_PID_FILE"
+        fi
+    fi
+
+    cd "$SCRIPT_DIR"
+    echo "Starting fast transcription daemon..."
+    LOG_DEST=$(get_log_file "$TRANSCRIPTION_FAST_LOG_FILE")
+    nohup uv run python transcription_daemon.py fast > "$LOG_DEST" 2>&1 &
+    sleep 3  # Wait longer for daemon to initialize
+
+    if [ -f "$TRANSCRIPTION_FAST_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_FAST_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Fast transcription daemon started (PID $PID, loading model...)"
+        else
+            echo "Fast transcription daemon PID file exists but process not found"
+        fi
+    else
+        echo "Fast transcription daemon failed to start (no PID file created)"
+    fi
+}
+
+stop_transcription_fast_daemon() {
+    if [ -f "$TRANSCRIPTION_FAST_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_FAST_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            kill $PID
+            echo "Fast transcription daemon stopped"
+        else
+            rm -f "$TRANSCRIPTION_FAST_PID_FILE"
+        fi
+    else
+        pkill -f "transcription_daemon.py fast" 2>/dev/null && echo "Fast transcription daemon stopped"
+    fi
+}
+
+start_transcription_accurate_daemon() {
+    if [ -f "$TRANSCRIPTION_ACCURATE_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_ACCURATE_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Accurate transcription daemon already running (PID $PID)"
+            return 0
+        else
+            rm -f "$TRANSCRIPTION_ACCURATE_PID_FILE"
+        fi
+    fi
+
+    cd "$SCRIPT_DIR"
+    echo "Starting accurate transcription daemon..."
+    LOG_DEST=$(get_log_file "$TRANSCRIPTION_ACCURATE_LOG_FILE")
+    nohup uv run python transcription_daemon.py accurate > "$LOG_DEST" 2>&1 &
+    sleep 3  # Wait longer for daemon to initialize
+
+    if [ -f "$TRANSCRIPTION_ACCURATE_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_ACCURATE_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Accurate transcription daemon started (PID $PID, loading model...)"
+        else
+            echo "Accurate transcription daemon PID file exists but process not found"
+        fi
+    else
+        echo "Accurate transcription daemon failed to start (no PID file created)"
+    fi
+}
+
+stop_transcription_accurate_daemon() {
+    if [ -f "$TRANSCRIPTION_ACCURATE_PID_FILE" ]; then
+        PID=$(cat "$TRANSCRIPTION_ACCURATE_PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            kill $PID
+            echo "Accurate transcription daemon stopped"
+        else
+            rm -f "$TRANSCRIPTION_ACCURATE_PID_FILE"
+        fi
+    else
+        pkill -f "transcription_daemon.py accurate" 2>/dev/null && echo "Accurate transcription daemon stopped"
     fi
 }
 
@@ -211,9 +311,19 @@ case "$1" in
         start_ydotoold
         echo ""
 
-        # Start transcription daemon
-        start_transcription_daemon
-        echo ""
+        # Check if dual-daemon mode is enabled
+        if is_dual_daemon_enabled; then
+            echo "Dual-daemon mode enabled"
+            # Start both fast and accurate daemons
+            start_transcription_fast_daemon
+            echo ""
+            start_transcription_accurate_daemon
+            echo ""
+        else
+            # Start single transcription daemon (legacy mode)
+            start_transcription_daemon
+            echo ""
+        fi
 
         # Start LLM daemon
         start_llm_daemon
@@ -224,6 +334,9 @@ case "$1" in
         echo ""
 
         echo "Dictation system ready!"
+        if is_dual_daemon_enabled; then
+            echo "Press Ctrl+Alt+Mouse4 to toggle between fast and accurate modes"
+        fi
         ;;
 
     stop)
@@ -235,8 +348,10 @@ case "$1" in
         # Stop LLM daemon
         stop_llm_daemon
 
-        # Stop transcription daemon
+        # Stop transcription daemons (both single and dual)
         stop_transcription_daemon
+        stop_transcription_fast_daemon
+        stop_transcription_accurate_daemon
 
         # Stop ydotoold
         stop_ydotoold

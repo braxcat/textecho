@@ -6,6 +6,7 @@ Transcription daemon that keeps Whisper model in memory with auto-unload
 import json
 import os
 import socket
+import sys
 import threading
 import time
 import warnings
@@ -15,9 +16,22 @@ import numpy as np
 import openvino_genai as ov_genai
 import soundfile as sf
 
-# Configuration
-SOCKET_PATH = "/tmp/dictation_transcription.sock"
-PID_FILE = os.path.expanduser("~/.dictation_transcription.pid")
+# Configuration (can be overridden by command-line args)
+DAEMON_MODE = sys.argv[1] if len(sys.argv) > 1 else "single"  # "single", "fast", or "accurate"
+
+if DAEMON_MODE == "fast":
+    SOCKET_PATH = "/tmp/dictation_transcription_fast.sock"
+    PID_FILE = os.path.expanduser("~/.dictation_transcription_fast.pid")
+    LOG_SUFFIX = "_fast"
+elif DAEMON_MODE == "accurate":
+    SOCKET_PATH = "/tmp/dictation_transcription_accurate.sock"
+    PID_FILE = os.path.expanduser("~/.dictation_transcription_accurate.pid")
+    LOG_SUFFIX = "_accurate"
+else:  # single mode (legacy)
+    SOCKET_PATH = "/tmp/dictation_transcription.sock"
+    PID_FILE = os.path.expanduser("~/.dictation_transcription.pid")
+    LOG_SUFFIX = ""
+
 CONFIG_FILE = os.path.expanduser("~/.dictation_config")
 
 
@@ -34,8 +48,17 @@ class TranscriptionDaemon:
         self.idle_timeout = self.config.get(
             "model_idle_timeout", 3600
         )  # Default 1 hour
-        self.device = self.config.get("transcription_device", "CPU")
-        self.model_path = self.config.get("model_path", "./whisper-base-cpu")
+
+        # Determine model/device based on daemon mode
+        if DAEMON_MODE == "fast":
+            self.device = self.config.get("transcription_device_fast", "NPU")
+            self.model_path = self.config.get("transcription_model_fast", "./whisper-base-npu")
+        elif DAEMON_MODE == "accurate":
+            self.device = self.config.get("transcription_device_accurate", "NPU")
+            self.model_path = self.config.get("transcription_model_accurate", "./whisper-small-npu")
+        else:  # single mode (legacy)
+            self.device = self.config.get("transcription_device", "CPU")
+            self.model_path = self.config.get("model_path", "./whisper-base-cpu")
 
         # Transcription quality parameters (all optional, for accent optimization)
         self.num_beams = self.config.get(
@@ -66,7 +89,7 @@ class TranscriptionDaemon:
         # Preload model option (load at startup instead of on first use)
         self.preload_model = self.config.get("preload_transcription_model", False)
 
-        print(f"Transcription daemon initialized")
+        print(f"Transcription daemon initialized (mode: {DAEMON_MODE.upper()})")
         print(
             f"Model idle timeout: {self.idle_timeout}s ({self.idle_timeout / 60:.1f} minutes)"
         )

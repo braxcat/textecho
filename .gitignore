@@ -43,3 +43,4 @@ linux-npu-driver-*/
 # OS files
 .DS_Store
 Thumbs.db
+models/

@@ -1,6 +1,6 @@
 # Dictation-Mac: Linux to macOS Migration Plan
 
-> **Created**: 2026-01-18 | **Status**: Planning
+> **Created**: 2026-01-18 | **Status**: Phase 2 In Progress | **Last Updated**: 2026-01-18
 
 ## Overview
 
@@ -52,45 +52,50 @@ This document outlines the migration plan for converting Dictation-Mac from a Li
 
 ## Implementation Phases
 
-### Phase 1: Core Transcription
+### Phase 1: Core Transcription ✅ COMPLETE
 **Goal**: Get basic voice → text working on macOS
 
 #### Tasks
-1. [ ] Set up MLX Whisper integration
-   - Install mlx-whisper package
-   - Create `transcription_daemon_mac.py` or modify existing daemon
-   - Test with Whisper base/small models
-   - Benchmark against OpenVINO performance
+1. [x] Set up MLX Whisper integration
+   - Using `lightning-whisper-mlx` package
+   - Created `transcription_daemon_mlx.py` with full daemon support
+   - Supports distil-medium.en (fast) and distil-large-v3 (accurate) models
+   - Supports fast/accurate/single daemon modes
 
-2. [ ] Verify PyAudio works on macOS
-   - Test audio recording
-   - Ensure silence detection still functions
-   - Check microphone permissions handling
+2. [x] Verify PyAudio works on macOS
+   - Test audio recording - works via `test_mlx_transcription.py --record`
+   - Microphone permissions handled
 
-3. [ ] Create basic CLI test
-   - Record audio → transcribe → output text
-   - Verify end-to-end pipeline
+3. [x] Create basic CLI test
+   - `test_mlx_transcription.py` created
+   - Supports direct transcription and daemon mode
+   - Record audio → transcribe → output text verified
 
-### Phase 2: Input Handling
+### Phase 2: Input Handling 🔄 IN PROGRESS
 **Goal**: Global hotkey and mouse button detection
 
 #### Tasks
-1. [ ] Implement CGEventTap for global input monitoring
-   - Create `input_monitor_mac.py` module
-   - Handle keyboard shortcuts (Cmd+Shift+D or similar)
-   - Handle mouse button events (Mouse 4/5)
-   - Request Accessibility permissions gracefully
+1. [x] Implement global input monitoring
+   - Created `input_monitor_mac.py` using hybrid approach:
+     - CGEventTap for mouse (reliable side button detection)
+     - pynput for keyboard (simpler modifier tracking)
+   - Configurable trigger button (default: middle click)
+   - Requires Accessibility permissions
+   - **Status**: Tested and working
 
-2. [ ] Map hotkeys to macOS conventions
-   - Transcribe: Configurable global hotkey + Mouse 4
-   - LLM prompt: Modifier + trigger
+2. [x] Map hotkeys to macOS conventions
+   - Transcribe: Mouse 4 (hold to record)
+   - LLM prompt: Ctrl + Mouse 4
    - Register capture: Cmd+Option+[1-9]
+   - Clear registers: Cmd+Option+0
+   - Settings: Cmd+Option+Space
    - Cancel: ESC
 
-3. [ ] Test input handling in various contexts
-   - Works in all apps
-   - Doesn't interfere with normal input
-   - Handles permission denied gracefully
+3. [x] Test input handling in various contexts
+   - [x] Mouse buttons detected correctly (middle, back, forward)
+   - [x] Keyboard hotkeys work (Cmd+Option+0-9, Space)
+   - [ ] Test across various apps (partial)
+   - [ ] Handles permission denied gracefully (needs testing)
 
 ### Phase 3: Text Injection
 **Goal**: Paste transcribed text into active application
@@ -176,13 +181,18 @@ This document outlines the migration plan for converting Dictation-Mac from a Li
 
 ## File Changes Summary
 
-### New Files
+### New Files (Created)
+```
+transcription_daemon_mlx.py  ✅ - MLX Whisper daemon (replaces OpenVINO)
+test_mlx_transcription.py    ✅ - Transcription testing utility
+input_monitor_mac.py         ✅ - CGEventTap + pynput input handling
+```
+
+### New Files (Planned)
 ```
 dictation_app_mac.py      - Main menu bar application
 overlay_mac.py            - AppKit overlay window
-input_monitor_mac.py      - CGEventTap input handling
 text_injector_mac.py      - Accessibility API text injection
-transcription_mlx.py      - MLX Whisper integration (or modify daemon)
 com.dictation.*.plist     - launchd service definitions
 ```
 
@@ -251,9 +261,9 @@ llama-cpp-python         - With Metal support
 
 ## Success Criteria
 
-### Phase 1 Complete
-- [ ] Can record audio and transcribe using MLX Whisper
-- [ ] Performance is acceptable (<2s for short clips)
+### Phase 1 Complete ✅
+- [x] Can record audio and transcribe using MLX Whisper
+- [x] Performance is acceptable (<2s for short clips)
 
 ### Phase 2 Complete
 - [ ] Global hotkey triggers recording from any app
@@ -284,3 +294,22 @@ llama-cpp-python         - With Metal support
 - Unix sockets work fine on macOS, no need to change IPC
 - Tokyo Night theme should translate well to AppKit
 - Consider using rumps library for simpler menu bar app (optional)
+
+---
+
+## Progress Log
+
+> This section tracks work done across sessions. Update after each significant change.
+
+### 2026-01-18 - Session 2
+- **Phase 1 COMPLETED**: MLX Whisper transcription daemon working
+  - `transcription_daemon_mlx.py` - full daemon with fast/accurate modes
+  - `test_mlx_transcription.py` - testing utility
+  - Using `lightning-whisper-mlx` package
+- **Phase 2 IN PROGRESS**: Input monitoring
+  - `input_monitor_mac.py` created and tested
+  - Uses CGEventTap for mouse (detects all buttons including side buttons)
+  - Uses pynput for keyboard (hotkeys with virtual key codes)
+  - Trigger button configurable (default: middle click / button 2)
+  - Tested: middle click, back/forward buttons, Cmd+Option+0-9, Cmd+Option+Space, ESC
+  - **Next**: Integrate with main app, begin Phase 3 (text injection)

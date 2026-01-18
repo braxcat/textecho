@@ -1,6 +1,6 @@
 # Dictation-Mac: Linux to macOS Migration Plan
 
-> **Created**: 2026-01-18 | **Status**: Phase 4 Ready | **Last Updated**: 2026-01-18
+> **Created**: 2026-01-18 | **Status**: Phase 4 Partial | **Last Updated**: 2026-01-18
 
 ## Overview
 
@@ -71,7 +71,7 @@ This document outlines the migration plan for converting Dictation-Mac from a Li
    - Supports direct transcription and daemon mode
    - Record audio → transcribe → output text verified
 
-### Phase 2: Input Handling 🔄 IN PROGRESS
+### Phase 2: Input Handling ✅ COMPLETE
 **Goal**: Global hotkey and mouse button detection
 
 #### Tasks
@@ -113,23 +113,23 @@ This document outlines the migration plan for converting Dictation-Mac from a Li
    - [x] Terminal - works via clipboard
    - Note: clipboard+paste method works universally
 
-### Phase 4: Menu Bar App & UI
+### Phase 4: Menu Bar App & UI 🔄 PARTIAL
 **Goal**: Native macOS app experience with overlay
 
 #### Tasks
-1. [ ] Create menu bar application
-   - Create `dictation_app_mac.py` as main entry point
-   - NSStatusItem for menu bar presence
+1. [x] Create menu bar application
+   - Created `dictation_app_mac.py` as main entry point
+   - NSStatusItem for menu bar presence (🎤 icon)
    - Dropdown menu: Start/Stop daemons, Settings, Quit
-   - Show recording status in menu bar icon
+   - Recording status shown in menu bar icon
+   - PyAudio recording with middle-click trigger
+   - **Status**: Working
 
 2. [ ] Implement overlay window
-   - Create `overlay_mac.py` using NSWindow
-   - Floating, always-on-top, transparent background
-   - Show recording indicator (waveform or pulsing dot)
-   - Display transcription progress
-   - Stream LLM responses
-   - Tokyo Night color theme
+   - Created `overlay_mac.py` using NSWindow
+   - **BLOCKED**: Crashes with PyObjC/NSApplication threading issues
+   - Need to investigate: NSEvent vs CGEventTap conflicts
+   - Waveform visualization requested
 
 3. [ ] Settings interface
    - NSWindow-based settings panel
@@ -185,14 +185,14 @@ This document outlines the migration plan for converting Dictation-Mac from a Li
 ```
 transcription_daemon_mlx.py  ✅ - MLX Whisper daemon (replaces OpenVINO)
 test_mlx_transcription.py    ✅ - Transcription testing utility
-input_monitor_mac.py         ✅ - CGEventTap + pynput input handling
+input_monitor_mac.py         ✅ - NSEvent + pynput input handling
 text_injector_mac.py         ✅ - Clipboard + paste text injection
+dictation_app_mac.py         ✅ - Menu bar app (working)
+overlay_mac.py               ⚠️ - Overlay window (crashes, disabled)
 ```
 
 ### New Files (Planned)
 ```
-dictation_app_mac.py      - Main menu bar application
-overlay_mac.py            - AppKit overlay window
 com.dictation.*.plist     - launchd service definitions
 ```
 
@@ -265,17 +265,17 @@ llama-cpp-python         - With Metal support
 - [x] Can record audio and transcribe using MLX Whisper
 - [x] Performance is acceptable (<2s for short clips)
 
-### Phase 2 Complete
-- [ ] Global hotkey triggers recording from any app
-- [ ] Mouse button triggers work
+### Phase 2 Complete ✅
+- [x] Global hotkey triggers recording from any app
+- [x] Mouse button triggers work
 
 ### Phase 3 Complete ✅
 - [x] Transcribed text appears in active text field
 - [x] Works in common apps (browser, editor, terminal)
 
-### Phase 4 Complete
-- [ ] Menu bar app shows status and controls
-- [ ] Overlay displays during recording/transcription
+### Phase 4 Complete (Partial)
+- [x] Menu bar app shows status and controls
+- [ ] Overlay displays during recording/transcription (blocked - crashes)
 
 ### Phase 5 Complete
 - [ ] Daemons start/stop cleanly
@@ -308,12 +308,33 @@ llama-cpp-python         - With Metal support
   - Using `lightning-whisper-mlx` package
 - **Phase 2 COMPLETED**: Input monitoring
   - `input_monitor_mac.py` created and tested
-  - Uses CGEventTap for mouse (detects all buttons including side buttons)
+  - Uses NSEvent global monitor for mouse (replaced CGEventTap due to crashes)
   - Uses pynput for keyboard (hotkeys with virtual key codes)
   - Trigger button configurable (default: middle click / button 2)
   - Tested: middle click, back/forward buttons, Cmd+Option+0-9, Cmd+Option+Space, ESC
 - **Phase 3 COMPLETED**: Text injection
   - `text_injector_mac.py` - clipboard + Cmd+V paste (works universally)
   - Tested in Notes, Chrome, Terminal
-  - Direct Accessibility API available but clipboard method more reliable
-  - **Next**: Phase 4 - Menu bar app and overlay UI
+- **Phase 4 PARTIAL**: Menu bar app
+  - `dictation_app_mac.py` - working menu bar app with recording/transcription
+  - `overlay_mac.py` - created but disabled due to crashes
+  - **Issue**: Overlay causes trace trap crashes (PyObjC threading with NSApplication)
+  - **Working**: Middle-click record, transcription, text injection, hotkeys
+  - **Next**: Fix overlay OR proceed to Phase 5
+
+### How to Run (Current State)
+```bash
+# Terminal 1: Start transcription daemon
+python3 transcription_daemon_mlx.py
+
+# Terminal 2: Start menu bar app
+python3 dictation_app_mac.py
+
+# Usage:
+# - Middle-click (hold) to record, release to transcribe
+# - Text is injected into active app
+# - Cmd+Option+1-9: Save clipboard to register
+# - Cmd+Option+0: Clear registers
+# - ESC: Cancel recording
+# - Menu bar icon shows status
+```

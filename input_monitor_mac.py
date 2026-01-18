@@ -19,28 +19,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Optional
 
-import Quartz
-from Quartz import (
-    CGEventTapCreate,
-    CGEventTapEnable,
-    CFMachPortCreateRunLoopSource,
-    CFRunLoopAddSource,
-    CFRunLoopGetCurrent,
-    CFRunLoopRun,
-    CFRunLoopStop,
-    kCGSessionEventTap,
-    kCGHeadInsertEventTap,
-    kCGEventTapOptionDefault,
-    kCGEventOtherMouseDown,
-    kCGEventOtherMouseUp,
-    kCGEventLeftMouseDown,
-    kCGEventLeftMouseUp,
-    kCGEventRightMouseDown,
-    kCGEventRightMouseUp,
-    CGEventGetIntegerValueField,
-    CGEventGetLocation,
-    kCGMouseEventButtonNumber,
-)
+import AppKit
+from AppKit import NSEvent
 from pynput import keyboard
 
 
@@ -126,9 +106,7 @@ class InputMonitor:
         self.mouse_position = (0, 0)
 
         self.keyboard_listener: Optional[keyboard.Listener] = None
-        self._mouse_thread: Optional[threading.Thread] = None
-        self._mouse_tap = None
-        self._run_loop = None
+        self._mouse_monitor = None
         self.running = False
 
         # Track trigger button state
@@ -213,68 +191,55 @@ class InputMonitor:
         if key == keyboard.Key.esc:
             self._emit(InputEvent.KEY_ESCAPE)
 
-    def _mouse_callback(self, proxy, event_type, event, refcon):
-        """CGEventTap callback for mouse events"""
+    def _handle_mouse_event(self, event):
+        """Handle NSEvent mouse events"""
         # Update mouse position
-        loc = CGEventGetLocation(event)
+        loc = NSEvent.mouseLocation()
         self.mouse_position = (int(loc.x), int(loc.y))
 
+        event_type = event.type()
+
         # Handle left/right clicks (on release)
-        if event_type == kCGEventLeftMouseUp:
+        if event_type == AppKit.NSEventTypeLeftMouseUp:
             self._emit(InputEvent.LEFT_CLICK)
-        elif event_type == kCGEventRightMouseUp:
+        elif event_type == AppKit.NSEventTypeRightMouseUp:
             self._emit(InputEvent.RIGHT_CLICK)
 
         # Handle other mouse buttons
-        elif event_type == kCGEventOtherMouseDown:
-            button_num = CGEventGetIntegerValueField(event, kCGMouseEventButtonNumber)
+        elif event_type == AppKit.NSEventTypeOtherMouseDown:
+            button_num = event.buttonNumber()
             if button_num == self.trigger_button:
                 self.trigger_pressed = True
                 self._emit(InputEvent.TRIGGER_BUTTON_DOWN)
 
-        elif event_type == kCGEventOtherMouseUp:
-            button_num = CGEventGetIntegerValueField(event, kCGMouseEventButtonNumber)
+        elif event_type == AppKit.NSEventTypeOtherMouseUp:
+            button_num = event.buttonNumber()
             if button_num == self.trigger_button:
                 self.trigger_pressed = False
                 self._emit(InputEvent.TRIGGER_BUTTON_UP)
 
-        return event
-
-    def _run_mouse_tap(self):
-        """Run the CGEventTap in its own thread"""
-        # Event mask for mouse events
+    def _setup_mouse_monitor(self):
+        """Set up NSEvent global monitor for mouse events"""
+        # Event mask for mouse events we care about
         event_mask = (
-            (1 << kCGEventLeftMouseDown) |
-            (1 << kCGEventLeftMouseUp) |
-            (1 << kCGEventRightMouseDown) |
-            (1 << kCGEventRightMouseUp) |
-            (1 << kCGEventOtherMouseDown) |
-            (1 << kCGEventOtherMouseUp)
+            AppKit.NSEventMaskLeftMouseUp |
+            AppKit.NSEventMaskRightMouseUp |
+            AppKit.NSEventMaskOtherMouseDown |
+            AppKit.NSEventMaskOtherMouseUp
         )
 
-        # Create the event tap
-        self._mouse_tap = CGEventTapCreate(
-            kCGSessionEventTap,
-            kCGHeadInsertEventTap,
-            kCGEventTapOptionDefault,
+        # Create global monitor
+        self._mouse_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
             event_mask,
-            self._mouse_callback,
-            None
+            self._handle_mouse_event
         )
 
-        if self._mouse_tap is None:
-            print("ERROR: Failed to create mouse event tap!")
+        if self._mouse_monitor is None:
+            print("ERROR: Failed to create mouse event monitor!")
             print("Grant Accessibility permissions in System Preferences.")
             return
 
-        # Create run loop source
-        run_loop_source = CFMachPortCreateRunLoopSource(None, self._mouse_tap, 0)
-        self._run_loop = CFRunLoopGetCurrent()
-        CFRunLoopAddSource(self._run_loop, run_loop_source, Quartz.kCFRunLoopCommonModes)
-
-        # Enable and run
-        CGEventTapEnable(self._mouse_tap, True)
-        CFRunLoopRun()
+        print("Mouse event monitor enabled")
 
     def start(self):
         """Start listening for input events"""
@@ -290,9 +255,8 @@ class InputMonitor:
         )
         self.keyboard_listener.start()
 
-        # Start mouse listener (CGEventTap in separate thread)
-        self._mouse_thread = threading.Thread(target=self._run_mouse_tap, daemon=True)
-        self._mouse_thread.start()
+        # Setup mouse listener (NSEvent global monitor)
+        self._setup_mouse_monitor()
 
         button_names = {
             MOUSE_BUTTON_LEFT: "Left",
@@ -312,13 +276,9 @@ class InputMonitor:
             self.keyboard_listener.stop()
             self.keyboard_listener = None
 
-        if self._run_loop:
-            CFRunLoopStop(self._run_loop)
-            self._run_loop = None
-
-        if self._mouse_tap:
-            CGEventTapEnable(self._mouse_tap, False)
-            self._mouse_tap = None
+        if self._mouse_monitor:
+            NSEvent.removeMonitor_(self._mouse_monitor)
+            self._mouse_monitor = None
 
         print("Input monitor stopped")
 

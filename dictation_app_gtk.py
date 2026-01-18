@@ -262,9 +262,10 @@ class DictationApp:
 
         self.original_volume = self.get_system_volume()
         if self.original_volume is not None:
-            dimmed = self.config.get("dimmed_volume", 0.10)
+            dim_factor = self.config.get("dimmed_volume", 0.10)
+            dimmed = self.original_volume * dim_factor
             if self.set_system_volume(dimmed):
-                print(f"Volume dimmed: {self.original_volume:.0%} -> {dimmed:.0%}")
+                print(f"Volume dimmed: {self.original_volume:.0%} -> {dimmed:.0%} ({dim_factor:.0%} of original)")
 
     def restore_volume(self):
         """Restore system volume after recording."""
@@ -1630,6 +1631,11 @@ class DictationApp:
         dim_adj.connect("value-changed", on_dim_changed)
 
         main_box.append(dim_box)
+
+        dim_help = Gtk.Label(label="Percentage of current volume (e.g., 10% at 50% volume → 5%)")
+        dim_help.set_halign(Gtk.Align.START)
+        dim_help.add_css_class("dim-label")
+        main_box.append(dim_help)
 
         # --- LLM Settings Section ---
         llm_header = Gtk.Label(label="LLM Settings")

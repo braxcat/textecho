@@ -223,21 +223,10 @@ class TextInjector:
         return True
 
     def _simulate_paste(self) -> None:
-        """Simulate Cmd+V keystroke."""
-        # Key code for 'V' is 9
-        v_keycode = 9
-
-        # Create key down event with Cmd modifier
-        event_down = Quartz.CGEventCreateKeyboardEvent(None, v_keycode, True)
-        Quartz.CGEventSetFlags(event_down, Quartz.kCGEventFlagMaskCommand)
-
-        # Create key up event with Cmd modifier
-        event_up = Quartz.CGEventCreateKeyboardEvent(None, v_keycode, False)
-        Quartz.CGEventSetFlags(event_up, Quartz.kCGEventFlagMaskCommand)
-
-        # Post the events
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_down)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_up)
+        """Simulate Cmd+V keystroke using AppleScript (more reliable with macOS security)."""
+        import subprocess
+        script = 'tell application "System Events" to keystroke "v" using command down'
+        subprocess.run(['osascript', '-e', script], capture_output=True)
 
     def inject_text(self, text: str, method: str = "clipboard") -> bool:
         """

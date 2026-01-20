@@ -48,7 +48,7 @@ from input_monitor_mac import (
     MOUSE_BUTTON_FORWARD,
 )
 from text_injector_mac import TextInjector
-# from overlay_mac import DictationOverlay  # TODO: fix overlay crashes
+from overlay_swift import SwiftOverlay
 
 
 # Default configuration
@@ -92,7 +92,8 @@ class DictationApp(NSObject):
         # Components
         self.input_monitor: Optional[InputMonitor] = None
         self.text_injector = TextInjector()
-        # self._overlay = None  # TODO: fix overlay
+        self.overlay = SwiftOverlay()
+        self.overlay.start()
 
         # Clipboard registers (for LLM context)
         self.registers = {}
@@ -168,6 +169,13 @@ class DictationApp(NSObject):
         self.status_menu_item.setEnabled_(False)
         self.menu.addItem_(self.status_menu_item)
 
+        # Daemon status (will be updated dynamically)
+        self.daemon_status_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Daemon: checking...", None, ""
+        )
+        self.daemon_status_item.setEnabled_(False)
+        self.menu.addItem_(self.daemon_status_item)
+
         self.menu.addItem_(NSMenuItem.separatorItem())
 
         # Daemon controls
@@ -183,7 +191,43 @@ class DictationApp(NSObject):
         stop_item.setTarget_(self)
         self.menu.addItem_(stop_item)
 
+        restart_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Restart Daemons", "restartDaemons:", ""
+        )
+        restart_item.setTarget_(self)
+        self.menu.addItem_(restart_item)
+
         self.menu.addItem_(NSMenuItem.separatorItem())
+
+        # Install/Uninstall submenu
+        install_menu = NSMenu.alloc().init()
+
+        install_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Install Auto-Start", "installDaemons:", ""
+        )
+        install_item.setTarget_(self)
+        install_menu.addItem_(install_item)
+
+        uninstall_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Remove Auto-Start", "uninstallDaemons:", ""
+        )
+        uninstall_item.setTarget_(self)
+        install_menu.addItem_(uninstall_item)
+
+        install_submenu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Auto-Start Options", None, ""
+        )
+        install_submenu_item.setSubmenu_(install_menu)
+        self.menu.addItem_(install_submenu_item)
+
+        self.menu.addItem_(NSMenuItem.separatorItem())
+
+        # View logs
+        logs_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "View Logs...", "viewLogs:", ""
+        )
+        logs_item.setTarget_(self)
+        self.menu.addItem_(logs_item)
 
         # Settings
         settings_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -203,6 +247,17 @@ class DictationApp(NSObject):
 
         self.status_item.setMenu_(self.menu)
 
+        # Update daemon status initially
+        self._update_daemon_status()
+
+    def _update_daemon_status(self):
+        """Update the daemon status display in menu."""
+        socket_path = self.config.get("transcription_socket", "/tmp/dictation_transcription.sock")
+        if os.path.exists(socket_path):
+            self.daemon_status_item.setTitle_("Daemon: ✓ Running")
+        else:
+            self.daemon_status_item.setTitle_("Daemon: ✗ Not Running")
+
     def _start_input_monitor(self):
         """Start global input monitoring."""
         trigger_button = self.config.get("trigger_button", MOUSE_BUTTON_MIDDLE)
@@ -216,9 +271,7 @@ class DictationApp(NSObject):
     def _handle_input_event(self, event: InputEvent, modifiers: ModifierState, mouse_pos: tuple):
         """Handle input events from the monitor."""
 
-        # Update overlay position while recording
-        # if self.is_recording and self.overlay:
-        #     self.overlay.update_position()
+        # Overlay position tracking is handled by Swift automatically
 
         if event == InputEvent.TRIGGER_BUTTON_DOWN:
             if modifiers.ctrl:
@@ -292,8 +345,9 @@ class DictationApp(NSObject):
         self.audio_frames = []
         self.stop_recording_flag.clear()
 
-        # TODO: Show overlay
-        # self._run_on_main_thread(lambda: self._get_overlay().show_recording())
+        # Show overlay (queue for main thread)
+        if self.overlay:
+            self.overlay.show_recording()
 
         # Start recording in background thread
         self.recording_thread = threading.Thread(target=self._record_audio, daemon=True)
@@ -311,9 +365,35 @@ class DictationApp(NSObject):
                 frames_per_buffer=self.chunk_size
             )
 
+            # Waveform state (updated in background)
+            self._waveform_levels = [0.05] * 40
+            self._pending_level = None
+
+            # Start waveform updater thread
+            def waveform_updater():
+                while not self.stop_recording_flag.is_set():
+                    if self._pending_level is not None and self.overlay:
+                        level = self._pending_level
+                        self._pending_level = None
+                        self._waveform_levels.pop(0)
+                        self._waveform_levels.append(level)
+                        self.overlay.update_waveform(list(self._waveform_levels))
+                    time.sleep(0.05)  # 20 updates per second max
+
+            waveform_thread = threading.Thread(target=waveform_updater, daemon=True)
+            waveform_thread.start()
+
             while not self.stop_recording_flag.is_set():
                 data = stream.read(self.chunk_size, exception_on_overflow=False)
                 self.audio_frames.append(data)
+
+                # Quick level calculation (non-blocking, stored for waveform thread)
+                audio_data = np.frombuffer(data, dtype=np.int16)
+                rms = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
+                # More sensitive scaling + boost quiet sounds with sqrt curve
+                level = min(rms / 2000, 1.0)  # More sensitive (was 8000)
+                level = np.sqrt(level)  # Boost quieter sounds
+                self._pending_level = float(level)
 
             stream.stop_stream()
             stream.close()
@@ -344,14 +424,16 @@ class DictationApp(NSObject):
             self._save_audio_to_file(self.audio_file)
             print(f"Recording stopped, saved to {self.audio_file}")
 
-            # TODO: Show processing state
-            # self._run_on_main_thread(lambda: self._get_overlay().show_processing())
+            # Show processing state (queue for main thread)
+            if self.overlay:
+                self.overlay.show_processing()
 
             # Process in background thread
             threading.Thread(target=self._process_audio, daemon=True).start()
         else:
             print("No audio recorded")
-            # self._run_on_main_thread(lambda: self._get_overlay().hide())
+            if self.overlay:
+                self.overlay.hide()
             self._reset_state()
 
     def _save_audio_to_file(self, filepath: str):
@@ -377,7 +459,8 @@ class DictationApp(NSObject):
         if self.audio_file and os.path.exists(self.audio_file):
             os.remove(self.audio_file)
 
-        # self._run_on_main_thread(lambda: self._get_overlay().hide())
+        if self.overlay:
+            self.overlay.hide()
         self._reset_state()
         print("Recording cancelled")
 
@@ -394,6 +477,8 @@ class DictationApp(NSObject):
     def _process_audio(self):
         """Process recorded audio (runs in background thread)."""
         if not self.audio_file or not os.path.exists(self.audio_file):
+            if self.overlay:
+                self.overlay.hide()
             self._reset_state()
             return
 
@@ -406,21 +491,37 @@ class DictationApp(NSObject):
                     # Send to LLM
                     response = self._query_llm(text)
                     if response:
+                        if self.overlay:
+                            self.overlay.show_result(response, is_llm=True)
                         self._inject_text(response)
+                    else:
+                        if self.overlay:
+                            self.overlay.show_error("LLM returned no response")
                 else:
                     # Direct transcription
+                    if self.overlay:
+                        self.overlay.show_result(text, is_llm=False)
                     self._inject_text(text)
             else:
+                if self.overlay:
+                    self.overlay.show_error("No transcription result")
                 print("No transcription result")
 
         except Exception as e:
             print(f"Error processing audio: {e}")
+            if self.overlay:
+                self.overlay.show_error(str(e))
             self._set_status_icon("error")
 
         finally:
             # Clean up audio file
             if self.audio_file and os.path.exists(self.audio_file):
                 os.remove(self.audio_file)
+
+            # Hide overlay after a brief delay to show result
+            if self.overlay:
+                time.sleep(1.5)
+                self.overlay.hide()
             self._reset_state()
 
     def _transcribe_audio(self, audio_path: str) -> Optional[str]:
@@ -522,40 +623,95 @@ class DictationApp(NSObject):
         else:
             print("Injection failed")
 
-    # Menu actions
+    # Menu actions - these must be visible to Objective-C (no @objc.python_method)
     @objc.python_method
+    def _get_daemon_script(self):
+        """Get path to daemon control script."""
+        script_dir = Path(__file__).parent
+        # Prefer the new macOS-specific script
+        mac_script = script_dir / "daemon_control_mac.sh"
+        if mac_script.exists():
+            return mac_script
+        # Fall back to old script
+        old_script = script_dir / "daemon_control.sh"
+        if old_script.exists():
+            return old_script
+        return None
+
     def startDaemons_(self, sender):
         """Start transcription/LLM daemons."""
-        script_dir = Path(__file__).parent
-        daemon_script = script_dir / "daemon_control.sh"
-        if daemon_script.exists():
-            subprocess.run([str(daemon_script), "start"])
+        script = self._get_daemon_script()
+        if script:
+            subprocess.run([str(script), "start"])
+            time.sleep(1)
+            self._update_daemon_status()
         else:
-            print("daemon_control.sh not found")
+            print("Daemon control script not found")
 
-    @objc.python_method
     def stopDaemons_(self, sender):
         """Stop transcription/LLM daemons."""
-        script_dir = Path(__file__).parent
-        daemon_script = script_dir / "daemon_control.sh"
-        if daemon_script.exists():
-            subprocess.run([str(daemon_script), "stop"])
+        script = self._get_daemon_script()
+        if script:
+            subprocess.run([str(script), "stop"])
+            time.sleep(0.5)
+            self._update_daemon_status()
         else:
-            print("daemon_control.sh not found")
+            print("Daemon control script not found")
 
-    @objc.python_method
+    def restartDaemons_(self, sender):
+        """Restart transcription/LLM daemons."""
+        script = self._get_daemon_script()
+        if script:
+            subprocess.run([str(script), "restart"])
+            time.sleep(1)
+            self._update_daemon_status()
+        else:
+            print("Daemon control script not found")
+
+    def installDaemons_(self, sender):
+        """Install launchd services for auto-start."""
+        script = self._get_daemon_script()
+        if script and "mac" in str(script):
+            subprocess.run([str(script), "install"])
+            print("Launchd services installed")
+        else:
+            print("macOS daemon control script not found")
+
+    def uninstallDaemons_(self, sender):
+        """Remove launchd services."""
+        script = self._get_daemon_script()
+        if script and "mac" in str(script):
+            subprocess.run([str(script), "uninstall"])
+            print("Launchd services removed")
+        else:
+            print("macOS daemon control script not found")
+
+    def viewLogs_(self, sender):
+        """Open log files in Console.app."""
+        log_file = os.path.expanduser("~/.dictation_transcription.log")
+        if os.path.exists(log_file):
+            subprocess.run(["open", "-a", "Console", log_file])
+        else:
+            print("No log file found")
+
     def showSettings_(self, sender):
         """Show settings dialog."""
         # TODO: Implement settings UI
         print("Settings not yet implemented")
-        # For now, just print current config
-        print(f"Current config: {self.config}")
+        # For now, open config file in default editor
+        config_file = os.path.expanduser("~/.dictation_config")
+        if os.path.exists(config_file):
+            subprocess.run(["open", config_file])
+        else:
+            print(f"Config file not found: {config_file}")
+            print(f"Current config: {self.config}")
 
-    @objc.python_method
     def quitApp_(self, sender):
         """Quit the application."""
         if self.input_monitor:
             self.input_monitor.stop()
+        if self.overlay:
+            self.overlay.stop()
         NSApplication.sharedApplication().terminate_(None)
 
 

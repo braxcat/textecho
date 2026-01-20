@@ -1,185 +1,174 @@
-# Dictation App
+# Dictation-Mac
 
-Voice-to-text dictation tool with automatic silence detection and text pasting.
+Voice-to-text dictation tool for macOS with automatic silence detection, local MLX Whisper transcription, and optional LLM processing. Optimized for Apple Silicon.
 
 ## Features
 
 - 🎤 Real-time audio recording with waveform visualization
-- 🤖 Local Whisper transcription (CPU/NPU support)
-- ⚡ Smart model loading: loads on first use, auto-unloads after idle time
-- 💾 Memory efficient: frees RAM when not in use (configurable timeout)
-- ✨ Auto-stop after configurable silence duration (default: 2.5s)
+- 🤖 Local Whisper transcription via MLX (Apple Silicon native)
+- ⚡ Fast model loading with auto-unload after idle
 - 📋 Automatic text pasting into active window
-- 🔧 Configurable audio device selection
-- ⌨️ Hotkey activation
+- 🖱️ Middle-click trigger (hold to record, release to transcribe)
+- 🎯 Overlay UI follows cursor with Tokyo Night theme
+- 🚀 Menu bar app with daemon controls
+- 🔄 Auto-start on login via launchd
 
-## Architecture
+## Requirements
 
-The app uses a **daemon + GUI architecture**:
+- macOS (Apple Silicon recommended)
+- Python 3.12 (via Homebrew)
+- Microphone access
+- Accessibility permissions
 
-1. **Transcription Daemon** - Manages Whisper model lifecycle:
-   - Loads model on first transcription request
-   - Keeps model in RAM for fast subsequent requests
-   - Auto-unloads after configurable idle time (default: 1 hour) to free memory
-   - Communicates via Unix socket (`/tmp/dictation_transcription.sock`)
+## Installation
 
-2. **Recorder GUI** - Lightweight client that:
-   - Records audio with waveform visualization
-   - Sends audio to daemon for transcription
-   - Pastes result automatically
-   - Launched by your desktop environment's hotkey system
+### 1. Clone and set up Python environment
 
-## Setup
+```bash
+git clone https://github.com/braxcat/dictation-mac.git
+cd dictation-mac
 
-1. Install dependencies:
-   ```bash
-   uv sync
-   ```
+# Create virtual environment with Homebrew Python
+/opt/homebrew/bin/python3.12 -m venv .venv
+source .venv/bin/activate
 
-2. Start the transcription daemon:
-   ```bash
-   ./daemon_control.sh start
-   ```
+# Install dependencies
+pip install lightning-whisper-mlx pyobjc pyaudio numpy soundfile pynput
+```
 
-3. Set up keyboard hotkey in your desktop environment:
-   - **GNOME/Ubuntu**: Settings → Keyboard → Custom Shortcuts
-   - **KDE**: System Settings → Shortcuts → Custom Shortcuts
-   - Command: `/home/tyler/dictation/launch_recorder.sh`
-   - Suggested hotkey: `Ctrl+Alt+Space`
+### 2. Grant macOS permissions
 
-4. Install text input tool (for pasting):
-   ```bash
-   # X11 users
-   sudo apt install xdotool
+Go to **System Settings → Privacy & Security** and grant:
 
-   # Wayland users
-   sudo apt install wtype
-   # OR
-   sudo apt install ydotool
-   ```
+| Permission | What to add | Why |
+|------------|-------------|-----|
+| **Accessibility** | `.venv/bin/python3.12` | Auto-paste and input monitoring |
+| **Microphone** | Allow when prompted | Audio recording |
+
+To add Python to Accessibility:
+1. Click the `+` button
+2. Press `Cmd+Shift+G` and paste: `/Users/YOUR_USERNAME/Documents/Projects/dictation-mac/.venv/bin/python3.12`
+3. Click Open
+
+### 3. Install and start services
+
+```bash
+# Install launchd services (auto-start on login)
+./daemon_control_mac.sh install
+
+# Start everything
+./daemon_control_mac.sh start
+
+# Check status
+./daemon_control_mac.sh status
+```
 
 ## Usage
 
-1. Press your configured hotkey to open the recorder
-2. Speak into your microphone
-3. Recording auto-stops after 2.5s of silence (or press "Stop & Transcribe")
-4. Text is automatically transcribed and pasted at cursor position
-5. Press `ESC` to cancel recording
+| Action | How |
+|--------|-----|
+| **Transcribe** | Middle-click and hold → speak → release |
+| **LLM prompt** | Ctrl + middle-click (requires LLM setup) |
+| **Save to register** | Cmd+Option+1-9 |
+| **Clear registers** | Cmd+Option+0 |
+| **Cancel recording** | ESC |
 
-**First use:** Model loads on demand (2-5 second delay)
-**Subsequent uses:** Instant transcription (model already in RAM)
-**After 1 hour idle:** Model auto-unloads to free RAM
+**First use:** Model downloads and loads (~2-5 seconds)
+**Subsequent uses:** Instant transcription
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────────┐
+│  Menu Bar App   │────▶│ Transcription Daemon │
+│  (dictation_    │     │ (MLX Whisper)        │
+│   app_mac.py)   │     └──────────────────────┘
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Swift Overlay  │
+│  (waveform UI)  │
+└─────────────────┘
+```
+
+- **Menu Bar App**: Input monitoring, audio recording, orchestration
+- **Transcription Daemon**: MLX Whisper model, Unix socket IPC
+- **Swift Overlay**: Native macOS overlay with waveform visualization
 
 ## Configuration
 
-Configuration is stored in `~/.dictation_config` as JSON.
-
-Edit or create `~/.dictation_config`:
+Edit `~/.dictation_config`:
 
 ```json
 {
-  "silence_duration": 3.0,
-  "model_idle_timeout": 1800,
-  "transcription_device": "CPU",
-  "model_path": "./whisper-base-cpu",
-  "device_index": 5
+  "trigger_button": 2,
+  "silence_duration": 2.5,
+  "llm_enabled": false,
+  "llm_model_path": "/path/to/model.gguf"
 }
 ```
 
-### Basic Configuration Options
-
-- `silence_duration`: Seconds of silence before auto-stopping recording (default: 2.5)
-- `model_idle_timeout`: Seconds before unloading model from RAM (default: 3600 = 1 hour)
-  - Set to `1800` for 30 minutes
-  - Set to `7200` for 2 hours
-  - Set to `0` to disable auto-unload (keep model always loaded)
-- `transcription_device`: Device for Whisper model (default: "CPU", options: "NPU")
-- `model_path`: Path to Whisper model directory (default: "./whisper-base-cpu")
-  - `./whisper-base-cpu` - Fastest (286MB)
-  - `./whisper-small-ov` - Better accuracy (932MB)
-  - `./whisper-medium-cpu` - Best for accents (3GB+, slower)
-- `device_index`: Last used audio input device (auto-saved)
-
-### Advanced Transcription Quality Options
-
-All optional parameters for improving accuracy (especially with accents). Omit for fastest speed. See `config.example.json` for detailed examples.
-
-**Accent Optimization:**
-- `num_beams`: `5` for beam search (better accuracy, slower) vs default greedy decoding
-- `language`: `"en"` to force English detection (prevents accent misidentification)
-- `hotwords`: `"colour favour harbour"` - space-separated words to favor specific spellings
-
-**Fine-tuning:**
-- `temperature`: `0.0` for deterministic output, higher for more variation
-- `repetition_penalty`: `1.1-1.5` to reduce repetition
-- `length_penalty`: `1.0` to favor longer outputs, `<1.0` for shorter
-- `initial_prompt`: Hint text for style/spelling (e.g., `"G'day mate"` for Australian)
-- `task`: `"transcribe"` (default) or `"translate"` to translate to English
-
-**Example for Australian accent:**
-```json
-{
-  "model_path": "./whisper-small-ov",
-  "num_beams": 5,
-  "language": "en",
-  "hotwords": "colour favour harbour"
-}
-```
-
-**Note:** Changes to `model_idle_timeout`, `transcription_device`, and `model_path` require restarting the transcription daemon:
-
-```bash
-./daemon_control.sh restart
-```
+| Option | Description | Default |
+|--------|-------------|---------|
+| `trigger_button` | Mouse button (2=middle, 3=back, 4=forward) | 2 |
+| `silence_duration` | Seconds before auto-stop | 2.5 |
+| `llm_enabled` | Enable LLM processing | false |
+| `llm_model_path` | Path to GGUF model | - |
 
 ## Daemon Management
 
 ```bash
-# Start transcription daemon
-./daemon_control.sh start
-
-# Stop daemon
-./daemon_control.sh stop
-
-# Restart daemon
-./daemon_control.sh restart
-
-# Check status and view recent logs
-./daemon_control.sh status
-
-# Follow logs in real-time
-./daemon_control.sh logs
+./daemon_control_mac.sh install    # Install auto-start
+./daemon_control_mac.sh uninstall  # Remove auto-start
+./daemon_control_mac.sh start      # Start services
+./daemon_control_mac.sh stop       # Stop services
+./daemon_control_mac.sh restart    # Restart services
+./daemon_control_mac.sh status     # Show status
+./daemon_control_mac.sh logs       # View logs
 ```
 
 ## Troubleshooting
 
-**GUI doesn't appear:**
-- Check `~/.dictation_gui.log` for errors
-- Verify hotkey is correctly configured
+### Transcription not working
 
-**Transcription daemon not running:**
-- Check daemon status: `./daemon_control.sh status`
-- View daemon logs: `cat ~/.dictation_transcription.log`
-- Restart daemon: `./daemon_control.sh restart`
+1. Check daemon status: `./daemon_control_mac.sh status`
+2. View logs: `cat ~/.dictation_transcription.log`
+3. Restart: `./daemon_control_mac.sh restart`
 
-**"Daemon communication error":**
-- Transcription daemon is not running
-- Start it with: `./daemon_control.sh start`
+### Auto-paste not working
 
-**Model loading slow on first use:**
-- Expected behavior! Model loads on-demand (~2-5 seconds)
-- Subsequent uses will be instant
-- To keep model always loaded, set `"model_idle_timeout": 0` in config
+- Ensure `.venv/bin/python3.12` is in **Accessibility** permissions
+- Restart the app after adding permissions
 
-**Audio device issues:**
-- Select correct device from dropdown before recording
-- Your choice is saved for next time
+### Two mic icons in menu bar
 
-**Paste not working:**
-- Install `xdotool` (X11) or `wtype`/`ydotool` (Wayland)
-- Check terminal output for "No text input tool found" message
+- Kill duplicates: `pkill -f dictation_app_mac.py`
+- Restart: `./daemon_control_mac.sh start`
 
-**High memory usage:**
-- Model uses ~500MB-1GB RAM when loaded
-- Adjust `model_idle_timeout` to unload sooner
-- Check if model is loaded: `./daemon_control.sh status`
+### "This process is not trusted" in logs
+
+- Add Python to Accessibility permissions (see Installation step 2)
+
+## LLM Setup (Optional)
+
+1. Install llama-cpp-python:
+   ```bash
+   pip install llama-cpp-python
+   ```
+
+2. Download a GGUF model (Llama 3.2 3B recommended)
+
+3. Configure `~/.dictation_config`:
+   ```json
+   {
+     "llm_enabled": true,
+     "llm_model_path": "/path/to/model.gguf"
+   }
+   ```
+
+4. Restart: `./daemon_control_mac.sh restart`
+
+## License
+
+MIT

@@ -356,6 +356,7 @@ class DictationApp(NSObject):
 
     def _record_audio(self):
         """Record audio in background thread using PyAudio."""
+        stream = None
         try:
             stream = self.pyaudio.open(
                 format=pyaudio.paInt16,
@@ -395,11 +396,15 @@ class DictationApp(NSObject):
                 level = np.sqrt(level)  # Boost quieter sounds
                 self._pending_level = float(level)
 
-            stream.stop_stream()
-            stream.close()
-
         except Exception as e:
             print(f"Recording error: {e}")
+        finally:
+            if stream:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
 
     def _stop_recording(self):
         """Stop recording and process audio."""
@@ -471,6 +476,13 @@ class DictationApp(NSObject):
         self.is_llm_mode = False
         self.audio_file = None
         self.audio_frames = []
+        # UI updates must happen on main thread
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "resetUI", None, False
+        )
+
+    def resetUI(self):
+        """Reset UI elements (called on main thread)."""
         self._set_status_icon("idle")
         self.status_menu_item.setTitle_("Ready")
 
@@ -511,7 +523,10 @@ class DictationApp(NSObject):
             print(f"Error processing audio: {e}")
             if self.overlay:
                 self.overlay.show_error(str(e))
-            self._set_status_icon("error")
+            # UI update must happen on main thread
+            self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                "setErrorIcon", None, False
+            )
 
         finally:
             # Clean up audio file
@@ -524,9 +539,14 @@ class DictationApp(NSObject):
                 self.overlay.hide()
             self._reset_state()
 
+    def setErrorIcon(self):
+        """Set error icon (called on main thread)."""
+        self._set_status_icon("error")
+
     def _transcribe_audio(self, audio_path: str) -> Optional[str]:
         """Send audio to transcription daemon."""
         socket_path = self.config.get("transcription_socket", "/tmp/dictation_transcription.sock")
+        sock = None
 
         try:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -547,8 +567,6 @@ class DictationApp(NSObject):
                 if b'\n' in response:
                     break
 
-            sock.close()
-
             if not response.strip():
                 print("Empty response from daemon")
                 return None
@@ -567,6 +585,12 @@ class DictationApp(NSObject):
         except (socket.error, json.JSONDecodeError) as e:
             print(f"Transcription error: {e}")
             return None
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
     def _query_llm(self, prompt: str) -> Optional[str]:
         """Send prompt to LLM daemon with context."""
@@ -582,6 +606,7 @@ class DictationApp(NSObject):
             context_parts.append(f"[Clipboard]:\n{clipboard}")
 
         context = "\n\n".join(context_parts) if context_parts else ""
+        sock = None
 
         try:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -604,14 +629,18 @@ class DictationApp(NSObject):
                 if b'\n' in response:
                     break
 
-            sock.close()
-
             result = json.loads(response.decode().strip())
             return result.get("text", "").strip()
 
         except (socket.error, json.JSONDecodeError) as e:
             print(f"LLM error: {e}")
             return None
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
     def _inject_text(self, text: str):
         """Inject text into active application."""
@@ -708,10 +737,18 @@ class DictationApp(NSObject):
 
     def quitApp_(self, sender):
         """Quit the application."""
+        # Stop input monitoring
         if self.input_monitor:
             self.input_monitor.stop()
+        # Stop overlay
         if self.overlay:
             self.overlay.stop()
+        # Cleanup PyAudio
+        if self.pyaudio:
+            try:
+                self.pyaudio.terminate()
+            except Exception:
+                pass
         NSApplication.sharedApplication().terminate_(None)
 
 

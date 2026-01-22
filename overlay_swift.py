@@ -78,7 +78,7 @@ class SwiftOverlay:
                 ready = self.process.stdout.readline().strip()
                 if ready != "READY":
                     print(f"Unexpected startup response: {ready}")
-                    self.process.terminate()
+                    self._cleanup_process()
                     return False
 
                 self._started = True
@@ -87,7 +87,31 @@ class SwiftOverlay:
 
             except Exception as e:
                 print(f"Failed to start overlay helper: {e}")
+                self._cleanup_process()
                 return False
+
+    def _cleanup_process(self):
+        """Clean up subprocess and close all pipes."""
+        if self.process:
+            try:
+                self.process.terminate()
+            except Exception:
+                pass
+            # Close all pipes to avoid file descriptor leaks
+            for pipe in [self.process.stdin, self.process.stdout, self.process.stderr]:
+                if pipe:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
+            try:
+                self.process.wait(timeout=1)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+            self.process = None
 
     def stop(self):
         """Stop the overlay helper process."""
@@ -98,6 +122,13 @@ class SwiftOverlay:
                     self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
+                # Close all pipes
+                for pipe in [self.process.stdin, self.process.stdout, self.process.stderr]:
+                    if pipe:
+                        try:
+                            pipe.close()
+                        except Exception:
+                            pass
                 self.process = None
             self._started = False
 

@@ -22,6 +22,7 @@ import os
 import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # Configuration
@@ -591,18 +592,20 @@ Request: {prompt}<|im_end|>
         warmup_thread = threading.Thread(target=self.warmup, daemon=True)
         warmup_thread.start()
 
+        # Use thread pool to limit concurrent connections
+        executor = ThreadPoolExecutor(max_workers=2)
+
         try:
             while True:
                 conn, _ = server.accept()
-                # Handle each client in a thread
-                client_thread = threading.Thread(
-                    target=self.handle_client, args=(conn,)
-                )
-                client_thread.daemon = True
-                client_thread.start()
+                executor.submit(self.handle_client, conn)
         except KeyboardInterrupt:
             print("\nShutting down...")
         finally:
+            # Cancel unload timer if running
+            if self.unload_timer:
+                self.unload_timer.cancel()
+            executor.shutdown(wait=False)
             server.close()
             try:
                 os.unlink(SOCKET_PATH)

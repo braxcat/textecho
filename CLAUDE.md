@@ -273,54 +273,48 @@ Before considering code complete, verify:
 
 ### Key Dependencies
 ```
-evdev          - Input device monitoring
-numpy          - Audio processing
-openvino       - Whisper inference (CPU/NPU)
-openvino-genai - GenAI pipelines
-pyaudio        - Audio I/O
-soundfile      - Audio file handling
-PyGObject      - GTK4 bindings
-pycairo        - Drawing primitives
-pynput         - Keyboard/mouse input
-pillow         - Image processing
-llama-cpp-python - LLM support (optional)
+lightning-whisper-mlx - MLX Whisper transcription (Apple Silicon)
+pyobjc             - macOS AppKit/Quartz bindings
+pyaudio            - Audio I/O
+numpy              - Audio processing
+soundfile          - Audio file handling
+pynput             - Keyboard input
+llama-cpp-python   - LLM support (optional, with Metal)
 ```
 
 ### Project Structure
 ```
 dictation-mac/
-├── dictation_app_gtk.py      - Main app: GTK4 overlay + evdev + orchestration
-├── transcription_daemon.py   - Whisper model daemon (keeps model loaded)
-├── llm_daemon.py             - Local LLM daemon (llama-cpp)
-├── dictation_overlay.py      - GTK4 overlay window component
-├── recorder_gui.py           - Alternative Tkinter-based GUI
-├── daemon_control.sh         - Start/stop/status for all daemons
-├── window_positioner.py      - Window positioning utilities
-├── transcribe.py             - Quick CLI transcription tool
-├── gnome-extension/          - GNOME Shell extension for Wayland positioning
-├── test_evdev.py             - Input device debugging
+├── dictation_app_mac.py      - Menu bar app: input monitoring + orchestration
+├── transcription_daemon_mlx.py - MLX Whisper daemon (Apple Silicon)
+├── llm_daemon.py             - Local LLM daemon (llama-cpp with Metal)
+├── input_monitor_mac.py      - Global input monitoring (CGEventTap + pynput)
+├── text_injector_mac.py      - Text injection (clipboard + Cmd+V)
+├── overlay_swift.py          - Python wrapper for Swift overlay
+├── overlay_mac.py            - PyObjC overlay (backup, has threading issues)
+├── DictationOverlay/         - Swift overlay helper with waveform
+├── daemon_control_mac.sh     - Start/stop/status via launchd
+├── launchd/                  - launchd plist files for auto-start
 ├── test_keyboard.py          - Keyboard input testing
-├── export_whisper_*.py/sh    - Model export utilities (NPU/quantized)
+├── test_mlx_transcription.py - MLX transcription testing
 └── pyproject.toml            - Dependencies and project config
 ```
 
 ### Important Files & Patterns
 
 **Entry Points**:
-- `dictation_app_gtk.py` - Main application
-- `daemon_control.sh start` - Start all daemons
+- `dictation_app_mac.py` - Main menu bar application
+- `daemon_control_mac.sh start` - Start all daemons
 
 **Daemon Architecture**:
-- `transcription_daemon.py` - Listens on `/tmp/dictation_transcription.sock`
+- `transcription_daemon_mlx.py` - Listens on `/tmp/dictation_transcription.sock`
 - `llm_daemon.py` - Listens on `/tmp/dictation_llm.sock`
 - JSON-over-socket protocol with newline delimiters
 - Lazy model loading, auto-unload after idle timeout
 
 **Configuration**: `~/.dictation_config` (JSON)
+- `trigger_button`: Mouse button (2=middle, 3=back, 4=forward)
 - `silence_duration`: Seconds before auto-stop (default: 2.5)
-- `model_idle_timeout`: Model unload timer (default: 3600s)
-- `transcription_device`: "CPU" or "NPU"
-- `model_path`: Path to Whisper model
 - `llm_enabled`: Enable LLM processing
 - `llm_model_path`: Path to GGUF model
 
@@ -332,45 +326,52 @@ dictation-mac/
 
 | Action | Hotkey |
 |--------|--------|
-| Transcribe & paste | Mouse 4 (hold to record, release to transcribe) |
-| LLM prompt | Ctrl + Mouse 4 (hold to record, release to send to LLM) |
-| Toggle fast/accurate mode | Shift/Alt + Mouse 4 |
-| Capture clipboard to register | Ctrl+Alt+[1-9] |
-| Clear all registers | Ctrl+Alt+0 |
-| Settings dialog | Ctrl+Alt+Space |
+| Transcribe & paste | Middle-click (hold to record, release to transcribe) |
+| LLM prompt | Ctrl + Middle-click (hold to record, release to send to LLM) |
+| Capture clipboard to register | Cmd+Option+[1-9] |
+| Clear all registers | Cmd+Option+0 |
+| Settings dialog | Cmd+Option+Space |
 | Cancel recording | ESC |
 
 ### Register System (LLM Context)
 - 9 registers (1-9) for storing clipboard snippets
-- Registers clear on session restart (or manually with Ctrl+Alt+0)
+- Registers clear on session restart (or manually with Cmd+Option+0)
 - **All registers + primary clipboard are automatically included as context** in every LLM prompt
 - No need to say "clipboard" - just speak your prompt naturally
-- Workflow: copy snippets → Ctrl+Alt+1/2/3 to save → Ctrl+Mouse4 "fix this error"
+- Workflow: copy snippets → Cmd+Option+1/2/3 to save → Ctrl+Middle-click "fix this error"
 
 ### LLM Prompt Flow
 1. Copy code/text to clipboard
-2. Optionally save to registers with Ctrl+Alt+[1-9]
-3. Ctrl+Mouse4 and speak your prompt (e.g., "summarize this", "fix the bug")
+2. Optionally save to registers with Cmd+Option+[1-9]
+3. Ctrl+Middle-click and speak your prompt (e.g., "summarize this", "fix the bug")
 4. All context (clipboard + registers) automatically included
 5. Response streams in overlay
 6. Left-click to paste, right-click to cancel
 
 ### Running the Application
 ```bash
-# Install dependencies
-uv sync
+# Create venv and install dependencies
+/opt/homebrew/bin/python3.12 -m venv .venv
+source .venv/bin/activate
+pip install lightning-whisper-mlx pyobjc pyaudio numpy soundfile pynput
+
+# Grant Accessibility permission to .venv/bin/python3.12
+# System Settings → Privacy & Security → Accessibility
+
+# Install launchd services (auto-start on login)
+./daemon_control_mac.sh install
 
 # Start all daemons
-./daemon_control.sh start
+./daemon_control_mac.sh start
 
 # Check status
-./daemon_control.sh status
+./daemon_control_mac.sh status
 
 # View logs
-./daemon_control.sh logs
+./daemon_control_mac.sh logs
 
 # Stop everything
-./daemon_control.sh stop
+./daemon_control_mac.sh stop
 ```
 
 ### LLM Setup (Optional)
@@ -383,12 +384,11 @@ uv sync
      "llm_model_path": "/path/to/model.gguf"
    }
    ```
-4. Start: `./daemon_control.sh start`
+4. Restart: `./daemon_control_mac.sh restart`
 
 ### Testing Utilities
-- `test_evdev.py` - Debug input devices and find Mouse Button 4
 - `test_keyboard.py` - Test keyboard input handling
-- `uv run python transcribe.py audio.wav` - Quick transcription test
+- `test_mlx_transcription.py` - Test MLX Whisper transcription
 
 ### Project-Specific Conventions
 - Unix sockets for IPC (not HTTP)
@@ -396,7 +396,7 @@ uv sync
 - Lazy model loading to minimize startup time
 - Auto-unload models after idle to free RAM
 - Tokyo Night color theme for UI
-- Support both Wayland (layer-shell, GNOME extension) and X11 (xdotool)
+- launchd for daemon management and auto-start
 
 ---
 

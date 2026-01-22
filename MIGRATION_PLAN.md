@@ -232,19 +232,22 @@ daemon_control_mac.sh                     ✅ - macOS daemon control script (lau
 
 ### Modified Files
 ```
-transcription_daemon.py   - Replace OpenVINO with MLX Whisper
 llm_daemon.py            - Minimal changes (Metal already works)
-daemon_control.sh        - macOS compatibility or separate script
 pyproject.toml           - Update dependencies
 ```
 
-### Removed/Deprecated Files
+### Removed Files (Linux-only, deleted)
 ```
 dictation_app_gtk.py     - Replaced by dictation_app_mac.py
-dictation_overlay.py     - Replaced by overlay_mac.py
+dictation_overlay.py     - Replaced by Swift overlay
+dictation_daemon.py      - Replaced by input_monitor_mac.py
+recorder_gui.py          - Replaced by dictation_app_mac.py
+transcription_daemon.py  - Replaced by transcription_daemon_mlx.py
+daemon_control.sh        - Replaced by daemon_control_mac.sh
+window_positioner.py     - Replaced by AppKit positioning
 gnome-extension/         - Not needed on macOS
-test_evdev.py           - Linux-specific
-window_positioner.py    - Replaced by AppKit positioning
+test_evdev.py           - Linux-specific (evdev)
+export_whisper_*.py/sh  - Linux-specific (OpenVINO)
 ```
 
 ---

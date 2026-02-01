@@ -50,18 +50,31 @@ To add Python to Accessibility:
 2. Press `Cmd+Shift+G` and paste: `/Users/YOUR_USERNAME/Documents/Projects/dictation-mac/.venv/bin/python3.12`
 3. Click Open
 
-### 3. Install and start services
+### 3. Start the app
+
+**Option A: Manual start (two terminals)**
+
+Terminal 1 — Transcription daemon:
+```bash
+source .venv/bin/activate
+python transcription_daemon_mlx.py
+```
+
+Terminal 2 — Main app:
+```bash
+source .venv/bin/activate
+python dictation_app_mac.py
+```
+
+**Option B: launchd services (auto-start on login)**
 
 ```bash
-# Install launchd services (auto-start on login)
-./daemon_control_mac.sh install
-
-# Start everything
+./daemon_control_mac.sh install    # one-time setup
 ./daemon_control_mac.sh start
-
-# Check status
-./daemon_control_mac.sh status
+./daemon_control_mac.sh status     # verify everything is running
 ```
+
+> **Note:** If launchd-managed processes aren't responding to input, fall back to Option A. The venv packages may not load correctly under launchd.
 
 ## Usage
 

@@ -326,8 +326,10 @@ dictation-mac/
 
 | Action | Hotkey |
 |--------|--------|
-| Transcribe & paste | Middle-click (hold to record, release to transcribe) |
-| LLM prompt | Ctrl + Middle-click (hold to record, release to send to LLM) |
+| Transcribe & paste (mouse) | Middle-click (hold to record, release to transcribe) |
+| Transcribe & paste (keyboard) | Ctrl+D (hold to record, release to transcribe) |
+| LLM prompt (mouse) | Ctrl + Middle-click (hold to record, release to send to LLM) |
+| LLM prompt (keyboard) | Ctrl+Shift+D (hold to record, release to transcribe) |
 | Capture clipboard to register | Cmd+Option+[1-9] |
 | Clear all registers | Cmd+Option+0 |
 | Settings dialog | Cmd+Option+Space |

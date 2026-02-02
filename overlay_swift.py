@@ -39,15 +39,36 @@ class SwiftOverlay:
         Args:
             helper_path: Path to DictationOverlayHelper binary.
                         Defaults to DictationOverlay/DictationOverlayHelper in same dir.
+                        Falls back to .app bundle Resources path if running frozen.
         """
         if helper_path is None:
-            script_dir = Path(__file__).parent
-            helper_path = script_dir / "DictationOverlay" / "DictationOverlayHelper"
+            helper_path = self._find_helper()
 
         self.helper_path = Path(helper_path)
         self.process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._started = False
+
+    @staticmethod
+    def _find_helper() -> Path:
+        """Locate DictationOverlayHelper, checking source dir and .app bundle."""
+        import sys
+
+        # Source tree layout
+        script_dir = Path(__file__).parent
+        source_path = script_dir / "DictationOverlay" / "DictationOverlayHelper"
+        if source_path.exists():
+            return source_path
+
+        # .app bundle layout: Contents/Resources/DictationOverlay/DictationOverlayHelper
+        if getattr(sys, 'frozen', False):
+            bundle_resources = Path(sys.executable).parent.parent / "Resources"
+            bundle_path = bundle_resources / "DictationOverlay" / "DictationOverlayHelper"
+            if bundle_path.exists():
+                return bundle_path
+
+        # Fallback — return source path even if it doesn't exist (will fail at start())
+        return source_path
 
     def start(self) -> bool:
         """

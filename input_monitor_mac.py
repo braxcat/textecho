@@ -19,9 +19,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Optional
 
-import AppKit
-from AppKit import NSEvent
-from pynput import keyboard
+from pynput import keyboard, mouse
 
 
 class InputEvent(Enum):
@@ -47,6 +45,10 @@ class InputEvent(Enum):
     HOTKEY_REGISTER_9 = auto()
     HOTKEY_CLEAR_REGISTERS = auto()  # Cmd+Option+0
     HOTKEY_SETTINGS = auto()  # Cmd+Option+Space
+    HOTKEY_DICTATE_DOWN = auto()  # Ctrl+D pressed (start recording)
+    HOTKEY_DICTATE_UP = auto()  # Ctrl+D released (stop recording)
+    HOTKEY_DICTATE_LLM_DOWN = auto()  # Ctrl+Shift+D pressed (start LLM recording)
+    HOTKEY_DICTATE_LLM_UP = auto()  # Ctrl+Shift+D released (stop LLM recording)
 
 
 # Mouse button constants for configuration
@@ -106,11 +108,15 @@ class InputMonitor:
         self.mouse_position = (0, 0)
 
         self.keyboard_listener: Optional[keyboard.Listener] = None
-        self._mouse_monitor = None
+        self.mouse_listener: Optional[mouse.Listener] = None
         self.running = False
 
         # Track trigger button state
         self.trigger_pressed = False
+
+        # Track keyboard dictation state (for hold-to-record)
+        self.dictate_key_active = False
+        self.dictate_llm_mode = False
 
     def _emit(self, event: InputEvent):
         """Emit an event to the callback"""
@@ -121,6 +127,14 @@ class InputMonitor:
 
     def _on_key_press(self, key):
         """Handle key press events"""
+        # Debug: log all key presses
+        try:
+            vk = getattr(key, 'vk', None)
+            char = getattr(key, 'char', None)
+            print(f"DEBUG key_press: key={key}, vk={vk}, char={repr(char)}, ctrl={self.modifiers.ctrl}", flush=True)
+        except:
+            pass
+
         # Update modifier state
         if key == keyboard.Key.cmd or key == keyboard.Key.cmd_r:
             self.modifiers.cmd = True
@@ -175,12 +189,72 @@ class InputMonitor:
             except AttributeError:
                 pass
 
+        # Ctrl+D = hold to dictate
+        # Ctrl+Shift+D = hold for LLM dictation
+        # Virtual key code for 'd' on macOS is 2
+        elif self.modifiers.ctrl and not self.modifiers.cmd and not self.modifiers.alt:
+            is_d_key = False
+            try:
+                # Check virtual key code (works even with Ctrl held)
+                vk = getattr(key, 'vk', None)
+                char = getattr(key, 'char', None)
+                print(f"DEBUG Ctrl+key: vk={vk}, char={repr(char)}", flush=True)
+                if vk == 2:  # 'd' key on macOS
+                    is_d_key = True
+                # Also check char in case vk isn't available
+                if char and char.lower() == 'd':
+                    is_d_key = True
+                # Ctrl+D produces '\x04' (EOT character)
+                if char == '\x04':
+                    is_d_key = True
+            except AttributeError:
+                pass
+
+            if is_d_key and not self.dictate_key_active:
+                self.dictate_key_active = True
+                if self.modifiers.shift:
+                    self.dictate_llm_mode = True
+                    self._emit(InputEvent.HOTKEY_DICTATE_LLM_DOWN)
+                else:
+                    self.dictate_llm_mode = False
+                    self._emit(InputEvent.HOTKEY_DICTATE_DOWN)
+
     def _on_key_release(self, key):
         """Handle key release events"""
+        # Check if D key is released while dictation is active
+        if self.dictate_key_active:
+            is_d_key = False
+            try:
+                vk = getattr(key, 'vk', None)
+                if vk == 2:  # 'd' key
+                    is_d_key = True
+                char = getattr(key, 'char', None)
+                if char and char.lower() == 'd':
+                    is_d_key = True
+                if char == '\x04':
+                    is_d_key = True
+            except AttributeError:
+                pass
+
+            # Stop dictation if D is released
+            if is_d_key:
+                self.dictate_key_active = False
+                if self.dictate_llm_mode:
+                    self._emit(InputEvent.HOTKEY_DICTATE_LLM_UP)
+                else:
+                    self._emit(InputEvent.HOTKEY_DICTATE_UP)
+
         # Update modifier state
         if key == keyboard.Key.cmd or key == keyboard.Key.cmd_r:
             self.modifiers.cmd = False
         elif key == keyboard.Key.ctrl or key == keyboard.Key.ctrl_r:
+            # Stop dictation if Ctrl is released while active
+            if self.dictate_key_active:
+                self.dictate_key_active = False
+                if self.dictate_llm_mode:
+                    self._emit(InputEvent.HOTKEY_DICTATE_LLM_UP)
+                else:
+                    self._emit(InputEvent.HOTKEY_DICTATE_UP)
             self.modifiers.ctrl = False
         elif key == keyboard.Key.alt or key == keyboard.Key.alt_r:
             self.modifiers.alt = False
@@ -191,55 +265,49 @@ class InputMonitor:
         if key == keyboard.Key.esc:
             self._emit(InputEvent.KEY_ESCAPE)
 
-    def _handle_mouse_event(self, event):
-        """Handle NSEvent mouse events"""
-        # Update mouse position
-        loc = NSEvent.mouseLocation()
-        self.mouse_position = (int(loc.x), int(loc.y))
+    def _on_mouse_click(self, x, y, button, pressed):
+        """Handle pynput mouse click events"""
+        self.mouse_position = (int(x), int(y))
 
-        event_type = event.type()
+        # Map pynput button to our numbering
+        # pynput: Button.left, Button.right, Button.middle, Button.x1, Button.x2
+        button_map = {
+            mouse.Button.left: MOUSE_BUTTON_LEFT,
+            mouse.Button.right: MOUSE_BUTTON_RIGHT,
+            mouse.Button.middle: MOUSE_BUTTON_MIDDLE,
+        }
+        # Handle extra buttons (x1=back, x2=forward)
+        if hasattr(mouse.Button, 'x1'):
+            button_map[mouse.Button.x1] = MOUSE_BUTTON_BACK
+        if hasattr(mouse.Button, 'x2'):
+            button_map[mouse.Button.x2] = MOUSE_BUTTON_FORWARD
 
-        # Handle left/right clicks (on release)
-        if event_type == AppKit.NSEventTypeLeftMouseUp:
-            self._emit(InputEvent.LEFT_CLICK)
-        elif event_type == AppKit.NSEventTypeRightMouseUp:
-            self._emit(InputEvent.RIGHT_CLICK)
+        button_num = button_map.get(button)
 
-        # Handle other mouse buttons
-        elif event_type == AppKit.NSEventTypeOtherMouseDown:
-            button_num = event.buttonNumber()
-            if button_num == self.trigger_button:
-                self.trigger_pressed = True
-                self._emit(InputEvent.TRIGGER_BUTTON_DOWN)
+        # Debug output
+        print(f"DEBUG mouse: button={button}, num={button_num}, pressed={pressed}", flush=True)
 
-        elif event_type == AppKit.NSEventTypeOtherMouseUp:
-            button_num = event.buttonNumber()
-            if button_num == self.trigger_button:
-                self.trigger_pressed = False
-                self._emit(InputEvent.TRIGGER_BUTTON_UP)
-
-    def _setup_mouse_monitor(self):
-        """Set up NSEvent global monitor for mouse events"""
-        # Event mask for mouse events we care about
-        event_mask = (
-            AppKit.NSEventMaskLeftMouseUp |
-            AppKit.NSEventMaskRightMouseUp |
-            AppKit.NSEventMaskOtherMouseDown |
-            AppKit.NSEventMaskOtherMouseUp
-        )
-
-        # Create global monitor
-        self._mouse_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-            event_mask,
-            self._handle_mouse_event
-        )
-
-        if self._mouse_monitor is None:
-            print("ERROR: Failed to create mouse event monitor!")
-            print("Grant Accessibility permissions in System Preferences.")
+        if button_num is None:
             return
 
-        print("Mouse event monitor enabled")
+        # Handle trigger button
+        if button_num == self.trigger_button:
+            if pressed:
+                self.trigger_pressed = True
+                self._emit(InputEvent.TRIGGER_BUTTON_DOWN)
+            else:
+                self.trigger_pressed = False
+                self._emit(InputEvent.TRIGGER_BUTTON_UP)
+        # Handle left/right clicks (on release only)
+        elif not pressed:
+            if button_num == MOUSE_BUTTON_LEFT:
+                self._emit(InputEvent.LEFT_CLICK)
+            elif button_num == MOUSE_BUTTON_RIGHT:
+                self._emit(InputEvent.RIGHT_CLICK)
+
+    def _on_mouse_move(self, x, y):
+        """Track mouse position"""
+        self.mouse_position = (int(x), int(y))
 
     def start(self):
         """Start listening for input events"""
@@ -255,8 +323,12 @@ class InputMonitor:
         )
         self.keyboard_listener.start()
 
-        # Setup mouse listener (NSEvent global monitor)
-        self._setup_mouse_monitor()
+        # Start mouse listener (pynput)
+        self.mouse_listener = mouse.Listener(
+            on_click=self._on_mouse_click,
+            on_move=self._on_mouse_move
+        )
+        self.mouse_listener.start()
 
         button_names = {
             MOUSE_BUTTON_LEFT: "Left",
@@ -276,9 +348,9 @@ class InputMonitor:
             self.keyboard_listener.stop()
             self.keyboard_listener = None
 
-        if self._mouse_monitor:
-            NSEvent.removeMonitor_(self._mouse_monitor)
-            self._mouse_monitor = None
+        if self.mouse_listener:
+            self.mouse_listener.stop()
+            self.mouse_listener = None
 
         print("Input monitor stopped")
 
@@ -300,6 +372,8 @@ def test_input_monitor():
     print()
     print("Try the following:")
     print("  - Click middle mouse button (trigger)")
+    print("  - Hold Ctrl+D (dictation - hold to record, release to transcribe)")
+    print("  - Hold Ctrl+Shift+D (LLM dictation)")
     print("  - Press Cmd+Option+1 through 9 (register hotkeys)")
     print("  - Press Cmd+Option+0 (clear registers)")
     print("  - Press Cmd+Option+Space (settings)")

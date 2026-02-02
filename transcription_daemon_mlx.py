@@ -323,6 +323,15 @@ class TranscriptionDaemon:
         print(f"Transcription daemon (MLX) listening on {SOCKET_PATH}")
         print(f"PID: {os.getpid()}")
 
+        # Handle SIGTERM gracefully (launchd sends this on stop)
+        import signal
+
+        def _shutdown(signum, frame):
+            print(f"\nReceived signal {signum}, shutting down...")
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGTERM, _shutdown)
+
         # Use thread pool to limit concurrent connections
         executor = ThreadPoolExecutor(max_workers=4)
 
@@ -330,18 +339,18 @@ class TranscriptionDaemon:
             while True:
                 conn, _ = server.accept()
                 executor.submit(self.handle_client, conn)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
             print("\nShutting down...")
         finally:
             executor.shutdown(wait=False)
             server.close()
             try:
                 os.unlink(SOCKET_PATH)
-            except:
+            except OSError:
                 pass
             try:
                 os.unlink(PID_FILE)
-            except:
+            except OSError:
                 pass
 
 

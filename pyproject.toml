@@ -1,22 +1,20 @@
 [project]
-name = "dictation"
+name = "dictation-mac"
 version = "0.1.0"
-description = "Add your description here"
+description = "Voice-to-text dictation tool with automatic silence detection, local Whisper transcription, and optional LLM processing"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "evdev>=1.9.2",
-    "numpy>=2.3.5",
-    "openvino>=2025.4.1",
-    "openvino-genai>=2025.4.1.0",
-    "optimum-intel>=1.27.0",
-    "pillow>=12.1.0",
+    "lightning-whisper-mlx",
+    "numpy>=2.0.0",
     "pyaudio>=0.2.14",
-    "pycairo>=1.25.0",
-    "PyGObject>=3.48.0",
     "pynput>=1.8.1",
+    "pyobjc-framework-Cocoa",
+    "pyobjc-framework-Quartz",
+    "pyobjc-framework-ApplicationServices",
     "soundfile>=0.13.1",
 ]
 
-[tool.uv.sources]
-optimum-intel = { git = "https://github.com/huggingface/optimum-intel.git", rev = "main" }
+[project.optional-dependencies]
+build = ["py2app"]
+llm = ["llama-cpp-python"]

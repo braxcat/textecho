@@ -174,8 +174,8 @@ def start_daemon(daemon_type: str) -> bool:
     log_file = log_dir / f"{daemon_type}.log"
 
     # Build environment for the child process.  When running from a .app
-    # bundle, set DYLD_FALLBACK_LIBRARY_PATH so that cffi's ffi.dlopen()
-    # can find bundled dylibs (e.g. libsndfile) in Contents/Frameworks/.
+    # bundle the PATH is minimal (no Homebrew, no user shell config).
+    # Fix up PATH and DYLD_FALLBACK_LIBRARY_PATH for the daemon.
     env = os.environ.copy()
     if getattr(sys, 'frozen', False):
         frameworks_dir = str(Path(sys.executable).parent.parent / "Frameworks")
@@ -183,6 +183,12 @@ def start_daemon(daemon_type: str) -> bool:
         env['DYLD_FALLBACK_LIBRARY_PATH'] = (
             frameworks_dir + (':' + existing if existing else '')
         )
+        # Ensure Homebrew bin dirs are on PATH (needed for ffmpeg etc.)
+        path = env.get('PATH', '/usr/bin:/bin')
+        for brew_dir in ['/opt/homebrew/bin', '/usr/local/bin']:
+            if brew_dir not in path:
+                path = brew_dir + ':' + path
+        env['PATH'] = path
 
     try:
         with open(log_file, "a") as log_f:

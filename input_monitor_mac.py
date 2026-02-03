@@ -13,6 +13,7 @@ Mouse button mapping (macOS):
   - Button 4: Forward (side button)
 """
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from enum import Enum, auto
 from typing import Callable, Optional
 
 from pynput import keyboard, mouse
+
+logger = logging.getLogger(__name__)
 
 
 class InputEvent(Enum):
@@ -285,7 +288,8 @@ class InputMonitor:
         button_num = button_map.get(button)
 
         # Debug output
-        print(f"DEBUG mouse: button={button}, num={button_num}, pressed={pressed}", flush=True)
+        logger.debug("Mouse click: button=%s, num=%s, pressed=%s, trigger=%s",
+                     button, button_num, pressed, self.trigger_button)
 
         if button_num is None:
             return
@@ -338,7 +342,7 @@ class InputMonitor:
             MOUSE_BUTTON_FORWARD: "Forward",
         }
         btn_name = button_names.get(self.trigger_button, f"Button {self.trigger_button}")
-        print(f"Input monitor started (trigger: {btn_name} button)")
+        logger.info("Input monitor started (trigger: %s button)", btn_name)
 
     def stop(self):
         """Stop listening for input events"""

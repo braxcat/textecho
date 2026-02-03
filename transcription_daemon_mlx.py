@@ -22,8 +22,12 @@ import soundfile as sf
 # MLX Whisper import - will fail on non-macOS or without the package
 try:
     from lightning_whisper_mlx import LightningWhisperMLX
-except ImportError:
+except ImportError as e:
+    import traceback
     print("Error: lightning-whisper-mlx not installed.")
+    print(f"Import error: {e}")
+    print("Traceback:")
+    traceback.print_exc()
     print("Install with: pip install lightning-whisper-mlx")
     sys.exit(1)
 

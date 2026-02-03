@@ -37,7 +37,7 @@ import objc
 import pyaudio
 from ApplicationServices import AXIsProcessTrustedWithOptions
 from CoreFoundation import CFDictionaryCreate, kCFBooleanTrue
-from Foundation import NSObject, NSTimer
+from Foundation import NSObject, NSTimer, NSBundle
 from AppKit import (
     NSApplication,
     NSStatusBar,
@@ -89,6 +89,7 @@ DEFAULT_CONFIG = {
     "transcription_socket": "/tmp/dictation_transcription.sock",
     "llm_socket": "/tmp/dictation_llm.sock",
     "llm_enabled": False,
+    "input_device": None,  # None = auto-detect, or device index/name
 }
 
 CONFIG_PATH = Path.home() / ".dictation_config"
@@ -142,7 +143,7 @@ class SetupWizard(NSObject):
 
     WINDOW_WIDTH = 520
     WINDOW_HEIGHT = 380
-    TOTAL_STEPS = 4  # Progress dots (Welcome, Accessibility, Microphone, Model)
+    TOTAL_STEPS = 5  # Progress dots (Welcome, Accessibility, Microphone, Model, Input Monitoring)
 
     def initWithCallback_(self, callback):
         self = objc.super(SetupWizard, self).init()
@@ -153,6 +154,11 @@ class SetupWizard(NSObject):
         self._current_step = 0
         self._polling_timer = None
         self._preload_thread = None
+        self._progress_timer = None
+        self._model_load_start_time = None
+        self._model_loaded = False
+        # Estimated time for model loading (first run ~60s download + load, subsequent ~10s cache)
+        self._estimated_model_time = 60.0
 
         self._create_window()
         self._show_step(0)
@@ -255,6 +261,15 @@ class SetupWizard(NSObject):
         self._spinner.setDisplayedWhenStopped_(False)
         content.addSubview_(self._spinner)
 
+        # Progress bar for model loading (hidden by default)
+        self._progress_bar = NSProgressIndicator.alloc().initWithFrame_(
+            CGRectMake(60, self.WINDOW_HEIGHT - 290, self.WINDOW_WIDTH - 120, 20)
+        )
+        self._progress_bar.setStyle_(0)  # NSProgressIndicatorStyleBar
+        self._progress_bar.setIndeterminate_(True)
+        self._progress_bar.setHidden_(True)
+        content.addSubview_(self._progress_bar)
+
         # Main action button
         self._action_button = NSButton.alloc().initWithFrame_(
             CGRectMake((self.WINDOW_WIDTH - 200) / 2, 40, 200, 40)
@@ -281,7 +296,15 @@ class SetupWizard(NSObject):
         """Show the given step in the wizard."""
         self._current_step = step
         self._stop_polling()
+        # Stop progress timer if running
+        if self._progress_timer:
+            self._progress_timer.invalidate()
+            self._progress_timer = None
         self._spinner.stopAnimation_(None)
+        self._spinner.setHidden_(False)
+        self._progress_bar.stopAnimation_(None)
+        self._progress_bar.setIndeterminate_(True)  # Reset to indeterminate
+        self._progress_bar.setHidden_(True)
         self._status_label.setStringValue_("")
         self._action_button.setEnabled_(True)
 
@@ -289,6 +312,8 @@ class SetupWizard(NSObject):
         dot_index = min(step, self.TOTAL_STEPS - 1)
         self._update_dots(dot_index)
 
+        # New order: Welcome → Accessibility → Microphone → Model → Input Monitoring → Ready
+        # Input Monitoring is last because it requires app restart
         if step == 0:
             self._show_welcome()
         elif step == 1:
@@ -298,6 +323,8 @@ class SetupWizard(NSObject):
         elif step == 3:
             self._show_model_loading()
         elif step == 4:
+            self._show_input_monitoring()
+        elif step == 5:
             self._show_ready()
 
     @objc.python_method
@@ -331,6 +358,20 @@ class SetupWizard(NSObject):
             pass
 
     @objc.python_method
+    def _show_input_monitoring(self):
+        self._title_label.setStringValue_("Input Monitoring Permission")
+        self._desc_label.setStringValue_(
+            "TextEcho needs Input Monitoring access to\n"
+            "detect mouse button clicks.\n\n"
+            "1. Click \"Open Settings\" below\n"
+            "2. Click the + button in Settings\n"
+            "3. Select TextEcho from Applications\n"
+            "4. Click Continue when done"
+        )
+        self._action_button.setTitle_("Open Settings")
+        self._status_label.setStringValue_("")
+
+    @objc.python_method
     def _show_microphone(self):
         self._title_label.setStringValue_("Microphone Permission")
         self._desc_label.setStringValue_(
@@ -349,18 +390,53 @@ class SetupWizard(NSObject):
     def _show_model_loading(self):
         self._title_label.setStringValue_("Loading Speech Model")
         self._desc_label.setStringValue_(
-            "Pre-loading the speech recognition model so\n"
-            "your first transcription is fast.\n\n"
-            "This may download the model on first run."
+            "Pre-loading the speech recognition model.\n\n"
+            "First run will download ~150MB.\n"
+            "Subsequent runs load from cache."
         )
         self._action_button.setTitle_("Continue")
         self._action_button.setEnabled_(False)
-        self._spinner.startAnimation_(None)
-        self._status_label.setStringValue_("")
+        self._spinner.setHidden_(True)
+        self._spinner.stopAnimation_(None)
+
+        # Set up determinate progress bar with countdown
+        self._model_loaded = False
+        self._model_load_start_time = time.time()
+        self._progress_bar.setIndeterminate_(False)
+        self._progress_bar.setMinValue_(0.0)
+        self._progress_bar.setMaxValue_(100.0)
+        self._progress_bar.setDoubleValue_(0.0)
+        self._progress_bar.setHidden_(False)
+
+        remaining = int(self._estimated_model_time)
+        self._status_label.setStringValue_(f"~{remaining} seconds remaining...")
+        self._status_label.setTextColor_(self._make_color(self.TEXT_COLOR))
+
+        # Start progress timer (updates every 0.5 seconds)
+        self._progress_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.5, self, objc.selector(self.updateModelProgress_, signature=b'v@:@'), None, True
+        )
 
         # Start preload in background
         self._preload_thread = threading.Thread(target=self._do_preload_model, daemon=True)
         self._preload_thread.start()
+
+    def updateModelProgress_(self, timer):
+        """Update the model loading progress bar and countdown."""
+        if self._model_loaded:
+            return
+
+        elapsed = time.time() - self._model_load_start_time
+        # Progress asymptotically approaches 95% (never shows 100% until actually done)
+        progress = min(95.0, (elapsed / self._estimated_model_time) * 100.0)
+        self._progress_bar.setDoubleValue_(progress)
+
+        remaining = max(0, int(self._estimated_model_time - elapsed))
+        if remaining > 0:
+            self._status_label.setStringValue_(f"~{remaining} seconds remaining...")
+        else:
+            # Past estimated time, show "almost done"
+            self._status_label.setStringValue_("Almost done...")
 
     @objc.python_method
     def _show_ready(self):
@@ -368,20 +444,21 @@ class SetupWizard(NSObject):
         for dot in self._dot_views:
             dot.setTextColor_(self._make_color(self.GREEN_COLOR))
 
-        self._title_label.setStringValue_("You're All Set!")
+        self._title_label.setStringValue_("Setup Complete!")
         self._desc_label.setStringValue_(
-            "TextEcho is ready to use.\n\n"
-            "Hold Middle-click to dictate and paste text.\n"
-            "Hold Ctrl+D for keyboard-only dictation.\n"
-            "Hold Ctrl+Middle-click for LLM prompts."
+            "TextEcho needs to restart to activate.\n\n"
+            "After restart:\n"
+            "• Hold Middle-click to dictate and paste text\n"
+            "• Hold Ctrl+D for keyboard-only dictation"
         )
         self._status_label.setStringValue_("✓ All permissions granted  ✓ Model loaded")
-        self._action_button.setTitle_("Start Using TextEcho")
+        self._action_button.setTitle_("Restart TextEcho")
 
     def actionButtonClicked_(self, sender):
         """Handle the main action button click."""
         step = self._current_step
 
+        # New order: Welcome(0) → Accessibility(1) → Microphone(2) → Model(3) → Input Monitoring(4) → Ready(5)
         if step == 0:
             # Welcome → Accessibility
             self._show_step(1)
@@ -399,21 +476,59 @@ class SetupWizard(NSObject):
             pass
 
         elif step == 4:
-            # Ready → finish
-            self._finish()
+            # Open Input Monitoring settings
+            self._request_input_monitoring()
+
+        elif step == 5:
+            # Ready → write config and restart app
+            self._finish_and_restart()
+
+        elif step == 102:
+            # Input Monitoring continue → Ready
+            self._show_step(5)
 
     @objc.python_method
     def _request_accessibility(self):
         """Request accessibility permission and start polling."""
-        try:
-            options = {"AXTrustedCheckOptionPrompt": kCFBooleanTrue}
-            AXIsProcessTrustedWithOptions(options)
-        except Exception as e:
-            logger.warning("Could not request accessibility: %s", e)
-
         self._action_button.setEnabled_(False)
         self._status_label.setStringValue_("Waiting for permission...")
+
+        # Start polling immediately — don't wait for the prompt call to return
         self._start_polling("accessibility")
+
+        # Run AXIsProcessTrustedWithOptions on a background thread —
+        # with the prompt option it can block the main thread on macOS 26.
+        def request_ax():
+            try:
+                options = {"AXTrustedCheckOptionPrompt": kCFBooleanTrue}
+                AXIsProcessTrustedWithOptions(options)
+            except Exception as e:
+                logger.warning("Could not request accessibility: %s", e)
+
+        threading.Thread(target=request_ax, daemon=True).start()
+
+    @objc.python_method
+    def _request_input_monitoring(self):
+        """Open Input Monitoring settings panel."""
+        # Open System Settings to Input Monitoring
+        # x-apple.systempreferences URLs work on macOS 13+
+        url = "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        NSWorkspace.sharedWorkspace().openURL_(AppKit.NSURL.URLWithString_(url))
+
+        # Also reveal the app in Finder so user can drag it if needed
+        app_path = "/Applications/TextEcho.app"
+        if os.path.exists(app_path):
+            NSWorkspace.sharedWorkspace().selectFile_inFileViewerRootedAtPath_(app_path, "")
+
+        # Change button to "Continue" so user can proceed after adding permission
+        self._action_button.setTitle_("Continue")
+        self._status_label.setStringValue_("Click + in Settings, add TextEcho, then Continue")
+
+        # Set a flag so next click advances to microphone step
+        self._current_step = 102  # Sentinel for "input monitoring done"
+
+    def advanceToMicFromInputMonitoring_(self, timer):
+        self._show_step(3)
 
     @objc.python_method
     def _request_microphone(self):
@@ -421,6 +536,10 @@ class SetupWizard(NSObject):
         self._action_button.setEnabled_(False)
         self._status_label.setStringValue_("Waiting for permission...")
 
+        # Start polling immediately — don't wait for the trigger to complete
+        self._start_polling("microphone")
+
+        # Trigger the permission dialog on a background thread
         def trigger_mic():
             try:
                 pa = pyaudio.PyAudio()
@@ -438,29 +557,39 @@ class SetupWizard(NSObject):
             except Exception as e:
                 logger.warning("Mic permission trigger error: %s", e)
 
-            # Start polling on main thread
-            self.performSelectorOnMainThread_withObject_waitUntilDone_(
-                "startMicPolling", None, False
-            )
-
         threading.Thread(target=trigger_mic, daemon=True).start()
-
-    def startMicPolling(self):
-        """Start microphone permission polling (called on main thread)."""
-        self._start_polling("microphone")
 
     @objc.python_method
     def _check_mic_permission(self) -> bool:
         """Check if microphone permission is granted."""
+        # Try AVFoundation first
         try:
             import AVFoundation
             status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
                 AVFoundation.AVMediaTypeAudio
             )
-            return status == 3  # AVAuthorizationStatusAuthorized
+            logger.debug("AVFoundation mic status: %s", status)
+            if status == 3:  # AVAuthorizationStatusAuthorized
+                return True
+        except Exception as e:
+            logger.debug("AVFoundation mic check failed: %s", e)
+
+        # Fallback: try opening a PyAudio stream — if it works, permission is granted
+        try:
+            pa = pyaudio.PyAudio()
+            stream = pa.open(
+                format=pyaudio.paInt16, channels=1, rate=16000,
+                input=True, frames_per_buffer=512,
+            )
+            stream.read(512, exception_on_overflow=False)
+            stream.stop_stream()
+            stream.close()
+            pa.terminate()
+            return True
         except Exception:
-            # If we can't check, assume not granted
-            return False
+            pass
+
+        return False
 
     @objc.python_method
     def _start_polling(self, permission_type: str):
@@ -479,11 +608,14 @@ class SetupWizard(NSObject):
     def pollPermission_(self, timer):
         """Poll for permission status (called by timer)."""
         ptype = getattr(self, '_polling_type', None)
+        logger.debug("Polling permission: %s", ptype)
 
         if ptype == "accessibility":
             try:
                 from ApplicationServices import AXIsProcessTrusted
-                if AXIsProcessTrusted():
+                trusted = AXIsProcessTrusted()
+                logger.debug("AXIsProcessTrusted: %s", trusted)
+                if trusted:
                     self._stop_polling()
                     self._on_accessibility_granted()
             except ImportError:
@@ -491,7 +623,9 @@ class SetupWizard(NSObject):
                 self._show_step(2)
 
         elif ptype == "microphone":
-            if self._check_mic_permission():
+            granted = self._check_mic_permission()
+            logger.debug("Mic permission granted: %s", granted)
+            if granted:
                 self._stop_polling()
                 self._on_microphone_granted()
 
@@ -505,12 +639,12 @@ class SetupWizard(NSObject):
         # Override action to go to next step
         self._current_step = 100  # Sentinel
 
-        # Use a short delay then advance
+        # Use a short delay then advance to Microphone (step 2)
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.8, self, objc.selector(self.advanceToMic_, signature=b'v@:@'), None, False
+            0.8, self, objc.selector(self.advanceToMicrophone_, signature=b'v@:@'), None, False
         )
 
-    def advanceToMic_(self, timer):
+    def advanceToMicrophone_(self, timer):
         self._show_step(2)
 
     @objc.python_method
@@ -527,20 +661,35 @@ class SetupWizard(NSObject):
         )
 
     def advanceToModel_(self, timer):
-        self._show_step(3)
+        self._show_step(3)  # Model loading is step 3
+
+    @objc.python_method
+    def _update_model_status(self, message):
+        """Update status label from background thread."""
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "updateModelStatusLabel:", message, False
+        )
+
+    def updateModelStatusLabel_(self, message):
+        """Called on main thread to update status."""
+        self._status_label.setStringValue_(message)
 
     @objc.python_method
     def _do_preload_model(self):
         """Send preload command to transcription daemon (runs in background thread)."""
         socket_path = "/tmp/dictation_transcription.sock"
-        max_attempts = 30  # Wait up to 30 seconds for daemon
+        max_attempts = 60  # Wait up to 60 seconds for daemon (download can be slow)
         attempt = 0
 
         while attempt < max_attempts:
             try:
+                self._update_model_status(f"Connecting to daemon... ({attempt + 1}s)")
+
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                sock.settimeout(60)  # Model loading can be slow
+                sock.settimeout(180)  # Model loading/download can be slow
                 sock.connect(socket_path)
+
+                self._update_model_status("Downloading/loading model...")
 
                 request = {"command": "preload"}
                 sock.sendall(json.dumps(request).encode() + b'\n')
@@ -591,33 +740,51 @@ class SetupWizard(NSObject):
 
     def onModelLoaded(self):
         """Called on main thread when model is loaded."""
+        self._model_loaded = True
+        if self._progress_timer:
+            self._progress_timer.invalidate()
+            self._progress_timer = None
         self._spinner.stopAnimation_(None)
-        self._status_label.setStringValue_("✓ Model Loaded!")
+        self._progress_bar.setDoubleValue_(100.0)  # Complete the progress bar
+        self._progress_bar.setHidden_(True)
+        self._status_label.setStringValue_("✓ Model Ready!")
         self._status_label.setTextColor_(self._make_color(self.GREEN_COLOR))
         self._action_button.setEnabled_(True)
         self._action_button.setTitle_("Continue")
-        self._current_step = 102  # Sentinel
+        self._current_step = 103  # Sentinel for model loaded
 
+        # Advance to Input Monitoring (step 4)
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.8, self, objc.selector(self.advanceToReady_, signature=b'v@:@'), None, False
+            0.8, self, objc.selector(self.advanceToInputMonitoring_, signature=b'v@:@'), None, False
         )
 
+    def advanceToInputMonitoring_(self, timer):
+        self._show_step(4)  # Input Monitoring
+
     def advanceToReady_(self, timer):
-        self._show_step(4)
+        self._show_step(5)
 
     def onModelLoadFailed(self):
         """Called on main thread if model loading failed."""
+        self._model_loaded = True  # Prevent timer from continuing
+        if self._progress_timer:
+            self._progress_timer.invalidate()
+            self._progress_timer = None
         self._spinner.stopAnimation_(None)
-        self._status_label.setStringValue_("Model will load on first use")
+        self._progress_bar.setHidden_(True)
+        self._status_label.setStringValue_("Model will download on first use")
         self._status_label.setTextColor_(self._make_color(self.DIM_COLOR))
         self._action_button.setEnabled_(True)
         self._action_button.setTitle_("Continue Anyway")
-        self._current_step = 102  # Use same sentinel to advance to Ready
+        self._current_step = 103  # Same sentinel - advance to Input Monitoring
 
     @objc.python_method
     def _finish(self):
         """Complete the wizard — write default config and notify callback."""
         self._stop_polling()
+        if self._progress_timer:
+            self._progress_timer.invalidate()
+            self._progress_timer = None
         self._did_finish = True
 
         # Write default config
@@ -639,11 +806,63 @@ class SetupWizard(NSObject):
         self.window.close()
         self.window = None
 
-        # Fire callback AFTER window is fully torn down
+        # Clear all our view references
+        self._dot_views = []
+        self._title_label = None
+        self._desc_label = None
+        self._status_label = None
+        self._spinner = None
+        self._action_button = None
+
+        # Fire callback AFTER window is fully torn down, using a timer
+        # to ensure the current run loop iteration completes first
         if self._completion_callback:
             cb = self._completion_callback
             self._completion_callback = None
+            # Use performSelector to defer callback to next run loop iteration
+            AppKit.NSObject.cancelPreviousPerformRequestsWithTarget_(self)
+            self._deferred_callback = cb
+            self.performSelector_withObject_afterDelay_(
+                objc.selector(self._fireCallback, signature=b'v@:'), None, 0.1
+            )
+
+    def _fireCallback(self):
+        """Fire the deferred completion callback."""
+        cb = getattr(self, '_deferred_callback', None)
+        if cb:
+            self._deferred_callback = None
             cb()
+
+    @objc.python_method
+    def _finish_and_restart(self):
+        """Complete wizard, write config, and restart app."""
+        self._stop_polling()
+        if self._progress_timer:
+            self._progress_timer.invalidate()
+            self._progress_timer = None
+        self._did_finish = True
+
+        # Write default config
+        config = DEFAULT_CONFIG.copy()
+        try:
+            with open(CONFIG_PATH, 'w') as f:
+                json.dump(config, f, indent=2)
+            logger.info("Default config written to %s", CONFIG_PATH)
+        except IOError as e:
+            logger.warning("Could not write config: %s", e)
+
+        # Restart the app (fresh process state, no TSM conflicts)
+        self._restart_app()
+
+    @objc.python_method
+    def _restart_app(self):
+        """Restart the application to apply permissions."""
+        app_path = NSBundle.mainBundle().bundlePath()
+        logger.info("Restarting app from: %s", app_path)
+        # Use open command to restart the app after a short delay
+        subprocess.Popen(['bash', '-c', f'sleep 0.5 && open "{app_path}"'])
+        # Quit this instance
+        NSApplication.sharedApplication().terminate_(None)
 
     def show(self):
         """Show the wizard window."""
@@ -699,6 +918,7 @@ class DictationApp(NSObject):
         self.sample_rate = 16000
         self.channels = 1
         self.chunk_size = 1024
+        self.input_device_index = self._find_input_device()
 
         # Components
         self.input_monitor: Optional[InputMonitor] = None
@@ -720,17 +940,17 @@ class DictationApp(NSObject):
         self._is_first_run = not CONFIG_PATH.exists()
         self._setup_wizard = None
 
-        # Always start input monitor on a short delay (before wizard if first run).
-        # This ensures pynput initializes its TSM access on its thread before
-        # any NSTextField triggers main-thread TSM initialization.
-        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.5, self, objc.selector(self.delayedStart_, signature=b'v@:@'), None, False
-        )
-
         if self._is_first_run:
-            # Show setup wizard after input monitor starts
+            # First run: show wizard first, start input monitor after wizard completes.
+            # This avoids TSM threading issues — pynput must not start before or
+            # during the wizard (which uses NSTextField that initializes TSM on main thread).
             NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-                1.5, self, objc.selector(self.showSetupWizard_, signature=b'v@:@'), None, False
+                0.5, self, objc.selector(self.showSetupWizard_, signature=b'v@:@'), None, False
+            )
+        else:
+            # Subsequent runs: start input monitor immediately (no wizard/NSTextField conflict)
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.5, self, objc.selector(self.delayedStart_, signature=b'v@:@'), None, False
             )
 
         return self
@@ -738,15 +958,28 @@ class DictationApp(NSObject):
     def showSetupWizard_(self, timer):
         """Show the first-run setup wizard."""
         def on_wizard_complete():
-            # Reload config (wizard writes default config)
+            # This callback is called if user closes wizard early (X button).
+            # The normal flow uses _finish_and_restart which restarts the app.
             self.config = self._load_config()
-            logger.info("Setup wizard completed")
+            logger.info("Setup wizard completed (early close)")
 
         self._setup_wizard = SetupWizard.alloc().initWithCallback_(on_wizard_complete)
         self._setup_wizard.show()
 
     def delayedStart_(self, timer):
         """Start input monitoring after app is fully running."""
+        logger.info("delayedStart_ called")
+
+        # Check if we have accessibility permission; if not, prompt for it
+        try:
+            from ApplicationServices import AXIsProcessTrusted
+            if not AXIsProcessTrusted():
+                logger.warning("Accessibility not granted, prompting...")
+                options = {"AXTrustedCheckOptionPrompt": kCFBooleanTrue}
+                AXIsProcessTrustedWithOptions(options)
+        except Exception as e:
+            logger.warning("Could not check accessibility: %s", e)
+
         self._start_input_monitor()
 
     @objc.python_method
@@ -775,6 +1008,42 @@ class DictationApp(NSObject):
                 json.dump(self.config, f, indent=2)
         except IOError as e:
             logger.warning("Could not save config: %s", e)
+
+    @objc.python_method
+    def _find_input_device(self) -> Optional[int]:
+        """Find an input device for audio recording.
+
+        Returns the device index to use, or None to use system default.
+        Prefers configured device, then built-in MacBook mic by name.
+        """
+        configured = self.config.get("input_device")
+
+        # If explicitly configured, use it
+        if configured is not None:
+            if isinstance(configured, int):
+                logger.info("Using configured input device index: %d", configured)
+                return configured
+            # If it's a string, try to find by name
+            if isinstance(configured, str):
+                for i in range(self.pyaudio.get_device_count()):
+                    info = self.pyaudio.get_device_info_by_index(i)
+                    if configured.lower() in info['name'].lower() and info['maxInputChannels'] > 0:
+                        logger.info("Using input device by name: [%d] %s", i, info['name'])
+                        return i
+                logger.warning("Configured input device '%s' not found", configured)
+
+        # Find built-in MacBook mic by name (most reliable)
+        for i in range(self.pyaudio.get_device_count()):
+            info = self.pyaudio.get_device_info_by_index(i)
+            if info['maxInputChannels'] > 0:
+                name_lower = info['name'].lower()
+                if 'macbook' in name_lower and 'microphone' in name_lower:
+                    logger.info("Using built-in microphone: [%d] %s", i, info['name'])
+                    return i
+
+        # Fallback to system default
+        logger.info("Using system default input device")
+        return None
 
     def _setup_status_item(self):
         """Create the menu bar status item."""
@@ -879,6 +1148,13 @@ class DictationApp(NSObject):
 
         self.menu.addItem_(NSMenuItem.separatorItem())
 
+        # Uninstall
+        uninstall_app_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Uninstall TextEcho...", "uninstallApp:", ""
+        )
+        uninstall_app_item.setTarget_(self)
+        self.menu.addItem_(uninstall_app_item)
+
         # Quit
         quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Quit", "quitApp:", "q"
@@ -901,15 +1177,18 @@ class DictationApp(NSObject):
     def _start_input_monitor(self):
         """Start global input monitoring."""
         trigger_button = self.config.get("trigger_button", MOUSE_BUTTON_MIDDLE)
+        logger.info("Starting input monitor with trigger button: %s", trigger_button)
 
         self.input_monitor = InputMonitor(
             callback=self._handle_input_event,
             trigger_button=trigger_button
         )
         self.input_monitor.start()
+        logger.info("Input monitor started")
 
     def _handle_input_event(self, event: InputEvent, modifiers: ModifierState, mouse_pos: tuple):
         """Handle input events from the monitor."""
+        logger.debug("Input event: %s, modifiers: ctrl=%s, pos=%s", event, modifiers.ctrl, mouse_pos)
 
         if event == InputEvent.TRIGGER_BUTTON_DOWN:
             if modifiers.ctrl:
@@ -1004,19 +1283,29 @@ class DictationApp(NSObject):
         # Start recording in background thread
         self.recording_thread = threading.Thread(target=self._record_audio, daemon=True)
         self.recording_thread.start()
-        logger.info("Recording started (llm=%s, trigger=%s)", llm_mode, trigger)
+        device_info = "default"
+        if self.input_device_index is not None:
+            try:
+                info = self.pyaudio.get_device_info_by_index(self.input_device_index)
+                device_info = f"[{self.input_device_index}] {info['name']}"
+            except Exception:
+                device_info = f"[{self.input_device_index}]"
+        logger.info("Recording started (llm=%s, trigger=%s, device=%s)", llm_mode, trigger, device_info)
 
     def _record_audio(self):
         """Record audio in background thread using PyAudio."""
         stream = None
         try:
-            stream = self.pyaudio.open(
-                format=pyaudio.paInt16,
-                channels=self.channels,
-                rate=self.sample_rate,
-                input=True,
-                frames_per_buffer=self.chunk_size
-            )
+            open_kwargs = {
+                "format": pyaudio.paInt16,
+                "channels": self.channels,
+                "rate": self.sample_rate,
+                "input": True,
+                "frames_per_buffer": self.chunk_size,
+            }
+            if self.input_device_index is not None:
+                open_kwargs["input_device_index"] = self.input_device_index
+            stream = self.pyaudio.open(**open_kwargs)
 
             # Waveform state
             self._waveform_levels = [0.05] * 40
@@ -1378,6 +1667,95 @@ class DictationApp(NSObject):
         else:
             logger.info("Config file not found: %s", config_file)
 
+    def uninstallApp_(self, sender):
+        """Uninstall TextEcho completely."""
+        from AppKit import NSAlert, NSAlertStyleWarning, NSAlertFirstButtonReturn
+
+        # Show confirmation dialog
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_("Uninstall TextEcho?")
+        alert.setInformativeText_(
+            "This will:\n"
+            "• Stop all running processes\n"
+            "• Remove auto-start services\n"
+            "• Delete the app from Applications\n"
+            "• Remove configuration files\n\n"
+            "You'll need to manually remove permissions in\n"
+            "System Settings → Privacy & Security."
+        )
+        alert.setAlertStyle_(NSAlertStyleWarning)
+        alert.addButtonWithTitle_("Uninstall")
+        alert.addButtonWithTitle_("Cancel")
+
+        response = alert.runModal()
+        if response != NSAlertFirstButtonReturn:
+            return
+
+        logger.info("Starting uninstall...")
+
+        # Stop daemons
+        daemon_manager.stop_all_daemons()
+
+        # Remove launchd services
+        home = Path.home()
+        for plist in ["com.dictation.app.plist", "com.dictation.transcription.plist", "com.dictation.llm.plist"]:
+            plist_path = home / "Library" / "LaunchAgents" / plist
+            if plist_path.exists():
+                subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
+                             capture_output=True)
+                plist_path.unlink()
+                logger.info("Removed %s", plist)
+
+        # Remove config and log files
+        for f in [".dictation_config", ".dictation_app.log", ".dictation_transcription.log",
+                  ".dictation_llm.log", ".dictation_app.pid", ".dictation_transcription.pid",
+                  ".dictation_llm.pid"]:
+            p = home / f
+            if p.exists():
+                p.unlink()
+
+        # Remove log directory
+        log_dir = home / "Library" / "Logs" / "Dictation"
+        if log_dir.exists():
+            import shutil
+            shutil.rmtree(log_dir, ignore_errors=True)
+
+        # Remove sockets
+        for sock in ["/tmp/dictation_transcription.sock", "/tmp/dictation_llm.sock"]:
+            if os.path.exists(sock):
+                os.unlink(sock)
+
+        # Open Privacy settings so user can remove permissions
+        url = "x-apple.systempreferences:com.apple.preference.security?Privacy"
+        NSWorkspace.sharedWorkspace().openURL_(AppKit.NSURL.URLWithString_(url))
+
+        # Schedule app deletion and quit
+        app_path = "/Applications/TextEcho.app"
+        if os.path.exists(app_path):
+            # Use subprocess to delete after we quit
+            subprocess.Popen(
+                ["bash", "-c", f"sleep 2 && rm -rf '{app_path}'"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+        # Show completion message
+        complete_alert = NSAlert.alloc().init()
+        complete_alert.setMessageText_("Uninstall Complete")
+        complete_alert.setInformativeText_(
+            "TextEcho has been removed.\n\n"
+            "Please manually remove TextEcho from:\n"
+            "• Accessibility\n"
+            "• Input Monitoring\n"
+            "• Microphone\n\n"
+            "in the Privacy & Security settings that just opened."
+        )
+        complete_alert.addButtonWithTitle_("OK")
+        complete_alert.runModal()
+
+        # Quit
+        NSApplication.sharedApplication().terminate_(None)
+
     def quitApp_(self, sender):
         """Quit the application."""
         logger.info("Quitting application...")
@@ -1450,7 +1828,7 @@ def main():
         return
 
     # Menu bar app mode
-    setup_logging("app")
+    setup_logging("app", level=logging.DEBUG)
 
     logger.info("=" * 50)
     logger.info("TextEcho")

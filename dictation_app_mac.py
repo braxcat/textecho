@@ -47,7 +47,21 @@ from AppKit import (
     NSVariableStatusItemLength,
     NSApplicationActivationPolicyAccessory,
     NSWorkspace,
+    NSWindow,
+    NSWindowStyleMaskTitled,
+    NSWindowStyleMaskClosable,
+    NSBackingStoreBuffered,
+    NSTextField,
+    NSButton,
+    NSBezelStyleRounded,
+    NSProgressIndicator,
+    NSProgressIndicatorSpinningStyle,
+    NSColor,
+    NSFont,
+    NSView,
+    NSTextAlignmentCenter,
 )
+from Quartz import CGRectMake
 
 from input_monitor_mac import (
     InputMonitor,
@@ -92,11 +106,14 @@ def _get_resource_path(relative_path: str) -> Path:
 
 
 def _check_first_run():
-    """On first run, prompt for Accessibility permissions if needed."""
+    """Legacy first-run check — kept for non-wizard accessibility prompt.
+
+    The setup wizard now handles first-run setup. This only runs on
+    subsequent launches to re-prompt if accessibility was revoked.
+    """
     if AXIsProcessTrustedWithOptions is None:
         return
 
-    # Check if we already have permission
     try:
         from ApplicationServices import AXIsProcessTrusted
         if AXIsProcessTrusted():
@@ -104,7 +121,6 @@ def _check_first_run():
     except ImportError:
         return
 
-    # Prompt the user — this shows the system dialog
     options = {
         "AXTrustedCheckOptionPrompt": kCFBooleanTrue,
     }
@@ -112,6 +128,549 @@ def _check_first_run():
         AXIsProcessTrustedWithOptions(options)
     except Exception as e:
         logger.warning("Could not check accessibility trust: %s", e)
+
+
+class SetupWizard(NSObject):
+    """First-run setup wizard that guides users through permissions and model loading."""
+
+    # Tokyo Night colors
+    BG_COLOR = (0x1a / 255, 0x1b / 255, 0x26 / 255)  # #1a1b26
+    TEXT_COLOR = (0xa9 / 255, 0xb1 / 255, 0xd6 / 255)  # #a9b1d6
+    ACCENT_COLOR = (0x7a / 255, 0xa2 / 255, 0xf7 / 255)  # #7aa2f7
+    GREEN_COLOR = (0x9e / 255, 0xce / 255, 0x6a / 255)  # #9ece6a
+    DIM_COLOR = (0x56 / 255, 0x5f / 255, 0x89 / 255)  # #565f89
+
+    WINDOW_WIDTH = 520
+    WINDOW_HEIGHT = 380
+    TOTAL_STEPS = 4  # Progress dots (Welcome, Accessibility, Microphone, Model)
+
+    def initWithCallback_(self, callback):
+        self = objc.super(SetupWizard, self).init()
+        if self is None:
+            return None
+
+        self._completion_callback = callback
+        self._current_step = 0
+        self._polling_timer = None
+        self._preload_thread = None
+
+        self._create_window()
+        self._show_step(0)
+
+        return self
+
+    @objc.python_method
+    def _make_color(self, rgb):
+        return NSColor.colorWithCalibratedRed_green_blue_alpha_(rgb[0], rgb[1], rgb[2], 1.0)
+
+    @objc.python_method
+    def _create_window(self):
+        """Create the setup wizard window."""
+        frame = CGRectMake(0, 0, self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+        style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            frame, style, NSBackingStoreBuffered, False
+        )
+        self.window.setTitle_("TextEcho Setup")
+        self.window.center()
+        self.window.setReleasedWhenClosed_(False)
+        self.window.setDelegate_(self)
+
+        # Force dark appearance so all controls render with dark theme
+        dark_appearance = AppKit.NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua")
+        self.window.setAppearance_(dark_appearance)
+
+        # Dark background (Tokyo Night)
+        content = self.window.contentView()
+        content.setWantsLayer_(True)
+        content.layer().setBackgroundColor_(
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(
+                *self.BG_COLOR, 1.0
+            ).CGColor()
+        )
+
+        # Step indicator dots
+        self._dot_views = []
+        dot_y = self.WINDOW_HEIGHT - 45
+        dot_start_x = (self.WINDOW_WIDTH - (self.TOTAL_STEPS * 20)) / 2
+        for i in range(self.TOTAL_STEPS):
+            dot = NSTextField.alloc().initWithFrame_(CGRectMake(dot_start_x + i * 20, dot_y, 14, 14))
+            dot.setBezeled_(False)
+            dot.setDrawsBackground_(False)
+            dot.setEditable_(False)
+            dot.setSelectable_(False)
+            dot.setAlignment_(NSTextAlignmentCenter)
+            dot.setStringValue_("●")
+            dot.setFont_(NSFont.systemFontOfSize_(10))
+            dot.setTextColor_(self._make_color(self.DIM_COLOR))
+            content.addSubview_(dot)
+            self._dot_views.append(dot)
+
+        # Title label
+        self._title_label = NSTextField.alloc().initWithFrame_(
+            CGRectMake(40, self.WINDOW_HEIGHT - 110, self.WINDOW_WIDTH - 80, 40)
+        )
+        self._title_label.setBezeled_(False)
+        self._title_label.setDrawsBackground_(False)
+        self._title_label.setEditable_(False)
+        self._title_label.setSelectable_(False)
+        self._title_label.setAlignment_(NSTextAlignmentCenter)
+        self._title_label.setFont_(NSFont.boldSystemFontOfSize_(24))
+        self._title_label.setTextColor_(self._make_color(self.TEXT_COLOR))
+        content.addSubview_(self._title_label)
+
+        # Description label
+        self._desc_label = NSTextField.alloc().initWithFrame_(
+            CGRectMake(50, self.WINDOW_HEIGHT - 220, self.WINDOW_WIDTH - 100, 90)
+        )
+        self._desc_label.setBezeled_(False)
+        self._desc_label.setDrawsBackground_(False)
+        self._desc_label.setEditable_(False)
+        self._desc_label.setSelectable_(False)
+        self._desc_label.setAlignment_(NSTextAlignmentCenter)
+        self._desc_label.setFont_(NSFont.systemFontOfSize_(14))
+        self._desc_label.setTextColor_(self._make_color(self.TEXT_COLOR))
+        content.addSubview_(self._desc_label)
+
+        # Status label (for checkmarks / status messages)
+        self._status_label = NSTextField.alloc().initWithFrame_(
+            CGRectMake(50, self.WINDOW_HEIGHT - 260, self.WINDOW_WIDTH - 100, 30)
+        )
+        self._status_label.setBezeled_(False)
+        self._status_label.setDrawsBackground_(False)
+        self._status_label.setEditable_(False)
+        self._status_label.setSelectable_(False)
+        self._status_label.setAlignment_(NSTextAlignmentCenter)
+        self._status_label.setFont_(NSFont.systemFontOfSize_(14))
+        self._status_label.setTextColor_(self._make_color(self.GREEN_COLOR))
+        self._status_label.setStringValue_("")
+        content.addSubview_(self._status_label)
+
+        # Spinner (hidden by default)
+        self._spinner = NSProgressIndicator.alloc().initWithFrame_(
+            CGRectMake((self.WINDOW_WIDTH - 32) / 2, self.WINDOW_HEIGHT - 260, 32, 32)
+        )
+        self._spinner.setStyle_(NSProgressIndicatorSpinningStyle)
+        self._spinner.setControlSize_(1)  # NSControlSizeRegular
+        self._spinner.setDisplayedWhenStopped_(False)
+        content.addSubview_(self._spinner)
+
+        # Main action button
+        self._action_button = NSButton.alloc().initWithFrame_(
+            CGRectMake((self.WINDOW_WIDTH - 200) / 2, 40, 200, 40)
+        )
+        self._action_button.setBezelStyle_(NSBezelStyleRounded)
+        self._action_button.setFont_(NSFont.systemFontOfSize_(15))
+        self._action_button.setTarget_(self)
+        self._action_button.setAction_(objc.selector(self.actionButtonClicked_, signature=b'v@:@'))
+        content.addSubview_(self._action_button)
+
+    @objc.python_method
+    def _update_dots(self, step):
+        """Update step indicator dots."""
+        for i, dot in enumerate(self._dot_views):
+            if i < step:
+                dot.setTextColor_(self._make_color(self.GREEN_COLOR))
+            elif i == step:
+                dot.setTextColor_(self._make_color(self.ACCENT_COLOR))
+            else:
+                dot.setTextColor_(self._make_color(self.DIM_COLOR))
+
+    @objc.python_method
+    def _show_step(self, step):
+        """Show the given step in the wizard."""
+        self._current_step = step
+        self._stop_polling()
+        self._spinner.stopAnimation_(None)
+        self._status_label.setStringValue_("")
+        self._action_button.setEnabled_(True)
+
+        # Map step index to dot index (step 4 "Ready" shares dot 3 with model loading)
+        dot_index = min(step, self.TOTAL_STEPS - 1)
+        self._update_dots(dot_index)
+
+        if step == 0:
+            self._show_welcome()
+        elif step == 1:
+            self._show_accessibility()
+        elif step == 2:
+            self._show_microphone()
+        elif step == 3:
+            self._show_model_loading()
+        elif step == 4:
+            self._show_ready()
+
+    @objc.python_method
+    def _show_welcome(self):
+        self._title_label.setStringValue_("Welcome to TextEcho")
+        self._desc_label.setStringValue_(
+            "Voice-to-text dictation for macOS.\n\n"
+            "This wizard will help you set up the required\n"
+            "permissions and load the speech recognition model."
+        )
+        self._action_button.setTitle_("Get Started")
+
+    @objc.python_method
+    def _show_accessibility(self):
+        self._title_label.setStringValue_("Accessibility Permission")
+        self._desc_label.setStringValue_(
+            "TextEcho needs Accessibility access to detect\n"
+            "mouse/keyboard input and paste text.\n\n"
+            "Click \"Grant Access\" to open System Settings,\n"
+            "then toggle the switch for this app."
+        )
+        self._action_button.setTitle_("Grant Access")
+
+        # Check if already granted
+        try:
+            from ApplicationServices import AXIsProcessTrusted
+            if AXIsProcessTrusted():
+                self._on_accessibility_granted()
+                return
+        except ImportError:
+            pass
+
+    @objc.python_method
+    def _show_microphone(self):
+        self._title_label.setStringValue_("Microphone Permission")
+        self._desc_label.setStringValue_(
+            "TextEcho needs Microphone access to record\n"
+            "audio for transcription.\n\n"
+            "Click \"Grant Access\" to trigger the permission\n"
+            "dialog, then click \"Allow\"."
+        )
+        self._action_button.setTitle_("Grant Access")
+
+        # Check if already granted
+        if self._check_mic_permission():
+            self._on_microphone_granted()
+
+    @objc.python_method
+    def _show_model_loading(self):
+        self._title_label.setStringValue_("Loading Speech Model")
+        self._desc_label.setStringValue_(
+            "Pre-loading the speech recognition model so\n"
+            "your first transcription is fast.\n\n"
+            "This may download the model on first run."
+        )
+        self._action_button.setTitle_("Continue")
+        self._action_button.setEnabled_(False)
+        self._spinner.startAnimation_(None)
+        self._status_label.setStringValue_("")
+
+        # Start preload in background
+        self._preload_thread = threading.Thread(target=self._do_preload_model, daemon=True)
+        self._preload_thread.start()
+
+    @objc.python_method
+    def _show_ready(self):
+        self._update_dots(self.TOTAL_STEPS)  # All green
+        for dot in self._dot_views:
+            dot.setTextColor_(self._make_color(self.GREEN_COLOR))
+
+        self._title_label.setStringValue_("You're All Set!")
+        self._desc_label.setStringValue_(
+            "TextEcho is ready to use.\n\n"
+            "Hold Middle-click to dictate and paste text.\n"
+            "Hold Ctrl+D for keyboard-only dictation.\n"
+            "Hold Ctrl+Middle-click for LLM prompts."
+        )
+        self._status_label.setStringValue_("✓ All permissions granted  ✓ Model loaded")
+        self._action_button.setTitle_("Start Using TextEcho")
+
+    def actionButtonClicked_(self, sender):
+        """Handle the main action button click."""
+        step = self._current_step
+
+        if step == 0:
+            # Welcome → Accessibility
+            self._show_step(1)
+
+        elif step == 1:
+            # Grant Accessibility
+            self._request_accessibility()
+
+        elif step == 2:
+            # Grant Microphone
+            self._request_microphone()
+
+        elif step == 3:
+            # Model loading in progress — button should be disabled
+            pass
+
+        elif step == 4:
+            # Ready → finish
+            self._finish()
+
+    @objc.python_method
+    def _request_accessibility(self):
+        """Request accessibility permission and start polling."""
+        try:
+            options = {"AXTrustedCheckOptionPrompt": kCFBooleanTrue}
+            AXIsProcessTrustedWithOptions(options)
+        except Exception as e:
+            logger.warning("Could not request accessibility: %s", e)
+
+        self._action_button.setEnabled_(False)
+        self._status_label.setStringValue_("Waiting for permission...")
+        self._start_polling("accessibility")
+
+    @objc.python_method
+    def _request_microphone(self):
+        """Trigger microphone permission dialog by briefly opening a stream."""
+        self._action_button.setEnabled_(False)
+        self._status_label.setStringValue_("Waiting for permission...")
+
+        def trigger_mic():
+            try:
+                pa = pyaudio.PyAudio()
+                stream = pa.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=16000,
+                    input=True,
+                    frames_per_buffer=1024,
+                )
+                stream.read(1024, exception_on_overflow=False)
+                stream.stop_stream()
+                stream.close()
+                pa.terminate()
+            except Exception as e:
+                logger.warning("Mic permission trigger error: %s", e)
+
+            # Start polling on main thread
+            self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                "startMicPolling", None, False
+            )
+
+        threading.Thread(target=trigger_mic, daemon=True).start()
+
+    def startMicPolling(self):
+        """Start microphone permission polling (called on main thread)."""
+        self._start_polling("microphone")
+
+    @objc.python_method
+    def _check_mic_permission(self) -> bool:
+        """Check if microphone permission is granted."""
+        try:
+            import AVFoundation
+            status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+                AVFoundation.AVMediaTypeAudio
+            )
+            return status == 3  # AVAuthorizationStatusAuthorized
+        except Exception:
+            # If we can't check, assume not granted
+            return False
+
+    @objc.python_method
+    def _start_polling(self, permission_type: str):
+        """Start polling for permission changes."""
+        self._polling_type = permission_type
+        self._polling_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1.0, self, objc.selector(self.pollPermission_, signature=b'v@:@'), None, True
+        )
+
+    @objc.python_method
+    def _stop_polling(self):
+        if self._polling_timer:
+            self._polling_timer.invalidate()
+            self._polling_timer = None
+
+    def pollPermission_(self, timer):
+        """Poll for permission status (called by timer)."""
+        ptype = getattr(self, '_polling_type', None)
+
+        if ptype == "accessibility":
+            try:
+                from ApplicationServices import AXIsProcessTrusted
+                if AXIsProcessTrusted():
+                    self._stop_polling()
+                    self._on_accessibility_granted()
+            except ImportError:
+                self._stop_polling()
+                self._show_step(2)
+
+        elif ptype == "microphone":
+            if self._check_mic_permission():
+                self._stop_polling()
+                self._on_microphone_granted()
+
+    @objc.python_method
+    def _on_accessibility_granted(self):
+        """Called when accessibility permission is detected."""
+        self._status_label.setStringValue_("✓ Accessibility Granted!")
+        self._status_label.setTextColor_(self._make_color(self.GREEN_COLOR))
+        self._action_button.setTitle_("Continue")
+        self._action_button.setEnabled_(True)
+        # Override action to go to next step
+        self._current_step = 100  # Sentinel
+
+        # Use a short delay then advance
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.8, self, objc.selector(self.advanceToMic_, signature=b'v@:@'), None, False
+        )
+
+    def advanceToMic_(self, timer):
+        self._show_step(2)
+
+    @objc.python_method
+    def _on_microphone_granted(self):
+        """Called when microphone permission is detected."""
+        self._status_label.setStringValue_("✓ Microphone Granted!")
+        self._status_label.setTextColor_(self._make_color(self.GREEN_COLOR))
+        self._action_button.setTitle_("Continue")
+        self._action_button.setEnabled_(True)
+        self._current_step = 101  # Sentinel
+
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.8, self, objc.selector(self.advanceToModel_, signature=b'v@:@'), None, False
+        )
+
+    def advanceToModel_(self, timer):
+        self._show_step(3)
+
+    @objc.python_method
+    def _do_preload_model(self):
+        """Send preload command to transcription daemon (runs in background thread)."""
+        socket_path = "/tmp/dictation_transcription.sock"
+        max_attempts = 30  # Wait up to 30 seconds for daemon
+        attempt = 0
+
+        while attempt < max_attempts:
+            try:
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(60)  # Model loading can be slow
+                sock.connect(socket_path)
+
+                request = {"command": "preload"}
+                sock.sendall(json.dumps(request).encode() + b'\n')
+
+                response = b''
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                    if b'\n' in response:
+                        break
+
+                sock.close()
+
+                if not response.strip():
+                    # Daemon didn't recognize command (old version) — try status instead
+                    logger.info("Empty preload response, trying status fallback")
+                    attempt += 1
+                    time.sleep(1)
+                    continue
+
+                result = json.loads(response.decode().strip())
+
+                if result.get("success") or result.get("model_loaded"):
+                    self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                        "onModelLoaded", None, False
+                    )
+                    return
+                else:
+                    logger.warning("Preload returned: %s", result)
+                    attempt += 1
+                    time.sleep(1)
+
+            except (socket.error, ConnectionRefusedError, FileNotFoundError):
+                # Daemon not ready yet, wait and retry
+                attempt += 1
+                time.sleep(1)
+            except Exception as e:
+                logger.error("Preload error: %s", e)
+                attempt += 1
+                time.sleep(1)
+
+        # Failed after all attempts — let user continue anyway
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "onModelLoadFailed", None, False
+        )
+
+    def onModelLoaded(self):
+        """Called on main thread when model is loaded."""
+        self._spinner.stopAnimation_(None)
+        self._status_label.setStringValue_("✓ Model Loaded!")
+        self._status_label.setTextColor_(self._make_color(self.GREEN_COLOR))
+        self._action_button.setEnabled_(True)
+        self._action_button.setTitle_("Continue")
+        self._current_step = 102  # Sentinel
+
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.8, self, objc.selector(self.advanceToReady_, signature=b'v@:@'), None, False
+        )
+
+    def advanceToReady_(self, timer):
+        self._show_step(4)
+
+    def onModelLoadFailed(self):
+        """Called on main thread if model loading failed."""
+        self._spinner.stopAnimation_(None)
+        self._status_label.setStringValue_("Model will load on first use")
+        self._status_label.setTextColor_(self._make_color(self.DIM_COLOR))
+        self._action_button.setEnabled_(True)
+        self._action_button.setTitle_("Continue Anyway")
+        self._current_step = 102  # Use same sentinel to advance to Ready
+
+    @objc.python_method
+    def _finish(self):
+        """Complete the wizard — write default config and notify callback."""
+        self._stop_polling()
+        self._did_finish = True
+
+        # Write default config
+        config = DEFAULT_CONFIG.copy()
+        try:
+            with open(CONFIG_PATH, 'w') as f:
+                json.dump(config, f, indent=2)
+            logger.info("Default config written to %s", CONFIG_PATH)
+        except IOError as e:
+            logger.warning("Could not write config: %s", e)
+
+        # Destroy the window and all subviews to fully clean up TSM state
+        # (NSTextFields register with Text Services Manager; leaving them
+        # alive causes pynput's background thread to crash in TSMGetInputSourceProperty)
+        self.window.orderOut_(None)
+        for subview in list(self.window.contentView().subviews()):
+            subview.removeFromSuperview()
+        self.window.setContentView_(NSView.alloc().initWithFrame_(CGRectMake(0, 0, 1, 1)))
+        self.window.close()
+        self.window = None
+
+        # Fire callback AFTER window is fully torn down
+        if self._completion_callback:
+            cb = self._completion_callback
+            self._completion_callback = None
+            cb()
+
+    def show(self):
+        """Show the wizard window."""
+        self._did_finish = False
+        self.window.makeKeyAndOrderFront_(None)
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
+    def windowWillClose_(self, notification):
+        """Handle window close (user clicking X)."""
+        self._stop_polling()
+        if not getattr(self, '_did_finish', False):
+            self._did_finish = True
+            if not CONFIG_PATH.exists():
+                config = DEFAULT_CONFIG.copy()
+                try:
+                    with open(CONFIG_PATH, 'w') as f:
+                        json.dump(config, f, indent=2)
+                except IOError:
+                    pass
+            # Remove all subviews to clean up TSM state
+            if self.window:
+                for subview in list(self.window.contentView().subviews()):
+                    subview.removeFromSuperview()
+            if self._completion_callback:
+                cb = self._completion_callback
+                self._completion_callback = None
+                cb()
 
 
 class DictationApp(NSObject):
@@ -157,12 +716,34 @@ class DictationApp(NSObject):
         # Start daemons
         self._auto_start_daemons()
 
-        # Delay input monitor start until after app run loop begins
+        # Check if first run (no config file)
+        self._is_first_run = not CONFIG_PATH.exists()
+        self._setup_wizard = None
+
+        # Always start input monitor on a short delay (before wizard if first run).
+        # This ensures pynput initializes its TSM access on its thread before
+        # any NSTextField triggers main-thread TSM initialization.
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             0.5, self, objc.selector(self.delayedStart_, signature=b'v@:@'), None, False
         )
 
+        if self._is_first_run:
+            # Show setup wizard after input monitor starts
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                1.5, self, objc.selector(self.showSetupWizard_, signature=b'v@:@'), None, False
+            )
+
         return self
+
+    def showSetupWizard_(self, timer):
+        """Show the first-run setup wizard."""
+        def on_wizard_complete():
+            # Reload config (wizard writes default config)
+            self.config = self._load_config()
+            logger.info("Setup wizard completed")
+
+        self._setup_wizard = SetupWizard.alloc().initWithCallback_(on_wizard_complete)
+        self._setup_wizard.show()
 
     def delayedStart_(self, timer):
         """Start input monitoring after app is fully running."""
@@ -856,7 +1437,7 @@ def _run_daemon(daemon_type: str):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Dictation-Mac")
+    parser = argparse.ArgumentParser(description="TextEcho")
     parser.add_argument(
         "--daemon",
         choices=["transcription", "llm"],
@@ -872,11 +1453,12 @@ def main():
     setup_logging("app")
 
     logger.info("=" * 50)
-    logger.info("Dictation-Mac")
+    logger.info("TextEcho")
     logger.info("=" * 50)
 
-    # First-run accessibility check
-    _check_first_run()
+    # On subsequent launches, check accessibility (wizard handles first run)
+    if CONFIG_PATH.exists():
+        _check_first_run()
 
     # Create application
     app = NSApplication.sharedApplication()

@@ -287,6 +287,11 @@ class TranscriptionDaemon:
                 response = json.dumps(status) + "\n"
                 conn.sendall(response.encode())
 
+            elif command == "preload":
+                self.load_model()
+                response = json.dumps({"success": True, "model_loaded": self.model_loaded}) + "\n"
+                conn.sendall(response.encode())
+
             elif command == "unload":
                 self.unload_model()
                 response = json.dumps({"success": True}) + "\n"

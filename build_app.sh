@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build Dictation-Mac as a standalone .app bundle using py2app.
+# Build TextEcho as a standalone .app bundle using py2app.
 #
 # Prerequisites:
 #   pip install py2app
@@ -20,7 +20,7 @@ rm -rf build dist
 echo "==> Building .app bundle with py2app..."
 python setup.py py2app
 
-APP_PATH="dist/Dictation.app"
+APP_PATH="dist/TextEcho.app"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "ERROR: Build failed — $APP_PATH not found"
@@ -80,7 +80,7 @@ echo "==> Build complete!"
 echo "    $APP_PATH"
 echo ""
 echo "To test:"
-echo "    open dist/Dictation.app"
+echo "    open dist/TextEcho.app"
 echo ""
 echo "To create a DMG installer:"
 echo "    ./build_dmg.sh"

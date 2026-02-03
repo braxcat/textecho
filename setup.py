@@ -1,10 +1,10 @@
 """
-py2app build configuration for Dictation-Mac.
+py2app build configuration for TextEcho.
 
 Usage:
     python setup.py py2app
 
-This produces dist/Dictation.app — a standalone macOS application bundle.
+This produces dist/TextEcho.app — a standalone macOS application bundle.
 """
 
 import os
@@ -39,7 +39,7 @@ if overlay_helper.exists():
     DATA_FILES.append(("DictationOverlay", ["DictationOverlay/DictationOverlayHelper"]))
 
 # Icon path
-ICON_FILE = "assets/DictationMac.icns"
+ICON_FILE = "assets/TextEcho.icns"
 if not os.path.exists(ICON_FILE):
     ICON_FILE = None
 
@@ -47,18 +47,18 @@ OPTIONS = {
     "argv_emulation": False,
     "iconfile": ICON_FILE,
     "plist": {
-        "CFBundleName": "Dictation",
-        "CFBundleDisplayName": "Dictation",
-        "CFBundleIdentifier": "com.braxcat.dictation-mac",
+        "CFBundleName": "TextEcho",
+        "CFBundleDisplayName": "TextEcho",
+        "CFBundleIdentifier": "com.braxcat.textecho",
         "CFBundleVersion": "0.1.0",
         "CFBundleShortVersionString": "0.1.0",
         "LSMinimumSystemVersion": "13.0",
         "LSUIElement": True,  # Menu bar app, no dock icon
         "NSMicrophoneUsageDescription": (
-            "Dictation needs microphone access to record audio for speech-to-text transcription."
+            "TextEcho needs microphone access to record audio for speech-to-text transcription."
         ),
         "NSAppleEventsUsageDescription": (
-            "Dictation needs automation access to paste transcribed text into applications."
+            "TextEcho needs automation access to paste transcribed text into applications."
         ),
     },
     "packages": [
@@ -133,7 +133,7 @@ for _sndfile_name in ["libsndfile_arm64.dylib", "libsndfile.dylib"]:
         break
 
 setup(
-    name="Dictation",
+    name="TextEcho",
     app=APP,
     data_files=DATA_FILES,
     options={"py2app": OPTIONS},

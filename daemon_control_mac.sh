@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Daemon Control Script for Dictation-Mac (macOS launchd version)
+# Daemon Control Script for TextEcho (macOS launchd version)
 #
 # Usage:
 #   ./daemon_control_mac.sh install    - Install launchd services (auto-start on login)

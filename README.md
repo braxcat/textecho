@@ -1,17 +1,19 @@
-# Dictation-Mac
+# TextEcho
 
 Voice-to-text dictation tool for macOS with automatic silence detection, local MLX Whisper transcription, and optional LLM processing. Optimized for Apple Silicon.
 
+**Author:** Braxton Bragg
+
 ## Features
 
-- 🎤 Real-time audio recording with waveform visualization
-- 🤖 Local Whisper transcription via MLX (Apple Silicon native)
-- ⚡ Fast model loading with auto-unload after idle
-- 📋 Automatic text pasting into active window
-- 🖱️ Middle-click trigger (hold to record, release to transcribe)
-- 🎯 Overlay UI follows cursor with Tokyo Night theme
-- 🚀 Menu bar app with daemon controls
-- 🔄 Auto-start on login via launchd
+- Real-time audio recording with waveform visualization
+- Local Whisper transcription via MLX (Apple Silicon native)
+- Fast model loading with auto-unload after idle
+- Automatic text pasting into active window
+- Middle-click trigger (hold to record, release to transcribe)
+- Overlay UI follows cursor with Tokyo Night theme
+- Menu bar app with daemon controls
+- Auto-start on login via launchd
 
 ## Requirements
 
@@ -25,8 +27,8 @@ Voice-to-text dictation tool for macOS with automatic silence detection, local M
 ### 1. Clone and set up Python environment
 
 ```bash
-git clone https://github.com/braxcat/dictation-mac.git
-cd dictation-mac
+git clone https://github.com/braxcat/textecho.git
+cd textecho
 
 # Create virtual environment with Homebrew Python
 /opt/homebrew/bin/python3.12 -m venv .venv
@@ -47,7 +49,7 @@ Go to **System Settings → Privacy & Security** and grant:
 
 To add Python to Accessibility:
 1. Click the `+` button
-2. Press `Cmd+Shift+G` and paste: `/Users/YOUR_USERNAME/Documents/Projects/dictation-mac/.venv/bin/python3.12`
+2. Press `Cmd+Shift+G` and paste: `/Users/YOUR_USERNAME/textecho/.venv/bin/python3.12`
 3. Click Open
 
 ### 3. Start the app
@@ -63,7 +65,7 @@ python transcription_daemon_mlx.py
 Terminal 2 — Main app:
 ```bash
 source .venv/bin/activate
-python dictation_app_mac.py
+python textecho_app_mac.py
 ```
 
 **Option B: launchd services (auto-start on login)**
@@ -94,7 +96,7 @@ python dictation_app_mac.py
 ```
 ┌─────────────────┐     ┌──────────────────────┐
 │  Menu Bar App   │────▶│ Transcription Daemon │
-│  (dictation_    │     │ (MLX Whisper)        │
+│  (textecho_     │     │ (MLX Whisper)        │
 │   app_mac.py)   │     └──────────────────────┘
 └────────┬────────┘
          │
@@ -111,7 +113,7 @@ python dictation_app_mac.py
 
 ## Configuration
 
-Edit `~/.dictation_config`:
+Edit `~/.textecho_config`:
 
 ```json
 {
@@ -146,7 +148,7 @@ Edit `~/.dictation_config`:
 ### Transcription not working
 
 1. Check daemon status: `./daemon_control_mac.sh status`
-2. View logs: `cat ~/.dictation_transcription.log`
+2. View logs: `cat ~/.textecho_transcription.log`
 3. Restart: `./daemon_control_mac.sh restart`
 
 ### Auto-paste not working
@@ -156,7 +158,7 @@ Edit `~/.dictation_config`:
 
 ### Two mic icons in menu bar
 
-- Kill duplicates: `pkill -f dictation_app_mac.py`
+- Kill duplicates: `pkill -f textecho_app_mac.py`
 - Restart: `./daemon_control_mac.sh start`
 
 ### "This process is not trusted" in logs
@@ -172,7 +174,7 @@ Edit `~/.dictation_config`:
 
 2. Download a GGUF model (Llama 3.2 3B recommended)
 
-3. Configure `~/.dictation_config`:
+3. Configure `~/.textecho_config`:
    ```json
    {
      "llm_enabled": true,

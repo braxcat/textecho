@@ -3,16 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.dictation.llm</string>
+    <string>com.textecho.transcription</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>__WORKING_DIR__/.venv/bin/python3</string>
-        <string>llm_daemon.py</string>
+        <string>__WORKING_DIR__/.venv/bin/python3.12</string>
+        <string>__WORKING_DIR__/transcription_daemon_mlx.py</string>
     </array>
-
-    <key>WorkingDirectory</key>
-    <string>__WORKING_DIR__</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -24,21 +21,23 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>__HOME__/.dictation_llm.log</string>
+    <string>__HOME__/.textecho_transcription.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__HOME__/.dictation_llm.log</string>
+    <string>__HOME__/.textecho_transcription.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>__HOME__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
     </dict>
 
     <key>ThrottleInterval</key>
     <integer>10</integer>
-
-    <key>Disabled</key>
-    <true/>
 </dict>
 </plist>

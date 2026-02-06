@@ -26,9 +26,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # Configuration
-SOCKET_PATH = "/tmp/dictation_llm.sock"
-PID_FILE = os.path.expanduser("~/.dictation_llm.pid")
-CONFIG_FILE = os.path.expanduser("~/.dictation_config")
+SOCKET_PATH = "/tmp/textecho_llm.sock"
+PID_FILE = os.path.expanduser("~/.textecho_llm.pid")
+CONFIG_FILE = os.path.expanduser("~/.textecho_config")
 
 
 class LLMDaemon:
@@ -98,7 +98,7 @@ class LLMDaemon:
 
             if not self.model_path:
                 print(
-                    "ERROR: No model path configured. Set 'llm_model_path' in ~/.dictation_config"
+                    "ERROR: No model path configured. Set 'llm_model_path' in ~/.textecho_config"
                 )
                 return False
 

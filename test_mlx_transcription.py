@@ -52,7 +52,7 @@ def test_direct_transcription(audio_path: str):
 
 def test_daemon_transcription(audio_path: str):
     """Test transcription via daemon"""
-    socket_path = "/tmp/dictation_transcription.sock"
+    socket_path = "/tmp/textecho_transcription.sock"
 
     if not os.path.exists(socket_path):
         print(f"Error: Daemon socket not found at {socket_path}")

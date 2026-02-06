@@ -20,9 +20,9 @@ LAUNCHD_DIR="$SCRIPT_DIR/launchd"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
 # Service names
-APP_SERVICE="com.dictation.app"
-TRANSCRIPTION_SERVICE="com.dictation.transcription"
-LLM_SERVICE="com.dictation.llm"
+APP_SERVICE="com.textecho.app"
+TRANSCRIPTION_SERVICE="com.textecho.transcription"
+LLM_SERVICE="com.textecho.llm"
 
 # Colors for output
 RED='\033[0;31m'
@@ -80,7 +80,7 @@ install_services() {
     echo "  $0 start"
     echo ""
     echo "Everything will auto-start on login."
-    echo "To enable LLM daemon, edit ~/.dictation_config and set llm_enabled: true"
+    echo "To enable LLM daemon, edit ~/.textecho_config and set llm_enabled: true"
 }
 
 # Uninstall plist files
@@ -124,7 +124,7 @@ start_services() {
     else
         # Direct execution fallback
         print_status "Starting transcription daemon directly..."
-        nohup "$SCRIPT_DIR/.venv/bin/python3" -u "$SCRIPT_DIR/transcription_daemon_mlx.py" >> "$HOME/.dictation_transcription.log" 2>&1 &
+        nohup "$SCRIPT_DIR/.venv/bin/python3" -u "$SCRIPT_DIR/transcription_daemon_mlx.py" >> "$HOME/.textecho_transcription.log" 2>&1 &
         sleep 1
         if pgrep -f "transcription_daemon_mlx.py" > /dev/null; then
             print_success "Started transcription daemon (PID: $!)"
@@ -134,8 +134,8 @@ start_services() {
     fi
 
     # Check if LLM is enabled in config
-    if [ -f "$HOME/.dictation_config" ]; then
-        LLM_ENABLED=$(python3 -c "import json; print(json.load(open('$HOME/.dictation_config')).get('llm_enabled', False))" 2>/dev/null || echo "False")
+    if [ -f "$HOME/.textecho_config" ]; then
+        LLM_ENABLED=$(python3 -c "import json; print(json.load(open('$HOME/.textecho_config')).get('llm_enabled', False))" 2>/dev/null || echo "False")
         if [ "$LLM_ENABLED" = "True" ]; then
             if [ -f "$LAUNCH_AGENTS_DIR/$LLM_SERVICE.plist" ]; then
                 launchctl load "$LAUNCH_AGENTS_DIR/$LLM_SERVICE.plist" 2>/dev/null || true
@@ -148,7 +148,7 @@ start_services() {
                 else
                     print_status "Starting LLM daemon directly..."
                     cd "$SCRIPT_DIR"
-                    nohup python3 -u llm_daemon.py >> "$HOME/.dictation_llm.log" 2>&1 &
+                    nohup python3 -u llm_daemon.py >> "$HOME/.textecho_llm.log" 2>&1 &
                     sleep 1
                     if pgrep -f "llm_daemon.py" > /dev/null; then
                         print_success "Started LLM daemon (PID: $!)"
@@ -158,12 +158,12 @@ start_services() {
                 fi
             fi
         else
-            print_warning "LLM daemon disabled (set llm_enabled: true in ~/.dictation_config to enable)"
+            print_warning "LLM daemon disabled (set llm_enabled: true in ~/.textecho_config to enable)"
         fi
     fi
 
     # Start menu bar app (check if already running first)
-    if pgrep -f "dictation_app_mac.py" > /dev/null; then
+    if pgrep -f "textecho_app_mac.py" > /dev/null; then
         print_warning "Menu bar app already running"
     elif [ -f "$LAUNCH_AGENTS_DIR/$APP_SERVICE.plist" ]; then
         launchctl load "$LAUNCH_AGENTS_DIR/$APP_SERVICE.plist" 2>/dev/null || true
@@ -173,9 +173,9 @@ start_services() {
         # Direct execution fallback
         print_status "Starting menu bar app directly..."
         cd "$SCRIPT_DIR"
-        nohup "$SCRIPT_DIR/.venv/bin/python3" -u "$SCRIPT_DIR/dictation_app_mac.py" >> "$HOME/.dictation_app.log" 2>&1 &
+        nohup "$SCRIPT_DIR/.venv/bin/python3" -u "$SCRIPT_DIR/textecho_app_mac.py" >> "$HOME/.textecho_app.log" 2>&1 &
         sleep 1
-        if pgrep -f "dictation_app_mac.py" > /dev/null; then
+        if pgrep -f "textecho_app_mac.py" > /dev/null; then
             print_success "Started menu bar app"
         else
             print_error "Failed to start menu bar app"
@@ -190,8 +190,8 @@ stop_services() {
     # Stop menu bar app first
     launchctl stop "$APP_SERVICE" 2>/dev/null || true
     launchctl unload "$LAUNCH_AGENTS_DIR/$APP_SERVICE.plist" 2>/dev/null || true
-    pkill -f "dictation_app_mac.py" 2>/dev/null || true
-    pkill -f "DictationOverlayHelper" 2>/dev/null || true
+    pkill -f "textecho_app_mac.py" 2>/dev/null || true
+    pkill -f "TextEchoOverlayHelper" 2>/dev/null || true
     print_success "Stopped menu bar app"
 
     # Stop transcription daemon
@@ -207,8 +207,8 @@ stop_services() {
     print_success "Stopped LLM daemon"
 
     # Clean up socket files
-    rm -f /tmp/dictation_transcription.sock 2>/dev/null || true
-    rm -f /tmp/dictation_llm.sock 2>/dev/null || true
+    rm -f /tmp/textecho_transcription.sock 2>/dev/null || true
+    rm -f /tmp/textecho_llm.sock 2>/dev/null || true
 }
 
 # Restart services
@@ -224,7 +224,7 @@ show_status() {
     echo ""
 
     # Check menu bar app
-    APP_PID=$(pgrep -f "dictation_app_mac.py" 2>/dev/null || true)
+    APP_PID=$(pgrep -f "textecho_app_mac.py" 2>/dev/null || true)
     if [ -n "$APP_PID" ]; then
         print_success "Menu bar app: ${GREEN}running${NC} (PID: $APP_PID)"
     else
@@ -260,13 +260,13 @@ show_status() {
     # Check socket files
     echo ""
     print_status "Socket files:"
-    if [ -S "/tmp/dictation_transcription.sock" ]; then
+    if [ -S "/tmp/textecho_transcription.sock" ]; then
         print_success "Transcription socket: exists"
     else
         print_warning "Transcription socket: not found"
     fi
 
-    if [ -S "/tmp/dictation_llm.sock" ]; then
+    if [ -S "/tmp/textecho_llm.sock" ]; then
         print_success "LLM socket: exists"
     else
         print_warning "LLM socket: not found"
@@ -337,7 +337,7 @@ case "${1:-}" in
         show_logs
         ;;
     *)
-        echo "Dictation-Mac Daemon Control (launchd)"
+        echo "TextEcho Daemon Control (launchd)"
         echo ""
         echo "Usage: $0 {install|uninstall|start|stop|restart|status|logs}"
         echo ""

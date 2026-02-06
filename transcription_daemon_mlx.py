@@ -35,19 +35,19 @@ except ImportError as e:
 DAEMON_MODE = sys.argv[1] if len(sys.argv) > 1 else "single"  # "single", "fast", or "accurate"
 
 if DAEMON_MODE == "fast":
-    SOCKET_PATH = "/tmp/dictation_transcription_fast.sock"
-    PID_FILE = os.path.expanduser("~/.dictation_transcription_fast.pid")
+    SOCKET_PATH = "/tmp/textecho_transcription_fast.sock"
+    PID_FILE = os.path.expanduser("~/.textecho_transcription_fast.pid")
     LOG_SUFFIX = "_fast"
 elif DAEMON_MODE == "accurate":
-    SOCKET_PATH = "/tmp/dictation_transcription_accurate.sock"
-    PID_FILE = os.path.expanduser("~/.dictation_transcription_accurate.pid")
+    SOCKET_PATH = "/tmp/textecho_transcription_accurate.sock"
+    PID_FILE = os.path.expanduser("~/.textecho_transcription_accurate.pid")
     LOG_SUFFIX = "_accurate"
 else:  # single mode (default)
-    SOCKET_PATH = "/tmp/dictation_transcription.sock"
-    PID_FILE = os.path.expanduser("~/.dictation_transcription.pid")
+    SOCKET_PATH = "/tmp/textecho_transcription.sock"
+    PID_FILE = os.path.expanduser("~/.textecho_transcription.pid")
     LOG_SUFFIX = ""
 
-CONFIG_FILE = os.path.expanduser("~/.dictation_config")
+CONFIG_FILE = os.path.expanduser("~/.textecho_config")
 
 # MLX Whisper model options
 # Models: "tiny", "base", "small", "medium", "large-v3", "distil-medium.en", "distil-large-v3"

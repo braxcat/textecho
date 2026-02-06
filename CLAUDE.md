@@ -231,9 +231,10 @@ Before considering code complete, verify:
 ## Project-Specific Overrides
 
 ### Project Information
-- **Project Name**: Dictation-Mac
-- **Description**: Voice-to-text dictation tool with automatic silence detection, local Whisper transcription, and optional LLM processing. Features daemon architecture for fast response times and GTK4 overlay UI.
-- **Repository**: https://github.com/braxcat/dictation-mac
+- **Project Name**: TextEcho
+- **Description**: Voice-to-text dictation tool with automatic silence detection, local Whisper transcription, and optional LLM processing. Features daemon architecture for fast response times and native macOS overlay UI.
+- **Repository**: https://github.com/braxcat/textecho
+- **Author**: Braxton Bragg
 
 ### Development Guidelines
 
@@ -263,13 +264,13 @@ Before considering code complete, verify:
 
 ### Technical Stack Details
 - **Language**: Python 3.12+
-- **UI Framework**: GTK4 with PyGObject (Tokyo Night theme)
-- **Speech Recognition**: OpenVINO + openvino-genai (WhisperPipeline)
-- **LLM Integration**: llama-cpp-python for local inference
+- **UI Framework**: PyObjC + AppKit (menu bar app with overlay)
+- **Speech Recognition**: MLX Whisper (Apple Silicon native)
+- **LLM Integration**: llama-cpp-python for local inference with Metal
 - **Audio**: PyAudio for recording, soundfile for WAV handling
-- **Input Handling**: evdev for mouse button monitoring
-- **Text Input**: ydotool (Wayland), xdotool (X11), wtype (alternative)
-- **Package Manager**: uv (see pyproject.toml)
+- **Input Handling**: pynput for global keyboard/mouse monitoring
+- **Text Input**: Clipboard + Cmd+V via Accessibility API
+- **Package Manager**: pip (see pyproject.toml)
 
 ### Key Dependencies
 ```
@@ -284,15 +285,15 @@ llama-cpp-python   - LLM support (optional, with Metal)
 
 ### Project Structure
 ```
-dictation-mac/
-├── dictation_app_mac.py      - Menu bar app: input monitoring + orchestration
+textecho/
+├── textecho_app_mac.py       - Menu bar app: input monitoring + orchestration
 ├── transcription_daemon_mlx.py - MLX Whisper daemon (Apple Silicon)
 ├── llm_daemon.py             - Local LLM daemon (llama-cpp with Metal)
-├── input_monitor_mac.py      - Global input monitoring (CGEventTap + pynput)
+├── input_monitor_mac.py      - Global input monitoring (pynput)
 ├── text_injector_mac.py      - Text injection (clipboard + Cmd+V)
 ├── overlay_swift.py          - Python wrapper for Swift overlay
 ├── overlay_mac.py            - PyObjC overlay (backup, has threading issues)
-├── DictationOverlay/         - Swift overlay helper with waveform
+├── TextEchoOverlay/          - Swift overlay helper with waveform
 ├── daemon_control_mac.sh     - Start/stop/status via launchd
 ├── launchd/                  - launchd plist files for auto-start
 ├── test_keyboard.py          - Keyboard input testing
@@ -303,24 +304,24 @@ dictation-mac/
 ### Important Files & Patterns
 
 **Entry Points**:
-- `dictation_app_mac.py` - Main menu bar application
+- `textecho_app_mac.py` - Main menu bar application
 - `daemon_control_mac.sh start` - Start all daemons
 
 **Daemon Architecture**:
-- `transcription_daemon_mlx.py` - Listens on `/tmp/dictation_transcription.sock`
-- `llm_daemon.py` - Listens on `/tmp/dictation_llm.sock`
+- `transcription_daemon_mlx.py` - Listens on `/tmp/textecho_transcription.sock`
+- `llm_daemon.py` - Listens on `/tmp/textecho_llm.sock`
 - JSON-over-socket protocol with newline delimiters
 - Lazy model loading, auto-unload after idle timeout
 
-**Configuration**: `~/.dictation_config` (JSON)
+**Configuration**: `~/.textecho_config` (JSON)
 - `trigger_button`: Mouse button (2=middle, 3=back, 4=forward)
 - `silence_duration`: Seconds before auto-stop (default: 2.5)
 - `llm_enabled`: Enable LLM processing
 - `llm_model_path`: Path to GGUF model
 
 **Logs & PIDs**:
-- `~/.dictation_transcription.log`, `~/.dictation_app.log`, `~/.dictation_llm.log`
-- `~/.dictation_transcription.pid`, `~/.dictation_app.pid`, `~/.dictation_llm.pid`
+- `~/.textecho_transcription.log`, `~/.textecho_app.log`, `~/.textecho_llm.log`
+- `~/.textecho_transcription.pid`, `~/.textecho_app.pid`, `~/.textecho_llm.pid`
 
 ### Hotkeys
 
@@ -379,7 +380,7 @@ pip install lightning-whisper-mlx pyobjc pyaudio numpy soundfile pynput
 ### LLM Setup (Optional)
 1. Install: `pip install llama-cpp-python`
 2. Download model: Llama 3.2 3B GGUF recommended
-3. Configure `~/.dictation_config`:
+3. Configure `~/.textecho_config`:
    ```json
    {
      "llm_enabled": true,

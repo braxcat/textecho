@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Dictation-Mac: Menu bar application for macOS.
+TextEcho: Menu bar application for macOS.
 
 Main entry point that coordinates:
 - Input monitoring (mouse/keyboard triggers)
@@ -12,9 +12,11 @@ Can also run daemons directly when invoked with --daemon flag
 (used by .app bundle and launchd).
 
 Usage:
-    python3 dictation_app_mac.py                     # Menu bar app
-    python3 dictation_app_mac.py --daemon transcription  # Run transcription daemon
-    python3 dictation_app_mac.py --daemon llm            # Run LLM daemon
+    python3 textecho_app_mac.py                     # Menu bar app
+    python3 textecho_app_mac.py --daemon transcription  # Run transcription daemon
+    python3 textecho_app_mac.py --daemon llm            # Run LLM daemon
+
+Author: Braxton Bragg
 """
 
 import argparse
@@ -86,13 +88,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "trigger_button": MOUSE_BUTTON_MIDDLE,  # 2=middle, 3=back, 4=forward
     "silence_duration": 2.5,
-    "transcription_socket": "/tmp/dictation_transcription.sock",
-    "llm_socket": "/tmp/dictation_llm.sock",
+    "transcription_socket": "/tmp/textecho_transcription.sock",
+    "llm_socket": "/tmp/textecho_llm.sock",
     "llm_enabled": False,
     "input_device": None,  # None = auto-detect, or device index/name
 }
 
-CONFIG_PATH = Path.home() / ".dictation_config"
+CONFIG_PATH = Path.home() / ".textecho_config"
 
 
 def _get_resource_path(relative_path: str) -> Path:
@@ -677,7 +679,7 @@ class SetupWizard(NSObject):
     @objc.python_method
     def _do_preload_model(self):
         """Send preload command to transcription daemon (runs in background thread)."""
-        socket_path = "/tmp/dictation_transcription.sock"
+        socket_path = "/tmp/textecho_transcription.sock"
         max_attempts = 60  # Wait up to 60 seconds for daemon (download can be slow)
         attempt = 0
 
@@ -892,11 +894,11 @@ class SetupWizard(NSObject):
                 cb()
 
 
-class DictationApp(NSObject):
+class TextEchoApp(NSObject):
     """Main menu bar application."""
 
     def init(self):
-        self = objc.super(DictationApp, self).init()
+        self = objc.super(TextEchoApp, self).init()
         if self is None:
             return None
 
@@ -1365,7 +1367,7 @@ class DictationApp(NSObject):
         if self.audio_frames:
             try:
                 tmp = tempfile.NamedTemporaryFile(
-                    suffix=".wav", prefix="dictation_", delete=False
+                    suffix=".wav", prefix="textecho_", delete=False
                 )
                 self.audio_file = tmp.name
                 tmp.close()
@@ -1495,7 +1497,7 @@ class DictationApp(NSObject):
 
     def _transcribe_audio(self, audio_path: str) -> Optional[str]:
         """Send audio to transcription daemon."""
-        socket_path = self.config.get("transcription_socket", "/tmp/dictation_transcription.sock")
+        socket_path = self.config.get("transcription_socket", "/tmp/textecho_transcription.sock")
         sock = None
 
         try:
@@ -1542,7 +1544,7 @@ class DictationApp(NSObject):
 
     def _query_llm(self, prompt: str) -> Optional[str]:
         """Send prompt to LLM daemon with context."""
-        socket_path = self.config.get("llm_socket", "/tmp/dictation_llm.sock")
+        socket_path = self.config.get("llm_socket", "/tmp/textecho_llm.sock")
 
         context_parts = []
         for num in sorted(self.registers.keys()):
@@ -1698,7 +1700,7 @@ class DictationApp(NSObject):
 
         # Remove launchd services
         home = Path.home()
-        for plist in ["com.dictation.app.plist", "com.dictation.transcription.plist", "com.dictation.llm.plist"]:
+        for plist in ["com.textecho.app.plist", "com.textecho.transcription.plist", "com.textecho.llm.plist"]:
             plist_path = home / "Library" / "LaunchAgents" / plist
             if plist_path.exists():
                 subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)],
@@ -1707,21 +1709,21 @@ class DictationApp(NSObject):
                 logger.info("Removed %s", plist)
 
         # Remove config and log files
-        for f in [".dictation_config", ".dictation_app.log", ".dictation_transcription.log",
-                  ".dictation_llm.log", ".dictation_app.pid", ".dictation_transcription.pid",
-                  ".dictation_llm.pid"]:
+        for f in [".textecho_config", ".textecho_app.log", ".textecho_transcription.log",
+                  ".textecho_llm.log", ".textecho_app.pid", ".textecho_transcription.pid",
+                  ".textecho_llm.pid"]:
             p = home / f
             if p.exists():
                 p.unlink()
 
         # Remove log directory
-        log_dir = home / "Library" / "Logs" / "Dictation"
+        log_dir = home / "Library" / "Logs" / "TextEcho"
         if log_dir.exists():
             import shutil
             shutil.rmtree(log_dir, ignore_errors=True)
 
         # Remove sockets
-        for sock in ["/tmp/dictation_transcription.sock", "/tmp/dictation_llm.sock"]:
+        for sock in ["/tmp/textecho_transcription.sock", "/tmp/textecho_llm.sock"]:
             if os.path.exists(sock):
                 os.unlink(sock)
 
@@ -1845,7 +1847,7 @@ def main():
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
     # Create our delegate
-    delegate = DictationApp.alloc().init()
+    delegate = TextEchoApp.alloc().init()
     app.setDelegate_(delegate)
 
     logger.info("Running... (Cmd+Q or menu to quit)")

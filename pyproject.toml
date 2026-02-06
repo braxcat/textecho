@@ -1,9 +1,12 @@
 [project]
-name = "dictation-mac"
+name = "textecho"
 version = "0.1.0"
 description = "Voice-to-text dictation tool with automatic silence detection, local Whisper transcription, and optional LLM processing"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    {name = "Braxton Bragg", email = "braxcat@users.noreply.github.com"}
+]
 dependencies = [
     "lightning-whisper-mlx",
     "numpy>=2.0.0",

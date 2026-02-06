@@ -28,7 +28,7 @@ if [ ! -d "$APP_PATH" ]; then
 fi
 
 # Make overlay helper executable (if included)
-OVERLAY_HELPER="$APP_PATH/Contents/Resources/DictationOverlay/DictationOverlayHelper"
+OVERLAY_HELPER="$APP_PATH/Contents/Resources/TextEchoOverlay/TextEchoOverlayHelper"
 if [ -f "$OVERLAY_HELPER" ]; then
     echo "==> Setting overlay helper permissions..."
     chmod +x "$OVERLAY_HELPER"

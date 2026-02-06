@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Centralized logging configuration for Dictation-Mac.
+Centralized logging configuration for TextEcho.
 
-Logs to ~/Library/Logs/Dictation/ with rotating file handlers.
+Logs to ~/Library/Logs/TextEcho/ with rotating file handlers.
 """
 
 import logging
@@ -12,7 +12,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-LOG_DIR = Path.home() / "Library" / "Logs" / "Dictation"
+LOG_DIR = Path.home() / "Library" / "Logs" / "TextEcho"
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 BACKUP_COUNT = 3
 
@@ -60,7 +60,7 @@ def setup_logging(component: str, level: int = logging.INFO) -> logging.Logger:
     # Log startup info
     logger = logging.getLogger(__name__)
     logger.info("=" * 50)
-    logger.info("Dictation-Mac %s starting", component)
+    logger.info("TextEcho %s starting", component)
     logger.info("Python %s", sys.version)
     logger.info("macOS %s", platform.mac_ver()[0])
     logger.info("Frozen: %s", getattr(sys, 'frozen', False))

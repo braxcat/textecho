@@ -28,15 +28,15 @@ _build_app.py2app.finalize_options = _patched_finalize
 
 from setuptools import setup
 
-APP = ["dictation_app_mac.py"]
+APP = ["textecho_app_mac.py"]
 
 # Data files to include in the bundle
 DATA_FILES = []
 
-# Include DictationOverlay helper binary if it exists
-overlay_helper = Path("DictationOverlay/DictationOverlayHelper")
+# Include TextEchoOverlay helper binary if it exists
+overlay_helper = Path("TextEchoOverlay/TextEchoOverlayHelper")
 if overlay_helper.exists():
-    DATA_FILES.append(("DictationOverlay", ["DictationOverlay/DictationOverlayHelper"]))
+    DATA_FILES.append(("TextEchoOverlay", ["TextEchoOverlay/TextEchoOverlayHelper"]))
 
 # Icon path
 ICON_FILE = "assets/TextEcho.icns"

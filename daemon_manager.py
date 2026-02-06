@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Python-native daemon lifecycle management for Dictation-Mac.
+Python-native daemon lifecycle management for TextEcho.
 
 Replaces daemon_control_mac.sh for use inside .app bundles where
 shell scripts are unreliable. Manages transcription and LLM daemon
@@ -24,15 +24,15 @@ logger = logging.getLogger(__name__)
 DAEMON_CONFIG = {
     "transcription": {
         "module": "transcription_daemon_mlx",
-        "socket": "/tmp/dictation_transcription.sock",
-        "pid_file": Path.home() / ".dictation_transcription.pid",
-        "launchd_label": "com.dictation.transcription",
+        "socket": "/tmp/textecho_transcription.sock",
+        "pid_file": Path.home() / ".textecho_transcription.pid",
+        "launchd_label": "com.textecho.transcription",
     },
     "llm": {
         "module": "llm_daemon",
-        "socket": "/tmp/dictation_llm.sock",
-        "pid_file": Path.home() / ".dictation_llm.pid",
-        "launchd_label": "com.dictation.llm",
+        "socket": "/tmp/textecho_llm.sock",
+        "pid_file": Path.home() / ".textecho_llm.pid",
+        "launchd_label": "com.textecho.llm",
     },
 }
 
@@ -96,9 +96,9 @@ def _clean_stale_socket(daemon_type: str) -> None:
 def _get_executable_path() -> str:
     """Get the path to the current Python executable or frozen app binary."""
     if getattr(sys, 'frozen', False):
-        # Running as .app bundle — use the app stub (e.g. Dictation), not
+        # Running as .app bundle — use the app stub (e.g. TextEcho), not
         # the raw python interpreter.  The stub runs __boot__.py which
-        # executes dictation_app_mac.py, so CLI args like --daemon land
+        # executes textecho_app_mac.py, so CLI args like --daemon land
         # in sys.argv correctly.
         macos_dir = Path(sys.executable).parent
         # The stub has the bundle name (no extension).  Find it by
@@ -169,7 +169,7 @@ def start_daemon(daemon_type: str) -> bool:
         cmd = [executable, str(module_path)]
 
     # Set up log file path
-    log_dir = Path.home() / "Library" / "Logs" / "Dictation"
+    log_dir = Path.home() / "Library" / "Logs" / "TextEcho"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"{daemon_type}.log"
 
@@ -369,12 +369,12 @@ def install_launchd(app_path: Optional[str] = None) -> bool:
 
     for daemon_type, config in DAEMON_CONFIG.items():
         label = config["launchd_label"]
-        log_dir = Path.home() / "Library" / "Logs" / "Dictation"
+        log_dir = Path.home() / "Library" / "Logs" / "TextEcho"
 
         if getattr(sys, 'frozen', False):
             # .app bundle: use the app binary with --daemon flag
             program_args = [
-                f"{app_path}/Contents/MacOS/Dictation",
+                f"{app_path}/Contents/MacOS/TextEcho",
                 "--daemon",
                 daemon_type,
             ]
@@ -412,13 +412,13 @@ def install_launchd(app_path: Optional[str] = None) -> bool:
             return False
 
     # Also install the main app plist
-    app_label = "com.dictation.app"
-    log_dir = Path.home() / "Library" / "Logs" / "Dictation"
+    app_label = "com.textecho.app"
+    log_dir = Path.home() / "Library" / "Logs" / "TextEcho"
 
     if getattr(sys, 'frozen', False):
-        app_program_args = [f"{app_path}/Contents/MacOS/Dictation"]
+        app_program_args = [f"{app_path}/Contents/MacOS/TextEcho"]
     else:
-        app_program_args = [executable, str(Path(__file__).parent / "dictation_app_mac.py")]
+        app_program_args = [executable, str(Path(__file__).parent / "textecho_app_mac.py")]
 
     app_plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -455,9 +455,9 @@ def install_launchd(app_path: Optional[str] = None) -> bool:
 def uninstall_launchd() -> bool:
     """Remove launchd plist files."""
     labels = [
-        "com.dictation.app",
-        "com.dictation.transcription",
-        "com.dictation.llm",
+        "com.textecho.app",
+        "com.textecho.transcription",
+        "com.textecho.llm",
     ]
 
     for label in labels:

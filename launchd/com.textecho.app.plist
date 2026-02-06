@@ -3,28 +3,26 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.dictation.transcription</string>
+    <string>com.textecho.app</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>__WORKING_DIR__/.venv/bin/python3.12</string>
-        <string>__WORKING_DIR__/transcription_daemon_mlx.py</string>
+        <string>-u</string>
+        <string>__WORKING_DIR__/textecho_app_mac.py</string>
     </array>
 
     <key>RunAtLoad</key>
     <true/>
 
     <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
+    <false/>
 
     <key>StandardOutPath</key>
-    <string>__HOME__/.dictation_transcription.log</string>
+    <string>__HOME__/.textecho_app.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__HOME__/.dictation_transcription.log</string>
+    <string>__HOME__/.textecho_app.log</string>
 
     <key>WorkingDirectory</key>
     <string>__HOME__</string>
@@ -36,8 +34,5 @@
         <key>HOME</key>
         <string>__HOME__</string>
     </dict>
-
-    <key>ThrottleInterval</key>
-    <integer>10</integer>
 </dict>
 </plist>

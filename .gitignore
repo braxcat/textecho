@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+.venv-bundle-cache
 
 # Model directories
 whisper-*/
@@ -45,3 +46,9 @@ linux-npu-driver-*/
 .DS_Store
 Thumbs.db
 models/
+
+# Build caches
+.tmp/
+.clang-cache/
+.swiftpm-cache/
+mac_app/.build/

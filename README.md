@@ -18,20 +18,42 @@ Voice-to-text dictation tool for macOS with automatic silence detection, local M
 ## Requirements
 
 - macOS (Apple Silicon recommended)
-- Python 3.12 (via Homebrew)
 - Microphone access
 - Accessibility permissions
 
 ## Installation
 
-### 1. Clone and set up Python environment
+## Native App (Swift + Bundled Python ML)
+
+TextEcho ships as a native macOS menu bar app written in Swift.  
+The ML daemon runs from a **bundled Python venv** inside the app so end users do not need to install Python or deps.
+
+### Build the native app
+
+```bash
+./build_native_app.sh
+```
+
+### Run
+
+```bash
+open dist/TextEcho.app
+```
+
+### Create DMG
+
+```bash
+./build_native_dmg.sh
+```
+
+### 1. Clone and set up Python environment (dev only)
 
 ```bash
 git clone https://github.com/braxcat/textecho.git
 cd textecho
 
-# Create virtual environment with Homebrew Python
-/opt/homebrew/bin/python3.12 -m venv .venv
+# Create virtual environment (for local dev tools only)
+python3.12 -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
@@ -44,17 +66,17 @@ Go to **System Settings → Privacy & Security** and grant:
 
 | Permission | What to add | Why |
 |------------|-------------|-----|
-| **Accessibility** | `.venv/bin/python3.12` | Auto-paste and input monitoring |
+| **Accessibility** | `TextEcho.app` | Input monitoring + paste |
 | **Microphone** | Allow when prompted | Audio recording |
 
-To add Python to Accessibility:
+To add TextEcho to Accessibility:
 1. Click the `+` button
-2. Press `Cmd+Shift+G` and paste: `/Users/YOUR_USERNAME/textecho/.venv/bin/python3.12`
+2. Select `TextEcho.app`
 3. Click Open
 
 ### 3. Start the app
 
-**Option A: Manual start (two terminals)**
+**Option A: Manual start (two terminals, dev only)**
 
 Terminal 1 — Transcription daemon:
 ```bash
@@ -68,7 +90,7 @@ source .venv/bin/activate
 python textecho_app_mac.py
 ```
 
-**Option B: launchd services (auto-start on login)**
+**Option B: launchd services (auto-start on login, legacy)**
 
 ```bash
 ./daemon_control_mac.sh install    # one-time setup
@@ -76,7 +98,7 @@ python textecho_app_mac.py
 ./daemon_control_mac.sh status     # verify everything is running
 ```
 
-> **Note:** If launchd-managed processes aren't responding to input, fall back to Option A. The venv packages may not load correctly under launchd.
+> **Note:** The native app embeds the daemon and is the preferred path. The legacy launchd scripts remain for dev/back-compat.
 
 ## Usage
 
@@ -96,8 +118,7 @@ python textecho_app_mac.py
 ```
 ┌─────────────────┐     ┌──────────────────────┐
 │  Menu Bar App   │────▶│ Transcription Daemon │
-│  (textecho_     │     │ (MLX Whisper)        │
-│   app_mac.py)   │     └──────────────────────┘
+│  (Swift)        │     │ (MLX Whisper, Py)    │
 └────────┬────────┘
          │
          ▼
@@ -108,7 +129,7 @@ python textecho_app_mac.py
 ```
 
 - **Menu Bar App**: Input monitoring, audio recording, orchestration
-- **Transcription Daemon**: MLX Whisper model, Unix socket IPC
+- **Transcription Daemon**: MLX Whisper model, Unix socket IPC (bundled venv)
 - **Swift Overlay**: Native macOS overlay with waveform visualization
 
 ## Configuration
@@ -126,7 +147,7 @@ Edit `~/.textecho_config`:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `trigger_button` | Mouse button (2=middle, 3=back, 4=forward) | 2 |
+| `trigger_button` | Mouse button (0=left, 1=right, 2=middle) | 2 |
 | `silence_duration` | Seconds before auto-stop | 2.5 |
 | `llm_enabled` | Enable LLM processing | false |
 | `llm_model_path` | Path to GGUF model | - |
@@ -147,23 +168,28 @@ Edit `~/.textecho_config`:
 
 ### Transcription not working
 
-1. Check daemon status: `./daemon_control_mac.sh status`
-2. View logs: `cat ~/.textecho_transcription.log`
-3. Restart: `./daemon_control_mac.sh restart`
+1. Open **Logs** from the menu bar and check **Python** log
+2. Ensure Accessibility + Microphone permissions are granted
+3. Restart the app after changing permissions
 
 ### Auto-paste not working
 
-- Ensure `.venv/bin/python3.12` is in **Accessibility** permissions
+- Ensure `TextEcho.app` is in **Accessibility** permissions
 - Restart the app after adding permissions
 
 ### Two mic icons in menu bar
 
-- Kill duplicates: `pkill -f textecho_app_mac.py`
-- Restart: `./daemon_control_mac.sh start`
+- Kill duplicates: `pkill -f TextEcho`
+- Relaunch the app
 
 ### "This process is not trusted" in logs
 
-- Add Python to Accessibility permissions (see Installation step 2)
+- Add TextEcho to Accessibility permissions (see Installation step 2)
+
+### Python crashes (segfaults) on some Macs
+
+- Ensure the **bundled venv** is being used (check `Logs → App` for `Python executable:` line).
+- Avoid Python 3.13+ for daemon builds; use 3.12/3.11 when creating the bundled venv.
 
 ## LLM Setup (Optional)
 

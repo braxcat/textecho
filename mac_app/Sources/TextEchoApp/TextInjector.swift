@@ -1,0 +1,80 @@
+import AppKit
+import Foundation
+
+final class TextInjector {
+    private let registersURL: URL
+    private var registers: [String]
+
+    init() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        registersURL = home.appendingPathComponent(".textecho_registers.json")
+        registers = Array(repeating: "", count: 9)
+        loadRegisters()
+    }
+
+    func inject(_ text: String) {
+        guard !text.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        sendPasteKeystroke()
+    }
+
+    func captureClipboardToRegister(_ index: Int) {
+        guard index >= 1 && index <= 9 else { return }
+        let pasteboard = NSPasteboard.general
+        if let text = pasteboard.string(forType: .string) {
+            registers[index - 1] = text
+            saveRegisters()
+        }
+    }
+
+    func clearRegisters() {
+        registers = Array(repeating: "", count: 9)
+        saveRegisters()
+    }
+
+    func registersContext() -> String {
+        var lines: [String] = []
+        for (idx, value) in registers.enumerated() {
+            if !value.isEmpty {
+                lines.append("[Register \(idx + 1)]\n\(value)")
+            }
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
+    private func loadRegisters() {
+        guard let data = try? Data(contentsOf: registersURL),
+              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+            return
+        }
+        if decoded.count == 9 {
+            registers = decoded
+        }
+    }
+
+    private func saveRegisters() {
+        if let data = try? JSONEncoder().encode(registers) {
+            try? data.write(to: registersURL)
+        }
+    }
+
+    private func sendPasteKeystroke() {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let vKey = CGKeyCode(9) // V
+
+        let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(55), keyDown: true)
+        let vDown = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: true)
+        let vUp = CGEvent(keyboardEventSource: src, virtualKey: vKey, keyDown: false)
+        let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(55), keyDown: false)
+
+        vDown?.flags = .maskCommand
+        vUp?.flags = .maskCommand
+
+        cmdDown?.post(tap: .cghidEventTap)
+        vDown?.post(tap: .cghidEventTap)
+        vUp?.post(tap: .cghidEventTap)
+        cmdUp?.post(tap: .cghidEventTap)
+    }
+}

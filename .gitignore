@@ -25,13 +25,6 @@ config.json
 .dictation_config
 dictation.conf
 
-# Intel NPU drivers and dependencies
-*.deb
-*.ddeb
-*.asc
-*.tar.gz
-linux-npu-driver-*/
-
 # Log files
 *.log
 
@@ -52,3 +45,4 @@ models/
 .clang-cache/
 .swiftpm-cache/
 mac_app/.build/
+.last_binary_hash

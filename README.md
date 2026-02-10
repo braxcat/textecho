@@ -210,6 +210,17 @@ Edit `~/.textecho_config`:
 
 4. Restart: `./daemon_control_mac.sh restart`
 
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and infrastructure |
+| [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history |
+| [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory |
+| [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan and future work |
+| [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Security architecture |
+| [claude_docs/TESTING.md](claude_docs/TESTING.md) | Test strategy |
+
 ## License
 
 MIT

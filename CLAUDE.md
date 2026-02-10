@@ -4,6 +4,20 @@
 
 **Purpose**: This is a master preference template for Claude Code agents. Copy this file to individual projects and customize the "Project-Specific Overrides" section with project details.
 
+### Documentation Index
+
+| Document | Purpose | Update when... |
+|----------|---------|----------------|
+| [README.md](README.md) | Project overview, setup, demo users | Features or stack change |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design, schema, infra | Architectural changes |
+| [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history | After each deploy |
+| [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory (LLM reads this) | Any feature ships/changes |
+| [claude_docs/PLANNING.md](claude_docs/PLANNING.md) | Future features, research, reference materials | New ideas or research |
+| [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan + future work | Planning or completing phases |
+| [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Data classification, encryption, auth, compliance | Security architecture changes |
+| [claude_docs/TESTING.md](claude_docs/TESTING.md) | Test strategy, tiers, coverage targets | Test stack or strategy changes |
+| [claude_docs/WORKLOG.md](claude_docs/WORKLOG.md) | Dev session log | After each session |
+
 ## Quick Navigation
 - [About the Developer](#about-the-developer)
 - [Communication Preferences](#communication-preferences)
@@ -244,23 +258,21 @@ Before considering code complete, verify:
 
 ### Target Platform
 
-**Current State**: Originally built for Linux (GNOME/Wayland)
-**Migration Target**: macOS
+**Platform**: macOS only
 
 **Hardware**:
 - MacBook Pro M4 Max
 - 36GB unified memory
 - Apple Silicon (ARM64)
 
-**Migration Decisions** (see `MIGRATION_PLAN.md` for full details):
+**Architecture**:
 - **Whisper**: MLX Whisper (Apple Silicon native)
-- **UI**: PyObjC + AppKit (menu bar app with overlay)
+- **UI**: Native Swift menu bar app with overlay
 - **Input monitoring**: CGEventTap via PyObjC (keyboard + mouse)
 - **Text injection**: Accessibility API (AXUIElement)
-- **Audio**: PyAudio (keep current)
-- **LLM**: llama-cpp-python with Metal (keep current)
-- **Architecture**: Keep daemon model
-- **Goal**: macOS-only, no Linux compatibility needed
+- **Audio**: PyAudio
+- **LLM**: llama-cpp-python with Metal
+- **IPC**: Daemon model with Unix sockets
 
 ### Technical Stack Details
 - **Language**: Python 3.12+

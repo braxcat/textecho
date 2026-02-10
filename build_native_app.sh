@@ -34,11 +34,30 @@ if [ ! -f "$BIN_PATH" ]; then
 fi
 
 echo "==> Creating .app bundle..."
-rm -rf "$APP_DIR"
+
+# Check if binary changed - avoid re-signing if unchanged (preserves macOS permissions)
+# Compare unsigned build output hash against saved hash from last build
+BINARY_CHANGED=true
+BIN_HASH_FILE="$SCRIPT_DIR/.last_binary_hash"
+NEW_HASH=$(shasum -a 256 "$BIN_PATH" | cut -d' ' -f1)
+if [ -f "$BIN_HASH_FILE" ] && [ -f "$MACOS_DIR/${APP_NAME}" ]; then
+    OLD_HASH=$(cat "$BIN_HASH_FILE" 2>/dev/null || echo "")
+    if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+        BINARY_CHANGED=false
+        echo "==> Binary unchanged, preserving existing signature"
+    fi
+fi
+
+if [ "$BINARY_CHANGED" = true ]; then
+    rm -rf "$APP_DIR"
+fi
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-cp "$BIN_PATH" "$MACOS_DIR/${APP_NAME}"
-chmod +x "$MACOS_DIR/${APP_NAME}"
+if [ "$BINARY_CHANGED" = true ]; then
+    cp "$BIN_PATH" "$MACOS_DIR/${APP_NAME}"
+    chmod +x "$MACOS_DIR/${APP_NAME}"
+    echo "$NEW_HASH" > "$BIN_HASH_FILE"
+fi
 
 # Bundle a self-contained Python venv with required deps (cached for faster builds)
 if [ -n "$PYTHON_BUNDLE_BIN" ]; then
@@ -60,7 +79,10 @@ fi
 
 PY_MINOR="$("$PYTHON_BIN" -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo "")"
 if [ -n "$PY_MINOR" ] && [ "$PY_MINOR" -ge 13 ]; then
-    echo "WARNING: Detected Python 3.$PY_MINOR. Some deps crash on 3.13+; prefer 3.12 or 3.11."
+    echo "ERROR: Python 3.$PY_MINOR detected. tiktoken crashes on 3.13+."
+    echo "Install Python 3.12: brew install python@3.12"
+    echo "Or set: PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12"
+    exit 1
 fi
 
 VENV_CACHE_DIR="$SCRIPT_DIR/.venv-bundle-cache"
@@ -75,10 +97,14 @@ else
     echo "==> Reusing cached Python venv..."
 fi
 
-echo "==> Copying bundled Python venv..."
-rm -rf "$RESOURCES_DIR/venv"
-mkdir -p "$RESOURCES_DIR"
-ditto "$VENV_CACHE_DIR" "$RESOURCES_DIR/venv"
+if [ "$BINARY_CHANGED" = true ] || [ ! -d "$RESOURCES_DIR/venv" ]; then
+    echo "==> Copying bundled Python venv..."
+    rm -rf "$RESOURCES_DIR/venv"
+    mkdir -p "$RESOURCES_DIR"
+    ditto "$VENV_CACHE_DIR" "$RESOURCES_DIR/venv"
+else
+    echo "==> Reusing existing bundled venv (unchanged)"
+fi
 
 # Embed Python daemon scripts for native app to launch
 cp transcription_daemon_mlx.py "$RESOURCES_DIR/" 2>/dev/null || true
@@ -130,10 +156,17 @@ PLIST
 
 xattr -rc "$APP_DIR" 2>/dev/null || true
 
-if codesign --force --deep --sign - "$APP_DIR" 2>/dev/null; then
-    echo "==> Code signing complete"
+if [ "$BINARY_CHANGED" = true ]; then
+    if codesign --force --deep --sign - "$APP_DIR" 2>/dev/null; then
+        echo "==> Code signing complete"
+    else
+        echo "==> Code signing skipped (ad-hoc failed)"
+    fi
+    echo ""
+    echo "NOTE: macOS permissions (Accessibility, Microphone) are tied to the code signature."
+    echo "      You may need to re-grant them in System Settings → Privacy & Security."
 else
-    echo "==> Code signing skipped (ad-hoc failed)"
+    echo "==> Code signing skipped (binary unchanged, permissions preserved)"
 fi
 
 echo "==> Build complete: $APP_DIR"

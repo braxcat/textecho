@@ -13,13 +13,13 @@ final class OverlayViewModel: ObservableObject {
     @Published var state: OverlayState = .hidden
     @Published var statusText: String = ""
     @Published var resultText: String = ""
-    @Published var waveform: [Double] = Array(repeating: 0.05, count: 40)
+    @Published var waveform: [Double] = Array(repeating: 0.0, count: 40)
 
     func showRecording(isLLM: Bool) {
         state = .recording
         statusText = isLLM ? "Recording (LLM)…" : "Recording…"
         resultText = ""
-        waveform = Array(repeating: 0.05, count: 40)
+        waveform = Array(repeating: 0.0, count: 40)
     }
 
     func showProcessing(isLLM: Bool) {
@@ -116,24 +116,31 @@ struct OverlayView: View {
 struct WaveformView: View {
     let levels: [Double]
 
+    private let silenceThreshold: Double = 0.08
+
     var body: some View {
         HStack(alignment: .center, spacing: 2) {
             ForEach(levels.indices, id: \.self) { index in
+                let level = levels[index]
+                let isActive = level >= silenceThreshold
                 RoundedRectangle(cornerRadius: 2)
                     .fill(
                         LinearGradient(colors: [Color.cyan, Color.purple], startPoint: .bottom, endPoint: .top)
                     )
-                    .frame(width: 4, height: barHeight(level: levels[index]))
+                    .frame(width: 4, height: barHeight(level: level, active: isActive))
+                    .opacity(isActive ? 1.0 : 0.3)
+                    .animation(.easeOut(duration: 0.08), value: level)
             }
         }
     }
 
-    private func barHeight(level: Double) -> CGFloat {
-        let minHeight: CGFloat = 4
+    private func barHeight(level: Double, active: Bool) -> CGFloat {
+        guard active else { return 2 }
         let maxHeight: CGFloat = 70
+        let minActive: CGFloat = 6
         let normalized = min(max(level, 0.0), 1.0)
-        let boosted = min(max(pow(normalized, 0.6) * 1.2, 0.0), 1.0)
-        return minHeight + (maxHeight - minHeight) * CGFloat(boosted)
+        let scaled = pow(normalized, 0.6)
+        return minActive + (maxHeight - minActive) * CGFloat(scaled)
     }
 }
 
@@ -187,7 +194,7 @@ final class OverlayWindowController {
 
     func updateWaveform(_ levels: [Double]) {
         DispatchQueue.main.async {
-            self.viewModel.waveform = levels.map { min(max($0 * 1.6, 0.0), 1.0) }
+            self.viewModel.waveform = levels
         }
     }
 

@@ -26,7 +26,7 @@ final class AudioRecorder {
         bufferData = Data()
         lastSoundTime = Date()
         isRecording = true
-        waveformLevels = Array(repeating: 0.05, count: waveformWindow)
+        waveformLevels = Array(repeating: 0.0, count: waveformWindow)
 
         let input = engine.inputNode
         let format = input.inputFormat(forBus: 0)
@@ -92,7 +92,7 @@ final class AudioRecorder {
     private func updateLevels(samples: UnsafeBufferPointer<Int16>) {
         let rms = computeRMS(samples: samples)
         waveformLevels.removeFirst()
-        waveformLevels.append(min(max(rms * 4.0, 0.05), 1.0))
+        waveformLevels.append(min(max(rms * 5.0, 0.0), 1.0))
         onWaveform?(waveformLevels)
     }
 

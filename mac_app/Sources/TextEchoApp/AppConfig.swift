@@ -129,6 +129,12 @@ final class AppConfig {
                 return bundled
             }
         }
+        // Fall back to specific Python versions known to work (3.13+ has tiktoken crashes)
+        for path in ["/opt/homebrew/bin/python3.12", "/opt/homebrew/bin/python3.11", "/usr/bin/python3"] {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
         return "/opt/homebrew/bin/python3"
     }
 

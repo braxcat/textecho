@@ -19,6 +19,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAUNCHD_DIR="$SCRIPT_DIR/launchd"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
+# Python executable - always use the bundled venv
+PYTHON="$SCRIPT_DIR/.venv/bin/python3"
+
 # Service names
 APP_SERVICE="com.textecho.app"
 TRANSCRIPTION_SERVICE="com.textecho.transcription"
@@ -135,7 +138,7 @@ start_services() {
 
     # Check if LLM is enabled in config
     if [ -f "$HOME/.textecho_config" ]; then
-        LLM_ENABLED=$(python3 -c "import json; print(json.load(open('$HOME/.textecho_config')).get('llm_enabled', False))" 2>/dev/null || echo "False")
+        LLM_ENABLED=$("$PYTHON" -c "import json; print(json.load(open('$HOME/.textecho_config')).get('llm_enabled', False))" 2>/dev/null || echo "False")
         if [ "$LLM_ENABLED" = "True" ]; then
             if [ -f "$LAUNCH_AGENTS_DIR/$LLM_SERVICE.plist" ]; then
                 launchctl load "$LAUNCH_AGENTS_DIR/$LLM_SERVICE.plist" 2>/dev/null || true
@@ -148,7 +151,7 @@ start_services() {
                 else
                     print_status "Starting LLM daemon directly..."
                     cd "$SCRIPT_DIR"
-                    nohup python3 -u llm_daemon.py >> "$HOME/.textecho_llm.log" 2>&1 &
+                    nohup "$PYTHON" -u llm_daemon.py >> "$HOME/.textecho_llm.log" 2>&1 &
                     sleep 1
                     if pgrep -f "llm_daemon.py" > /dev/null; then
                         print_success "Started LLM daemon (PID: $!)"
@@ -245,8 +248,8 @@ show_status() {
         print_success "LLM daemon: ${GREEN}running${NC} (PID: $LLM_PID)"
     else
         # Check if LLM is even enabled
-        if [ -f "$HOME/.dictation_config" ]; then
-            LLM_ENABLED=$(python3 -c "import json; print(json.load(open('$HOME/.dictation_config')).get('llm_enabled', False))" 2>/dev/null || echo "False")
+        if [ -f "$HOME/.textecho_config" ]; then
+            LLM_ENABLED=$("$PYTHON" -c "import json; print(json.load(open('$HOME/.textecho_config')).get('llm_enabled', False))" 2>/dev/null || echo "False")
             if [ "$LLM_ENABLED" = "True" ]; then
                 print_error "LLM daemon: ${RED}not running${NC}"
             else
@@ -298,16 +301,16 @@ show_logs() {
     echo ""
 
     echo -e "${BLUE}=== Transcription Daemon ===${NC}"
-    if [ -f "$HOME/.dictation_transcription.log" ]; then
-        tail -20 "$HOME/.dictation_transcription.log"
+    if [ -f "$HOME/.textecho_transcription.log" ]; then
+        tail -20 "$HOME/.textecho_transcription.log"
     else
         echo "(no log file)"
     fi
 
     echo ""
     echo -e "${BLUE}=== LLM Daemon ===${NC}"
-    if [ -f "$HOME/.dictation_llm.log" ]; then
-        tail -20 "$HOME/.dictation_llm.log"
+    if [ -f "$HOME/.textecho_llm.log" ]; then
+        tail -20 "$HOME/.textecho_llm.log"
     else
         echo "(no log file)"
     fi

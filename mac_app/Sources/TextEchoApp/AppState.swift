@@ -38,6 +38,11 @@ final class AppState {
 
     }
 
+    func restartInputMonitor() {
+        inputMonitor.stop()
+        inputMonitor.start()
+    }
+
     func stop() {
         logger.info("Stopping TextEcho")
         inputMonitor.stop()

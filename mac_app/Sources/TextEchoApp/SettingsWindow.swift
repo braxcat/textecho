@@ -208,11 +208,20 @@ struct SettingsView: View {
                         .frame(width: 260)
                 }
 
+                Divider()
+
                 HStack {
+                    Button("Restart TextEcho") {
+                        save()
+                        restartApp()
+                    }
+
                     Spacer()
+
                     Button("Save") {
                         save()
                     }
+                    .buttonStyle(.borderedProminent)
                 }
             }
             .padding(20)
@@ -221,6 +230,19 @@ struct SettingsView: View {
         .onAppear {
             refreshPermissions()
         }
+    }
+
+    private func restartApp() {
+        let appPath = Bundle.main.bundleURL.path
+        let script = """
+            sleep 1
+            open "\(appPath)"
+            """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", script]
+        try? process.run()
+        NSApplication.shared.terminate(nil)
     }
 
     private func save() {

@@ -146,10 +146,10 @@ final class AppModel: ObservableObject {
     }
 
     private func showSetupWizardIfNeeded() {
+        let isFirstLaunch = AppConfig.shared.model.firstLaunch
         let needsAccessibility = !AccessibilityHelper.isTrusted()
         let needsMic = MicrophoneHelper.authorizationStatus() != .authorized
-        let needsSetup = AppConfig.shared.model.firstLaunch || needsAccessibility || needsMic
-        guard needsSetup else { return }
+        guard isFirstLaunch || needsAccessibility || needsMic else { return }
 
         if setupWizard == nil {
             setupWizard = SetupWizardController(onClose: { [weak self] in
@@ -158,6 +158,7 @@ final class AppModel: ObservableObject {
                 AppConfig.shared.update { model in
                     model.firstLaunch = false
                 }
+                self?.appState.restartInputMonitor()
             })
         }
         setupWizard?.show()

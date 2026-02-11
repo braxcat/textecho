@@ -1,5 +1,32 @@
 # Worklog
 
+## 2026-02-12 — Distribution & Bug Fix Session
+
+**Focus:** App icon bundling, DMG rebuild, fix critical runtime bugs (ffmpeg PATH, CGEventTap timeout)
+
+### Icon & DMG
+- Copied TextEcho.icns to .app/Contents/Resources/ in build_native_app.sh
+- Added CFBundleIconFile to Info.plist heredoc
+- Rebuilt DMG with all fixes
+- Updated README with "Install from DMG" instructions
+
+### Bug Fix: ffmpeg not found
+- Root cause: lightning-whisper-mlx calls `ffmpeg` as subprocess; .app bundles from Finder have minimal PATH excluding /opt/homebrew/bin
+- Fix: PythonServiceManager.launchPython() prepends Homebrew paths to PATH env var
+
+### Bug Fix: Input dies after first recording
+- Root cause: recorder.stop() calls completion synchronously on main run loop → transcribe() blocks up to 5s in waitForTranscriptionSocket() → macOS disables CGEventTap (timeout)
+- Fix: Dispatch transcribe() to DispatchQueue.global(qos: .userInitiated)
+- Safety net: Handle .tapDisabledByTimeout to re-enable tap
+- Also dispatch transcription results back to main thread for UI/paste operations
+
+### Daemon Pre-warming
+- ensureTranscriptionDaemon() now called at startup on utility queue
+- First recording no longer waits for daemon to launch + model to load
+
+### Merged to master
+- Fast-forward merge of major_change-mac_native → master, rebased over remote, pushed
+
 ## 2026-02-11 — Cleanup & Hardening Session
 
 **Focus:** Technical debt cleanup, stability fixes, dead code removal

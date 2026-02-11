@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-02-12 — Distribution & Bug Fix Release
+
+### Distribution
+- Bundled app icon (TextEcho.icns) into .app Resources + Info.plist CFBundleIconFile
+- Rebuilt DMG with icon and all fixes
+- Added "Install from DMG" section to README, renamed existing to "Build from source"
+
+### Bug Fixes
+- **Fixed ffmpeg not found from .app bundle** — added /opt/homebrew/bin and /usr/local/bin to PATH in PythonServiceManager when launching daemons (Finder-launched .app bundles have minimal PATH)
+- **Fixed input monitor dying after first recording** — CGEventTap callback was blocked for up to 5s by synchronous transcription socket wait, causing macOS to disable the tap. Dispatched transcription to background queue.
+- **Added tapDisabledByTimeout handler** — safety net to re-enable CGEventTap if macOS disables it
+- **Dispatched transcription results to main thread** — UI updates (overlay, text injection) now properly run on main queue
+
+### Improvements
+- Pre-warm transcription daemon at app startup (first recording no longer waits for daemon launch)
+- Added polish/bugfix backlog to ROADMAP.md (download progress bar, DMG folder icon, accessibility UX)
+
 ## 2026-02-11 — Cleanup & Hardening Release
 
 ### Documentation

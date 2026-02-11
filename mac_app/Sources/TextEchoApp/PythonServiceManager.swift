@@ -57,6 +57,15 @@ final class PythonServiceManager {
         process.arguments = ["-u", scriptPath]
         var env = ProcessInfo.processInfo.environment
 
+        // Ensure Homebrew paths are in PATH so ffmpeg (needed by lightning-whisper-mlx) is found.
+        // .app bundles launched from Finder have a minimal PATH that excludes Homebrew.
+        let extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin"
+        let missingPaths = extraPaths.filter { !currentPath.contains($0) }
+        if !missingPaths.isEmpty {
+            env["PATH"] = (missingPaths + [currentPath]).joined(separator: ":")
+        }
+
         // Redirect caches away from the app bundle (read-only) to user caches.
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let cachesDir = homeDir.appendingPathComponent("Library/Caches/TextEcho", isDirectory: true)

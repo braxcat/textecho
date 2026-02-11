@@ -110,6 +110,9 @@ fi
 cp transcription_daemon_mlx.py "$RESOURCES_DIR/" 2>/dev/null || true
 cp llm_daemon.py "$RESOURCES_DIR/" 2>/dev/null || true
 
+# Bundle app icon
+cp "$SCRIPT_DIR/assets/TextEcho.icns" "$RESOURCES_DIR/"
+
 # Write Info.plist
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -134,6 +137,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <string>1.0</string>
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>
+    <string>TextEcho</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>NSPrincipalClass</key>

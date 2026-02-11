@@ -23,14 +23,19 @@ Voice-to-text dictation tool for macOS with automatic silence detection, local M
 
 ## Installation
 
-### Build the native app
+### Install from DMG
+
+1. Open `TextEcho.dmg`
+2. Drag **TextEcho** to **Applications**
+3. Launch from Applications — the Setup Wizard will guide you through permissions
+
+### Build from source
 
 ```bash
 PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh
 ```
 
-### Run
-
+Run directly:
 ```bash
 open dist/TextEcho.app
 ```

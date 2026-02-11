@@ -40,6 +40,11 @@ final class AppState {
             self?.endRecording(userInitiated: false)
         }
 
+        // Pre-warm the transcription daemon so the first recording doesn't
+        // have to wait for it to start and load the model.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.pythonServices.ensureTranscriptionDaemon()
+        }
     }
 
     func restartInputMonitor() {
@@ -102,6 +107,7 @@ final class AppState {
         logger.info("Recording stopped (userInitiated=\(userInitiated))")
         overlay.showProcessing(isLLM: isLLMMode)
 
+        let isLLM = self.isLLMMode
         recorder.stop { [weak self] audioData in
             guard let self else { return }
             guard let audioData else {
@@ -109,7 +115,13 @@ final class AppState {
                 return
             }
 
-            self.transcribe(audioData: audioData, isLLM: self.isLLMMode)
+            // Dispatch off the main thread — recorder.stop calls this completion
+            // synchronously on the caller's thread (the main run loop), and
+            // transcribe() blocks waiting for the daemon socket. Blocking the
+            // main run loop causes macOS to disable the CGEventTap.
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.transcribe(audioData: audioData, isLLM: isLLM)
+            }
         }
     }
 
@@ -139,16 +151,18 @@ final class AppState {
             sampleRate: config.sampleRate
         ) { [weak self] result in
             guard let self else { return }
-            switch result {
-            case .success(let text):
-                if isLLM {
-                    self.handleLLM(text: text)
-                } else {
-                    self.overlay.showResult(text, isLLM: false)
-                    self.textInjector.inject(text)
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let text):
+                    if isLLM {
+                        self.handleLLM(text: text)
+                    } else {
+                        self.overlay.showResult(text, isLLM: false)
+                        self.textInjector.inject(text)
+                    }
+                case .failure(let error):
+                    self.overlay.showError(error.localizedDescription)
                 }
-            case .failure(let error):
-                self.overlay.showError(error.localizedDescription)
             }
         }
     }

@@ -85,6 +85,15 @@ final class InputMonitor {
     }
 
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // macOS disables the event tap if our callback takes too long — re-enable it.
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap {
+                AppLogger.shared.info("Event tap was disabled by system, re-enabling")
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
         switch type {
         case .otherMouseDown, .otherMouseUp:
             handleOtherMouse(event: event, down: type == .otherMouseDown)

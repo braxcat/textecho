@@ -63,3 +63,9 @@ Removed ~4,500 lines of dead legacy code and stale files.
 - Speaker diarization
 - LLM conversation memory across sessions
 - Model management UI (download/switch models)
+
+### Polish / Bug Fixes (Backlog)
+
+- **Setup Wizard download progress bar** — show download progress + ETA when the Whisper model downloads on first launch (currently no visual feedback)
+- **DMG folder icon** — add a custom Applications folder icon to the DMG so the drag-to-install target is clearly visible (currently shows a generic folder)
+- **Accessibility permission UX** — ad-hoc code signing invalidates macOS accessibility grants on every rebuild; investigate smoother re-grant flow

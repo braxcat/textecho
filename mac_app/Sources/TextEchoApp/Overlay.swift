@@ -181,6 +181,9 @@ final class OverlayWindowController {
         DispatchQueue.main.async {
             self.viewModel.showError(message)
             self.show()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                self?.hide()
+            }
         }
     }
 

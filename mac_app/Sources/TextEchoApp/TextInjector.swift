@@ -4,6 +4,7 @@ import Foundation
 final class TextInjector {
     private let registersURL: URL
     private var registers: [String]
+    private let registersQueue = DispatchQueue(label: "textecho.registers")
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -24,33 +25,41 @@ final class TextInjector {
         guard index >= 1 && index <= 9 else { return }
         let pasteboard = NSPasteboard.general
         if let text = pasteboard.string(forType: .string) {
-            registers[index - 1] = text
-            saveRegisters()
+            registersQueue.async {
+                self.registers[index - 1] = text
+                self.saveRegisters()
+            }
         }
     }
 
     func clearRegisters() {
-        registers = Array(repeating: "", count: 9)
-        saveRegisters()
+        registersQueue.async {
+            self.registers = Array(repeating: "", count: 9)
+            self.saveRegisters()
+        }
     }
 
     func registersContext() -> String {
-        var lines: [String] = []
-        for (idx, value) in registers.enumerated() {
-            if !value.isEmpty {
-                lines.append("[Register \(idx + 1)]\n\(value)")
+        return registersQueue.sync {
+            var lines: [String] = []
+            for (idx, value) in registers.enumerated() {
+                if !value.isEmpty {
+                    lines.append("[Register \(idx + 1)]\n\(value)")
+                }
             }
+            return lines.joined(separator: "\n\n")
         }
-        return lines.joined(separator: "\n\n")
     }
 
     private func loadRegisters() {
-        guard let data = try? Data(contentsOf: registersURL),
-              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
-            return
-        }
-        if decoded.count == 9 {
-            registers = decoded
+        registersQueue.sync {
+            guard let data = try? Data(contentsOf: registersURL),
+                  let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+                return
+            }
+            if decoded.count == 9 {
+                registers = decoded
+            }
         }
     }
 

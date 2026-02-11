@@ -66,6 +66,7 @@ class TranscriptionDaemon:
         self.last_request_time = None
         self.unload_timer = None
         self.lock = threading.Lock()
+        self._shutdown_flag = False
 
         # Load config
         self.config = self.load_config()
@@ -118,24 +119,28 @@ class TranscriptionDaemon:
     def load_model(self):
         """Load Whisper model into memory"""
         with self.lock:
-            if self.model_loaded:
-                return
+            self._load_model_locked()
 
-            print("Loading MLX Whisper model...")
-            start_time = time.time()
+    def _load_model_locked(self):
+        """Load Whisper model into memory (caller must hold self.lock)"""
+        if self.model_loaded:
+            return
 
-            try:
-                self.model = LightningWhisperMLX(
-                    model=self.model_name,
-                    batch_size=self.batch_size,
-                    quant=self.quant
-                )
-                self.model_loaded = True
-                elapsed = time.time() - start_time
-                print(f"Model loaded successfully in {elapsed:.2f}s")
-            except Exception as e:
-                print(f"Error loading model: {e}")
-                raise
+        print("Loading MLX Whisper model...")
+        start_time = time.time()
+
+        try:
+            self.model = LightningWhisperMLX(
+                model=self.model_name,
+                batch_size=self.batch_size,
+                quant=self.quant
+            )
+            self.model_loaded = True
+            elapsed = time.time() - start_time
+            print(f"Model loaded successfully in {elapsed:.2f}s")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            raise
 
     def unload_model(self):
         """Unload model from memory to free RAM"""
@@ -160,19 +165,16 @@ class TranscriptionDaemon:
     def transcribe(self, audio_file):
         """Transcribe audio file"""
         try:
-            # Load model if not loaded
-            if not self.model_loaded:
-                self.load_model()
-
-            # Update last request time and reset unload timer
-            self.last_request_time = time.time()
-            self.reset_unload_timer()
-
-            # Transcribe using MLX Whisper
             with self.lock:
+                if not self.model_loaded:
+                    self._load_model_locked()
+                if self.unload_timer:
+                    self.unload_timer.cancel()
                 result = self.model.transcribe(audio_path=audio_file)
                 transcription = result.get("text", "").strip()
 
+            self.last_request_time = time.time()
+            self.reset_unload_timer()
             return {"success": True, "transcription": transcription}
 
         except Exception as e:
@@ -181,14 +183,6 @@ class TranscriptionDaemon:
     def transcribe_raw(self, audio_data, sample_rate):
         """Transcribe raw audio data (write to temp file for MLX)"""
         try:
-            # Load model if not loaded
-            if not self.model_loaded:
-                self.load_model()
-
-            # Update last request time and reset unload timer
-            self.last_request_time = time.time()
-            self.reset_unload_timer()
-
             # Convert bytes to numpy array
             data = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
@@ -206,11 +200,16 @@ class TranscriptionDaemon:
                 sf.write(tmp_path, data, 16000)
 
             try:
-                # Transcribe using MLX Whisper
                 with self.lock:
+                    if not self.model_loaded:
+                        self._load_model_locked()
+                    if self.unload_timer:
+                        self.unload_timer.cancel()
                     result = self.model.transcribe(audio_path=tmp_path)
                     transcription = result.get("text", "").strip()
 
+                self.last_request_time = time.time()
+                self.reset_unload_timer()
                 return {"success": True, "transcription": transcription}
             finally:
                 # Clean up temp file
@@ -313,6 +312,15 @@ class TranscriptionDaemon:
 
     def run(self):
         """Run the daemon server"""
+        # Handle SIGTERM gracefully (launchd sends this on stop)
+        import signal
+
+        def _shutdown(signum, frame):
+            print(f"\nReceived signal {signum}, shutting down...")
+            self._shutdown_flag = True
+
+        signal.signal(signal.SIGTERM, _shutdown)
+
         # Remove old socket if exists
         try:
             os.unlink(SOCKET_PATH)
@@ -324,6 +332,7 @@ class TranscriptionDaemon:
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
         server.listen(5)
+        server.settimeout(1.0)
 
         # Write PID file
         with open(PID_FILE, "w") as f:
@@ -332,26 +341,20 @@ class TranscriptionDaemon:
         print(f"Transcription daemon (MLX) listening on {SOCKET_PATH}")
         print(f"PID: {os.getpid()}")
 
-        # Handle SIGTERM gracefully (launchd sends this on stop)
-        import signal
-
-        def _shutdown(signum, frame):
-            print(f"\nReceived signal {signum}, shutting down...")
-            raise SystemExit(0)
-
-        signal.signal(signal.SIGTERM, _shutdown)
-
         # Use thread pool to limit concurrent connections
         executor = ThreadPoolExecutor(max_workers=4)
 
         try:
-            while True:
-                conn, _ = server.accept()
-                executor.submit(self.handle_client, conn)
-        except (KeyboardInterrupt, SystemExit):
+            while not self._shutdown_flag:
+                try:
+                    conn, _ = server.accept()
+                    executor.submit(self.handle_client, conn)
+                except socket.timeout:
+                    continue
+        except KeyboardInterrupt:
             print("\nShutting down...")
         finally:
-            executor.shutdown(wait=False)
+            executor.shutdown(wait=True, cancel_futures=True)
             server.close()
             try:
                 os.unlink(SOCKET_PATH)

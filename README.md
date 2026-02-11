@@ -17,21 +17,16 @@ Voice-to-text dictation tool for macOS with automatic silence detection, local M
 
 ## Requirements
 
-- macOS (Apple Silicon recommended)
+- macOS 13+ (Apple Silicon recommended)
 - Microphone access
 - Accessibility permissions
 
 ## Installation
 
-## Native App (Swift + Bundled Python ML)
-
-TextEcho ships as a native macOS menu bar app written in Swift.  
-The ML daemon runs from a **bundled Python venv** inside the app so end users do not need to install Python or deps.
-
 ### Build the native app
 
 ```bash
-./build_native_app.sh
+PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh
 ```
 
 ### Run
@@ -40,72 +35,34 @@ The ML daemon runs from a **bundled Python venv** inside the app so end users do
 open dist/TextEcho.app
 ```
 
+Or deploy to Applications:
+```bash
+cp -R dist/TextEcho.app /Applications/ && open /Applications/TextEcho.app
+```
+
 ### Create DMG
 
 ```bash
 ./build_native_dmg.sh
 ```
 
-### 1. Clone and set up Python environment (dev only)
+### Grant macOS permissions
 
-```bash
-git clone https://github.com/braxcat/textecho.git
-cd textecho
-
-# Create virtual environment (for local dev tools only)
-python3.12 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install lightning-whisper-mlx pyobjc pyaudio numpy soundfile pynput
-```
-
-### 2. Grant macOS permissions
-
-Go to **System Settings → Privacy & Security** and grant:
+Go to **System Settings > Privacy & Security** and grant:
 
 | Permission | What to add | Why |
 |------------|-------------|-----|
 | **Accessibility** | `TextEcho.app` | Input monitoring + paste |
 | **Microphone** | Allow when prompted | Audio recording |
 
-To add TextEcho to Accessibility:
-1. Click the `+` button
-2. Select `TextEcho.app`
-3. Click Open
-
-### 3. Start the app
-
-**Option A: Manual start (two terminals, dev only)**
-
-Terminal 1 — Transcription daemon:
-```bash
-source .venv/bin/activate
-python transcription_daemon_mlx.py
-```
-
-Terminal 2 — Main app:
-```bash
-source .venv/bin/activate
-python textecho_app_mac.py
-```
-
-**Option B: launchd services (auto-start on login, legacy)**
-
-```bash
-./daemon_control_mac.sh install    # one-time setup
-./daemon_control_mac.sh start
-./daemon_control_mac.sh status     # verify everything is running
-```
-
-> **Note:** The native app embeds the daemon and is the preferred path. The legacy launchd scripts remain for dev/back-compat.
-
 ## Usage
 
 | Action | How |
 |--------|-----|
-| **Transcribe** | Middle-click and hold → speak → release |
+| **Transcribe** | Middle-click and hold > speak > release |
 | **LLM prompt** | Ctrl + middle-click (requires LLM setup) |
+| **Transcribe (keyboard)** | Ctrl+D (hold to record) |
+| **LLM prompt (keyboard)** | Ctrl+Shift+D (hold to record) |
 | **Save to register** | Cmd+Option+1-9 |
 | **Clear registers** | Cmd+Option+0 |
 | **Cancel recording** | ESC |
@@ -117,19 +74,19 @@ python textecho_app_mac.py
 
 ```
 ┌─────────────────┐     ┌──────────────────────┐
-│  Menu Bar App   │────▶│ Transcription Daemon │
-│  (Swift)        │     │ (MLX Whisper, Py)    │
-└────────┬────────┘
+│  Menu Bar App   │────>│ Transcription Daemon  │
+│  (Swift)        │     │ (MLX Whisper, Python) │
+└────────┬────────┘     └──────────────────────-┘
          │
-         ▼
+         v
 ┌─────────────────┐
 │  Swift Overlay  │
 │  (waveform UI)  │
 └─────────────────┘
 ```
 
-- **Menu Bar App**: Input monitoring, audio recording, orchestration
-- **Transcription Daemon**: MLX Whisper model, Unix socket IPC (bundled venv)
+- **Menu Bar App**: Input monitoring, audio recording, orchestration (Swift)
+- **Transcription Daemon**: MLX Whisper model, Unix socket IPC (bundled Python venv)
 - **Swift Overlay**: Native macOS overlay with waveform visualization
 
 ## Configuration
@@ -152,18 +109,6 @@ Edit `~/.textecho_config`:
 | `llm_enabled` | Enable LLM processing | false |
 | `llm_model_path` | Path to GGUF model | - |
 
-## Daemon Management
-
-```bash
-./daemon_control_mac.sh install    # Install auto-start
-./daemon_control_mac.sh uninstall  # Remove auto-start
-./daemon_control_mac.sh start      # Start services
-./daemon_control_mac.sh stop       # Stop services
-./daemon_control_mac.sh restart    # Restart services
-./daemon_control_mac.sh status     # Show status
-./daemon_control_mac.sh logs       # View logs
-```
-
 ## Troubleshooting
 
 ### Transcription not working
@@ -184,12 +129,13 @@ Edit `~/.textecho_config`:
 
 ### "This process is not trusted" in logs
 
-- Add TextEcho to Accessibility permissions (see Installation step 2)
+- Add TextEcho to Accessibility permissions (see Installation)
 
-### Python crashes (segfaults) on some Macs
+### Python crashes (segfaults)
 
-- Ensure the **bundled venv** is being used (check `Logs → App` for `Python executable:` line).
-- Avoid Python 3.13+ for daemon builds; use 3.12/3.11 when creating the bundled venv.
+- Ensure the **bundled venv** uses Python 3.12 (NOT 3.13+)
+- Rebuild with: `PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh`
+- Delete `.venv-bundle-cache` to force venv rebuild
 
 ## LLM Setup (Optional)
 
@@ -208,17 +154,17 @@ Edit `~/.textecho_config`:
    }
    ```
 
-4. Restart: `./daemon_control_mac.sh restart`
+4. Restart TextEcho
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and infrastructure |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and IPC protocol |
 | [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history |
 | [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory |
 | [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan and future work |
-| [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Security architecture |
+| [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Security and permissions |
 | [claude_docs/TESTING.md](claude_docs/TESTING.md) | Test strategy |
 
 ## License

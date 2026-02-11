@@ -70,11 +70,18 @@ final class InputMonitor {
     }
 
     func stop() {
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         runLoopSource = nil
         eventTap = nil
+    }
+
+    deinit {
+        stop()
     }
 
     private func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {

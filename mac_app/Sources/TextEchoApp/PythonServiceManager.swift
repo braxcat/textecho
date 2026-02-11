@@ -4,6 +4,10 @@ final class PythonServiceManager {
     private var transcriptionProcess: Process?
     private var llmProcess: Process?
 
+    deinit {
+        stopAll()
+    }
+
     func ensureTranscriptionDaemon() {
         if UnixSocket.ping(socketPath: AppConfig.shared.model.transcriptionSocket, command: "status") {
             return
@@ -21,7 +25,9 @@ final class PythonServiceManager {
 
     func stopAll() {
         transcriptionProcess?.terminate()
+        transcriptionProcess = nil
         llmProcess?.terminate()
+        llmProcess = nil
     }
 
     private func startTranscription() {
@@ -30,6 +36,7 @@ final class PythonServiceManager {
             AppLogger.shared.error("Could not locate transcription daemon script")
             return
         }
+        cleanStaleSocket(path: AppConfig.shared.model.transcriptionSocket)
         transcriptionProcess = launchPython(scriptPath: script)
     }
 
@@ -39,6 +46,7 @@ final class PythonServiceManager {
             AppLogger.shared.error("Could not locate LLM daemon script")
             return
         }
+        cleanStaleSocket(path: AppConfig.shared.model.llmSocket)
         llmProcess = launchPython(scriptPath: script)
     }
 
@@ -76,8 +84,16 @@ final class PythonServiceManager {
         logHandle?.seekToEndOfFile()
         process.standardOutput = logHandle
         process.standardError = logHandle
-        process.terminationHandler = { proc in
+        process.terminationHandler = { [weak self] proc in
             AppLogger.shared.error("Python daemon exited (status=\(proc.terminationStatus), reason=\(proc.terminationReason.rawValue))")
+            try? logHandle?.close()
+            guard let self else { return }
+            if self.transcriptionProcess === proc {
+                self.transcriptionProcess = nil
+            }
+            if self.llmProcess === proc {
+                self.llmProcess = nil
+            }
         }
 
         do {
@@ -88,6 +104,14 @@ final class PythonServiceManager {
         } catch {
             AppLogger.shared.error("Failed to start python daemon: \(error)")
             return nil
+        }
+    }
+
+    private func cleanStaleSocket(path: String) {
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        if !UnixSocket.ping(socketPath: path, command: "status") {
+            try? FileManager.default.removeItem(atPath: path)
+            AppLogger.shared.info("Removed stale socket: \(path)")
         }
     }
 }

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os
 
 final class AudioRecorder {
     var onWaveform: (([Double]) -> Void)?
@@ -16,8 +17,24 @@ final class AudioRecorder {
     private let waveformWindow = 40
     private var waveformLevels: [Double] = []
 
+    private let lock: UnsafeMutablePointer<os_unfair_lock_s>
+
+    init() {
+        lock = UnsafeMutablePointer<os_unfair_lock_s>.allocate(capacity: 1)
+        lock.initialize(to: os_unfair_lock_s())
+    }
+
+    deinit {
+        lock.deinitialize(count: 1)
+        lock.deallocate()
+    }
+
     func start(silenceDuration: Double, silenceThreshold: Double, sampleRate: Double) {
-        guard !isRecording else { return }
+        os_unfair_lock_lock(lock)
+        guard !isRecording else {
+            os_unfair_lock_unlock(lock)
+            return
+        }
 
         self.silenceDuration = silenceDuration
         self.silenceThreshold = silenceThreshold
@@ -27,6 +44,7 @@ final class AudioRecorder {
         lastSoundTime = Date()
         isRecording = true
         waveformLevels = Array(repeating: 0.0, count: waveformWindow)
+        os_unfair_lock_unlock(lock)
 
         let input = engine.inputNode
         let format = input.inputFormat(forBus: 0)
@@ -60,7 +78,9 @@ final class AudioRecorder {
             let samples = UnsafeBufferPointer(start: channelData[0], count: frameLength)
 
             let data = Data(bytes: samples.baseAddress!, count: frameLength * MemoryLayout<Int16>.size)
+            os_unfair_lock_lock(self.lock)
             self.bufferData.append(data)
+            os_unfair_lock_unlock(self.lock)
 
             self.updateLevels(samples: samples)
             self.checkSilence(samples: samples)
@@ -74,37 +94,63 @@ final class AudioRecorder {
     }
 
     func stop(completion: @escaping (Data?) -> Void) {
-        guard isRecording else { completion(nil); return }
+        os_unfair_lock_lock(lock)
+        guard isRecording else {
+            os_unfair_lock_unlock(lock)
+            completion(nil)
+            return
+        }
         isRecording = false
+        let capturedData = bufferData
+        os_unfair_lock_unlock(lock)
 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        completion(bufferData)
+        completion(capturedData)
     }
 
     func stop() {
-        guard isRecording else { return }
+        os_unfair_lock_lock(lock)
+        guard isRecording else {
+            os_unfair_lock_unlock(lock)
+            return
+        }
         isRecording = false
+        os_unfair_lock_unlock(lock)
+
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }
 
     private func updateLevels(samples: UnsafeBufferPointer<Int16>) {
         let rms = computeRMS(samples: samples)
+        os_unfair_lock_lock(lock)
         waveformLevels.removeFirst()
         waveformLevels.append(min(max(rms * 5.0, 0.0), 1.0))
-        onWaveform?(waveformLevels)
+        let levels = waveformLevels
+        os_unfair_lock_unlock(lock)
+        onWaveform?(levels)
     }
 
     private func checkSilence(samples: UnsafeBufferPointer<Int16>) {
-        guard isRecording else { return }
+        os_unfair_lock_lock(lock)
+        guard isRecording else {
+            os_unfair_lock_unlock(lock)
+            return
+        }
+        os_unfair_lock_unlock(lock)
+
         let rms = computeRMS(samples: samples)
         if rms > silenceThreshold {
+            os_unfair_lock_lock(lock)
             lastSoundTime = Date()
+            os_unfair_lock_unlock(lock)
             return
         }
 
+        os_unfair_lock_lock(lock)
         let elapsed = Date().timeIntervalSince(lastSoundTime)
+        os_unfair_lock_unlock(lock)
         if elapsed >= silenceDuration {
             onAutoStop?()
         }

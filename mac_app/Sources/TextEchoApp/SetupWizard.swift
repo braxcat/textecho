@@ -331,10 +331,7 @@ struct SetupWizardView: View {
         preparingStatus = "Starting transcription engine..."
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let services = PythonServiceManager()
-            services.ensureTranscriptionDaemon()
-
-            // Wait for socket to appear
+            // Wait for socket to appear (main app via AppState handles daemon launching)
             let socketPath = AppConfig.shared.model.transcriptionSocket
             let socketDeadline = Date().addingTimeInterval(10.0)
             while Date() < socketDeadline {

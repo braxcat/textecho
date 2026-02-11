@@ -70,7 +70,20 @@ struct LogsView: View {
 
     private func load() {
         let path = selectedLog.path
-        logText = (try? String(contentsOfFile: path)) ?? ""
+        let maxBytes: UInt64 = 100 * 1024 // 100KB
+        guard let handle = FileHandle(forReadingAtPath: path) else {
+            logText = ""
+            return
+        }
+        defer { try? handle.close() }
+        let fileSize = handle.seekToEndOfFile()
+        if fileSize > maxBytes {
+            handle.seek(toFileOffset: fileSize - maxBytes)
+        } else {
+            handle.seek(toFileOffset: 0)
+        }
+        let data = handle.readDataToEndOfFile()
+        logText = String(data: data, encoding: .utf8) ?? ""
     }
 
     private func clearLogs() {

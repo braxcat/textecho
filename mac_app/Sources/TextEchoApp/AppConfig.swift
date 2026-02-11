@@ -49,14 +49,14 @@ final class AppConfig {
         llmSocket: "/tmp/textecho_llm.sock"
     )
 
-    var triggerButton: Int { model.triggerButton }
-    var dictationKeyCode: Int { model.dictationKeyCode }
-    var dictationModifiers: UInt { model.dictationModifiers }
-    var dictationLLMModifier: UInt { model.dictationLLMModifier }
-    var silenceDuration: Double { model.silenceDuration }
-    var silenceThreshold: Double { model.silenceThreshold }
-    var sampleRate: Double { model.sampleRate }
-    var llmEnabled: Bool { model.llmEnabled }
+    var triggerButton: Int { queue.sync { model.triggerButton } }
+    var dictationKeyCode: Int { queue.sync { model.dictationKeyCode } }
+    var dictationModifiers: UInt { queue.sync { model.dictationModifiers } }
+    var dictationLLMModifier: UInt { queue.sync { model.dictationLLMModifier } }
+    var silenceDuration: Double { queue.sync { model.silenceDuration } }
+    var silenceThreshold: Double { queue.sync { model.silenceThreshold } }
+    var sampleRate: Double { queue.sync { model.sampleRate } }
+    var llmEnabled: Bool { queue.sync { model.llmEnabled } }
 
     func update(_ mutate: (inout Model) -> Void) {
         queue.sync {

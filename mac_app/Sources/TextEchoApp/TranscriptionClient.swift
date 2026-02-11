@@ -26,7 +26,7 @@ final class TranscriptionClient {
                     completion(.failure(NSError(domain: "TextEcho.Transcription", code: 1, userInfo: [NSLocalizedDescriptionKey: message])))
                 }
             } catch {
-                completion(.failure(error))
+                completion(.failure(TranscriptionClient.userFriendlyError(error)))
             }
         }
     }
@@ -37,6 +37,11 @@ enum UnixSocket {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw socketError("socket") }
         defer { close(fd) }
+
+        // Set 30-second send and receive timeouts
+        var timeout = timeval(tv_sec: 30, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
 
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
@@ -94,20 +99,48 @@ enum UnixSocket {
     }
 
     private static func readLine(fd: Int32) throws -> Data {
-        var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 1)
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
         while true {
-            let count = read(fd, &buffer, 1)
+            let count = read(fd, &buffer, buffer.count)
             if count < 0 { throw socketError("read") }
             if count == 0 { break }
-            if buffer[0] == 0x0A { break }
-            data.append(buffer[0])
+            if let newlineIndex = buffer[0..<count].firstIndex(of: 0x0A) {
+                result.append(contentsOf: buffer[0..<newlineIndex])
+                break
+            }
+            result.append(contentsOf: buffer[0..<count])
         }
-        return data
+        return result
     }
 
     private static func socketError(_ op: String) -> NSError {
+        let code = Int(errno)
         let message = String(cString: strerror(errno))
-        return NSError(domain: "TextEcho.Socket", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "\(op) failed: \(message)"])
+        return NSError(domain: "TextEcho.Socket", code: code, userInfo: [NSLocalizedDescriptionKey: "\(op) failed: \(message)"])
+    }
+}
+
+extension TranscriptionClient {
+    static func userFriendlyError(_ error: Error) -> NSError {
+        let nsError = error as NSError
+        let raw = nsError.localizedDescription.lowercased()
+
+        let friendly: String
+        if raw.contains("connection refused") {
+            friendly = "Transcription daemon not running. Restart TextEcho from the menu bar."
+        } else if raw.contains("no such file") || raw.contains("socket path") {
+            friendly = "Transcription socket not found. The daemon may still be starting — try again in a moment."
+        } else if raw.contains("timed out") || raw.contains("resource temporarily unavailable") {
+            friendly = "Transcription timed out. The model may be loading — try again shortly."
+        } else if raw.contains("broken pipe") {
+            friendly = "Lost connection to transcription daemon. It may have crashed — check Logs."
+        } else if raw.contains("invalid response") {
+            friendly = "Received unexpected response from daemon. Check Python log for errors."
+        } else {
+            return nsError
+        }
+
+        return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: friendly])
     }
 }

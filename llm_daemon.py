@@ -38,6 +38,7 @@ class LLMDaemon:
         self.last_request_time = None
         self.unload_timer = None
         self.lock = threading.Lock()
+        self._shutdown_flag = False
 
         # Load config
         self.config = self.load_config()
@@ -93,47 +94,51 @@ class LLMDaemon:
     def load_model(self):
         """Load LLM model into memory (lazy loading)."""
         with self.lock:
-            if self.model_loaded:
-                return True
+            return self._load_model_locked()
 
-            if not self.model_path:
-                print(
-                    "ERROR: No model path configured. Set 'llm_model_path' in ~/.textecho_config"
-                )
-                return False
+    def _load_model_locked(self):
+        """Load LLM model into memory (caller must hold self.lock)."""
+        if self.model_loaded:
+            return True
 
-            if not os.path.exists(self.model_path):
-                print(f"ERROR: Model file not found: {self.model_path}")
-                return False
+        if not self.model_path:
+            print(
+                "ERROR: No model path configured. Set 'llm_model_path' in ~/.textecho_config"
+            )
+            return False
 
-            print(f"Loading LLM model: {self.model_path}")
-            start_time = time.time()
+        if not os.path.exists(self.model_path):
+            print(f"ERROR: Model file not found: {self.model_path}")
+            return False
 
-            try:
-                from llama_cpp import Llama
+        print(f"Loading LLM model: {self.model_path}")
+        start_time = time.time()
 
-                self.model = Llama(
-                    model_path=self.model_path,
-                    n_ctx=self.n_ctx,
-                    n_threads=self.n_threads,
-                    verbose=False,
-                )
-                self.model_loaded = True
-                elapsed = time.time() - start_time
-                print(f"Model loaded successfully in {elapsed:.2f}s")
-                return True
+        try:
+            from llama_cpp import Llama
 
-            except ImportError:
-                print("ERROR: llama-cpp-python not installed")
-                print("Install with: pip install llama-cpp-python")
-                print(
-                    'For Intel optimization: CMAKE_ARGS="-DLLAMA_AVX2=ON" pip install llama-cpp-python'
-                )
-                return False
+            self.model = Llama(
+                model_path=self.model_path,
+                n_ctx=self.n_ctx,
+                n_threads=self.n_threads,
+                verbose=False,
+            )
+            self.model_loaded = True
+            elapsed = time.time() - start_time
+            print(f"Model loaded successfully in {elapsed:.2f}s")
+            return True
 
-            except Exception as e:
-                print(f"Error loading model: {e}")
-                return False
+        except ImportError:
+            print("ERROR: llama-cpp-python not installed")
+            print("Install with: pip install llama-cpp-python")
+            print(
+                'For Intel optimization: CMAKE_ARGS="-DLLAMA_AVX2=ON" pip install llama-cpp-python'
+            )
+            return False
+
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            return False
 
     def unload_model(self):
         """Unload model from memory to free RAM."""
@@ -292,15 +297,6 @@ Request: {prompt}<|im_end|>
         self, prompt, context="", system_prompt=None, max_tokens=None, temperature=None
     ):
         """Generate a response from the LLM."""
-        # Load model if needed
-        if not self.model_loaded:
-            if not self.load_model():
-                return {"success": False, "error": "Failed to load model"}
-
-        # Update request time and reset timer
-        self.last_request_time = time.time()
-        self.reset_unload_timer()
-
         # Use defaults if not specified
         if max_tokens is None:
             max_tokens = self.default_max_tokens
@@ -332,6 +328,12 @@ Request: {prompt}<|im_end|>
 
         try:
             with self.lock:
+                if not self.model_loaded:
+                    if not self._load_model_locked():
+                        return {"success": False, "error": "Failed to load model"}
+                if self.unload_timer:
+                    self.unload_timer.cancel()
+
                 print(f"Generating response for: {prompt[:50]}...")
                 start_time = time.time()
 
@@ -356,12 +358,15 @@ Request: {prompt}<|im_end|>
 
                 print(f"Generated {tokens} tokens in {elapsed:.2f}s")
 
-                return {
-                    "success": True,
-                    "response": text,
-                    "tokens": tokens,
-                    "time": elapsed,
-                }
+            self.last_request_time = time.time()
+            self.reset_unload_timer()
+
+            return {
+                "success": True,
+                "response": text,
+                "tokens": tokens,
+                "time": elapsed,
+            }
 
         except Exception as e:
             print(f"Generation error: {e}")
@@ -377,18 +382,6 @@ Request: {prompt}<|im_end|>
         temperature=None,
     ):
         """Generate a streaming response from the LLM, sending tokens as they arrive."""
-        # Load model if needed
-        if not self.model_loaded:
-            if not self.load_model():
-                conn.sendall(
-                    (json.dumps({"error": "Failed to load model"}) + "\n").encode()
-                )
-                return
-
-        # Update request time and reset timer
-        self.last_request_time = time.time()
-        self.reset_unload_timer()
-
         # Use defaults if not specified
         if max_tokens is None:
             max_tokens = self.default_max_tokens
@@ -420,6 +413,15 @@ Request: {prompt}<|im_end|>
 
         try:
             with self.lock:
+                if not self.model_loaded:
+                    if not self._load_model_locked():
+                        conn.sendall(
+                            (json.dumps({"error": "Failed to load model"}) + "\n").encode()
+                        )
+                        return
+                if self.unload_timer:
+                    self.unload_timer.cancel()
+
                 print(f"Streaming response for: {prompt[:50]}...")
                 start_time = time.time()
                 full_response = ""
@@ -456,6 +458,9 @@ Request: {prompt}<|im_end|>
                         + "\n"
                     ).encode()
                 )
+
+            self.last_request_time = time.time()
+            self.reset_unload_timer()
 
         except Exception as e:
             print(f"Streaming error: {e}")
@@ -569,6 +574,15 @@ Request: {prompt}<|im_end|>
 
     def run(self):
         """Run the daemon server."""
+        # Handle SIGTERM gracefully (launchd sends this on stop)
+        import signal
+
+        def _shutdown(signum, frame):
+            print(f"\nReceived signal {signum}, shutting down...")
+            self._shutdown_flag = True
+
+        signal.signal(signal.SIGTERM, _shutdown)
+
         # Remove old socket if exists
         try:
             os.unlink(SOCKET_PATH)
@@ -580,6 +594,7 @@ Request: {prompt}<|im_end|>
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
         server.listen(5)
+        server.settimeout(1.0)
 
         # Write PID file
         with open(PID_FILE, "w") as f:
@@ -587,15 +602,6 @@ Request: {prompt}<|im_end|>
 
         print(f"LLM daemon listening on {SOCKET_PATH}")
         print(f"PID: {os.getpid()}")
-
-        # Handle SIGTERM gracefully (launchd sends this on stop)
-        import signal
-
-        def _shutdown(signum, frame):
-            print(f"\nReceived signal {signum}, shutting down...")
-            raise SystemExit(0)
-
-        signal.signal(signal.SIGTERM, _shutdown)
 
         # Warm up model in background thread
         warmup_thread = threading.Thread(target=self.warmup, daemon=True)
@@ -605,16 +611,19 @@ Request: {prompt}<|im_end|>
         executor = ThreadPoolExecutor(max_workers=2)
 
         try:
-            while True:
-                conn, _ = server.accept()
-                executor.submit(self.handle_client, conn)
-        except (KeyboardInterrupt, SystemExit):
+            while not self._shutdown_flag:
+                try:
+                    conn, _ = server.accept()
+                    executor.submit(self.handle_client, conn)
+                except socket.timeout:
+                    continue
+        except KeyboardInterrupt:
             print("\nShutting down...")
         finally:
             # Cancel unload timer if running
             if self.unload_timer:
                 self.unload_timer.cancel()
-            executor.shutdown(wait=False)
+            executor.shutdown(wait=True, cancel_futures=True)
             server.close()
             try:
                 os.unlink(SOCKET_PATH)

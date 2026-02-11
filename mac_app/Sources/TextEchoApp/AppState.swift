@@ -21,6 +21,10 @@ final class AppState {
     func start() {
         logger.info("Starting TextEcho")
 
+        // Clean stale sockets from previous sessions
+        cleanStaleSocket(path: config.model.transcriptionSocket)
+        cleanStaleSocket(path: config.model.llmSocket)
+
         AccessibilityHelper.requestIfNeeded()
         MicrophoneHelper.requestIfNeeded()
 
@@ -206,6 +210,14 @@ final class AppState {
     func quit() {
         stop()
         NSApplication.shared.terminate(nil)
+    }
+
+    private func cleanStaleSocket(path: String) {
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        if !UnixSocket.ping(socketPath: path, command: "status") {
+            try? FileManager.default.removeItem(atPath: path)
+            logger.info("Removed stale socket at startup: \(path)")
+        }
     }
 }
 

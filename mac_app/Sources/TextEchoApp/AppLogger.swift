@@ -30,6 +30,7 @@ final class AppLogger {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] [\(level)] \(message)\n"
         queue.async {
+            self.rotateIfNeeded()
             if let data = line.data(using: .utf8) {
                 if FileManager.default.fileExists(atPath: self.logFileURL.path) {
                     if let handle = try? FileHandle(forWritingTo: self.logFileURL) {
@@ -42,6 +43,18 @@ final class AppLogger {
                 }
             }
         }
+    }
+
+    private func rotateIfNeeded() {
+        let maxSize: UInt64 = 5 * 1024 * 1024 // 5MB
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: logFileURL.path),
+              let fileSize = attrs[.size] as? UInt64,
+              fileSize > maxSize else {
+            return
+        }
+        let oldURL = logFileURL.deletingPathExtension().appendingPathExtension("old.log")
+        try? FileManager.default.removeItem(at: oldURL)
+        try? FileManager.default.moveItem(at: logFileURL, to: oldURL)
     }
 
     func openLogsFolder() {

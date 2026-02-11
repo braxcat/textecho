@@ -165,37 +165,14 @@ start_services() {
         fi
     fi
 
-    # Start menu bar app (check if already running first)
-    if pgrep -f "textecho_app_mac.py" > /dev/null; then
-        print_warning "Menu bar app already running"
-    elif [ -f "$LAUNCH_AGENTS_DIR/$APP_SERVICE.plist" ]; then
-        launchctl load "$LAUNCH_AGENTS_DIR/$APP_SERVICE.plist" 2>/dev/null || true
-        launchctl start "$APP_SERVICE" 2>/dev/null || true
-        print_success "Started menu bar app (via launchd)"
-    else
-        # Direct execution fallback
-        print_status "Starting menu bar app directly..."
-        cd "$SCRIPT_DIR"
-        nohup "$SCRIPT_DIR/.venv/bin/python3" -u "$SCRIPT_DIR/textecho_app_mac.py" >> "$HOME/.textecho_app.log" 2>&1 &
-        sleep 1
-        if pgrep -f "textecho_app_mac.py" > /dev/null; then
-            print_success "Started menu bar app"
-        else
-            print_error "Failed to start menu bar app"
-        fi
-    fi
+    # Note: The native Swift TextEcho.app manages its own lifecycle.
+    # This script only controls the Python daemons for diagnostic purposes.
+    print_warning "Menu bar app (TextEcho.app) is managed separately — launch from /Applications"
 }
 
 # Stop services
 stop_services() {
     print_status "Stopping services..."
-
-    # Stop menu bar app first
-    launchctl stop "$APP_SERVICE" 2>/dev/null || true
-    launchctl unload "$LAUNCH_AGENTS_DIR/$APP_SERVICE.plist" 2>/dev/null || true
-    pkill -f "textecho_app_mac.py" 2>/dev/null || true
-    pkill -f "TextEchoOverlayHelper" 2>/dev/null || true
-    print_success "Stopped menu bar app"
 
     # Stop transcription daemon
     launchctl stop "$TRANSCRIPTION_SERVICE" 2>/dev/null || true
@@ -226,12 +203,12 @@ show_status() {
     print_status "Service Status:"
     echo ""
 
-    # Check menu bar app
-    APP_PID=$(pgrep -f "textecho_app_mac.py" 2>/dev/null || true)
+    # Check TextEcho.app
+    APP_PID=$(pgrep -f "TextEcho" 2>/dev/null || true)
     if [ -n "$APP_PID" ]; then
-        print_success "Menu bar app: ${GREEN}running${NC} (PID: $APP_PID)"
+        print_success "TextEcho.app: ${GREEN}running${NC} (PID: $APP_PID)"
     else
-        print_error "Menu bar app: ${RED}not running${NC}"
+        print_warning "TextEcho.app: ${YELLOW}not running${NC} (launch from /Applications)"
     fi
 
     # Check transcription daemon (launchd or direct)

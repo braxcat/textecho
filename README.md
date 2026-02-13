@@ -11,8 +11,8 @@ Voice-to-text dictation tool for macOS with automatic silence detection, local M
 - Fast model loading with auto-unload after idle
 - Automatic text pasting into active window
 - Middle-click trigger (hold to record, release to transcribe)
-- Overlay UI follows cursor with Tokyo Night theme
-- Menu bar app with daemon controls
+- Floating overlay with waveform visualization
+- Menu bar app with daemon controls and settings UI
 - Auto-start on login via launchd
 
 ## Requirements
@@ -22,12 +22,6 @@ Voice-to-text dictation tool for macOS with automatic silence detection, local M
 - Accessibility permissions
 
 ## Installation
-
-### Install from DMG
-
-1. Open `TextEcho.dmg`
-2. Drag **TextEcho** to **Applications**
-3. Launch from Applications — the Setup Wizard will guide you through permissions
 
 ### Build from source
 
@@ -45,10 +39,11 @@ Or deploy to Applications:
 cp -R dist/TextEcho.app /Applications/ && open /Applications/TextEcho.app
 ```
 
-### Create DMG
+### Create DMG (optional)
 
 ```bash
 ./build_native_dmg.sh
+# Creates TextEcho.dmg — drag to Applications to install
 ```
 
 ### Grant macOS permissions
@@ -70,6 +65,7 @@ Go to **System Settings > Privacy & Security** and grant:
 | **LLM prompt (keyboard)** | Ctrl+Shift+D (hold to record) |
 | **Save to register** | Cmd+Option+1-9 |
 | **Clear registers** | Cmd+Option+0 |
+| **Settings** | Cmd+Option+Space |
 | **Cancel recording** | ESC |
 
 **First use:** Model downloads and loads (~2-5 seconds)
@@ -78,41 +74,39 @@ Go to **System Settings > Privacy & Security** and grant:
 ## Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────────┐
-│  Menu Bar App   │────>│ Transcription Daemon  │
-│  (Swift)        │     │ (MLX Whisper, Python) │
-└────────┬────────┘     └──────────────────────-┘
+┌───────────────────────┐     ┌──────────────────────┐
+│  TextEcho.app (Swift) │────>│ Transcription Daemon  │
+│  Menu bar + overlay   │     │ (MLX Whisper, Python) │
+│  Input + audio + paste│     │ /tmp/textecho_transcription.sock
+└───────────────────────┘     └──────────────────────┘
          │
-         v
-┌─────────────────┐
-│  Swift Overlay  │
-│  (waveform UI)  │
-└─────────────────┘
+         └──────────────────>┌──────────────────────┐
+                             │ LLM Daemon (optional) │
+                             │ (llama-cpp, Python)   │
+                             │ /tmp/textecho_llm.sock │
+                             └──────────────────────┘
 ```
 
-- **Menu Bar App**: Input monitoring, audio recording, orchestration (Swift)
-- **Transcription Daemon**: MLX Whisper model, Unix socket IPC (bundled Python venv)
-- **Swift Overlay**: Native macOS overlay with waveform visualization
+- **TextEcho.app** (Swift): Input monitoring, audio recording, overlay UI, text injection
+- **Transcription Daemon** (Python): MLX Whisper model, Unix socket IPC, bundled in app venv
+- **LLM Daemon** (Python, optional): Local LLM processing via llama-cpp-python
 
 ## Configuration
 
-Edit `~/.textecho_config`:
-
-```json
-{
-  "trigger_button": 2,
-  "silence_duration": 2.5,
-  "llm_enabled": false,
-  "llm_model_path": "/path/to/model.gguf"
-}
-```
+Edit `~/.textecho_config` (JSON):
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `trigger_button` | Mouse button (0=left, 1=right, 2=middle) | 2 |
-| `silence_duration` | Seconds before auto-stop | 2.5 |
-| `llm_enabled` | Enable LLM processing | false |
-| `llm_model_path` | Path to GGUF model | - |
+| `trigger_button` | Mouse button (0=left, 1=right, 2=middle) | `2` |
+| `dictation_keycode` | Keyboard trigger keycode (2=D) | `2` |
+| `silence_duration` | Seconds of silence before auto-stop | `2.5` |
+| `silence_threshold` | Audio level threshold for silence detection | `0.015` |
+| `sample_rate` | Audio sample rate in Hz | `16000` |
+| `llm_enabled` | Enable LLM processing | `false` |
+| `llm_model_path` | Path to GGUF model file | `""` |
+| `show_menu_bar_icon` | Show icon in menu bar | `true` |
+| `python_path` | Python 3.12 executable (auto-detected) | auto |
+| `daemon_scripts_dir` | Directory containing daemon scripts (auto-detected) | auto |
 
 ## Troubleshooting
 

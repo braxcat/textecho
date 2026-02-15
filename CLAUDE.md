@@ -96,6 +96,55 @@ Python Daemons (bundled venv)
 - Unix sockets for IPC (not HTTP), JSON protocol with newline delimiters
 - Lazy model loading, auto-unload after idle timeout
 
+## Known Gotchas
+
+### Python Version Issue
+
+**Python 3.13+ breaks tiktoken** — Rust/pyo3 segfault in ThreadPoolExecutor. Must use Python 3.12 or 3.11.
+
+- tiktoken 0.3.3 Rust/pyo3 bindings segfault on Python 3.13+ (specifically 3.14)
+- Crash: `_tiktoken.cpython-314-darwin.so` → `EXC_BAD_ACCESS` in `ThreadPoolExecutor-0_0`
+- Root cause: `build_native_app.sh` fell back to `python3` which was Homebrew 3.14
+- Fix: enforce Python <3.13 in build script, rebuild venv with 3.12
+- The bundled venv symlinks to system Python (not self-contained), so version matters
+
+### CGEventTap Gotcha
+
+**CGEventTap callbacks MUST return fast** — macOS disables the tap if callback blocks too long.
+
+- `recorder.stop()` calls completion synchronously on the caller's thread
+- If that thread is the main run loop (where CGEventTap lives), blocking in the completion kills the tap
+- Fix: dispatch blocking work (socket waits, transcription) to background queue
+- Safety net: handle `.tapDisabledByTimeout` to re-enable the tap
+- Symptom: input works once, then silently stops (no events logged)
+
+### .app Bundle PATH Gotcha
+
+**.app bundles launched from Finder have minimal PATH** (`/usr/bin:/bin`).
+
+- Homebrew paths (`/opt/homebrew/bin`, `/usr/local/bin`) are NOT included
+- `lightning-whisper-mlx` shells out to `ffmpeg` CLI for audio decoding → fails
+- Fix: PythonServiceManager prepends Homebrew paths to PATH env before launching daemons
+
+### Accessibility Permission Annoyance
+
+**Ad-hoc code signing changes the signature every rebuild** — macOS invalidates Accessibility grant when signature changes.
+
+- User must delete old entry and re-add in System Settings → Privacy & Security
+- No fix short of proper Developer ID signing + notarization (Phase 6 roadmap)
+
+### Launchd Warning
+
+**Old plists in `~/Library/LaunchAgents/com.textecho.*` can auto-start the OLD Python app on reboot** — remove them.
+
+### Common Pitfalls
+
+- Don't use `-n` flag with `open` for app restart (causes two instances, can crash Mac)
+- Safe restart: quit first, background script does `sleep 1 && open <path>`
+- Old launchd services auto-start the Python app on reboot - must unload + remove
+- AVCaptureDevice.requestAccess doesn't trigger mic permission for AVAudioEngine apps
+  - Need to access AVAudioEngine.inputNode to trigger the macOS permission dialog
+
 ## Project Structure
 
 ```

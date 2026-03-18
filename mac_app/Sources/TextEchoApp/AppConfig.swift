@@ -49,7 +49,7 @@ final class AppConfig {
         daemonScriptsDir: AppConfig.defaultDaemonsDir(),
         transcriptionSocket: "/tmp/textecho_transcription.sock",
         llmSocket: "/tmp/textecho_llm.sock",
-        pedalEnabled: true,
+        pedalEnabled: false,
         pedalPosition: 1
     )
 

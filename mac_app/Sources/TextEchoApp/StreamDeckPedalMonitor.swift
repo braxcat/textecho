@@ -70,20 +70,14 @@ final class StreamDeckPedalMonitor {
         }, selfPtr)
 
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-        // Use kIOHIDOptionsTypeSeizeDevice to take priority over the Elgato Stream Deck app,
-        // which otherwise consumes HID reports before we see them.
-        let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
+        // Open in shared (non-exclusive) mode. Seizing the device can freeze the
+        // system if the app crashes while holding the seize, so we avoid it.
+        // If Elgato software is running it may consume events — quit it first.
+        let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         if result == kIOReturnSuccess {
-            AppLogger.shared.info("Stream Deck Pedal monitor started (device seized)")
+            AppLogger.shared.info("Stream Deck Pedal monitor started (shared mode)")
         } else {
-            // Fall back to non-exclusive if seize fails (e.g. permission issue)
-            AppLogger.shared.info("Seize failed (\(result)), trying non-exclusive open")
-            let fallback = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-            if fallback == kIOReturnSuccess {
-                AppLogger.shared.info("Stream Deck Pedal monitor started (shared)")
-            } else {
-                AppLogger.shared.error("Failed to open HID manager: \(fallback)")
-            }
+            AppLogger.shared.error("Failed to open HID manager: \(result)")
         }
     }
 

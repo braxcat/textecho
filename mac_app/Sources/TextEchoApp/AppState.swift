@@ -154,13 +154,18 @@ final class AppState {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let text):
-                    if isLLM {
+                    if text.isEmpty {
+                        self.logger.info("No speech detected (empty transcription)")
+                        self.overlay.hide()
+                    } else if isLLM {
                         self.handleLLM(text: text)
                     } else {
+                        self.logger.info("Transcription: \(text)")
                         self.overlay.showResult(text, isLLM: false)
                         self.textInjector.inject(text)
                     }
                 case .failure(let error):
+                    self.logger.error("Transcription failed: \(error.localizedDescription)")
                     self.overlay.showError(error.localizedDescription)
                 }
             }

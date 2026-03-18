@@ -1,5 +1,29 @@
 # Worklog
 
+## 2026-03-18 — MLX Whisper Upgrade Session
+
+**Focus:** Replace unmaintained lightning-whisper-mlx with mlx-whisper, upgrade to large-v3-turbo model
+
+### Library Swap
+- Researched MLX whisper ecosystem: lightning-whisper-mlx (dead, April 2024), mlx-whisper (active, v0.4.3), mlx-audio (active, broader)
+- Chose mlx-whisper — drop-in Whisper replacement, actively maintained, supports large-v3-turbo
+- Updated pyproject.toml: `lightning-whisper-mlx` → `mlx-whisper>=0.4.0`
+- Updated build_native_app.sh pip install line
+- Updated PythonServiceManager.swift comment
+
+### Daemon Rewrite
+- Rewrote transcription_daemon_mlx.py to use `mlx_whisper.transcribe()` API
+- New default models: `mlx-community/whisper-large-v3-turbo` (single/fast), `mlx-community/whisper-large-v3-mlx` (accurate)
+- Removed LightningWhisperMLX class instantiation — mlx-whisper uses a functional API
+- Removed batch_size/quant config (mlx-whisper handles internally)
+- Preload now uses dummy silent WAV to trigger model download/cache
+- Preserved all existing features: hallucination filtering, silence detection, IPC protocol, idle unload
+
+### Deployment
+- Created feature branch `feature/mlx-whisper-turbo`, pushed to GitHub
+- Merged via PR #1, cleaned up branch
+- Tested on M4 Max 36GB — model downloads ~1.6GB on first use, cached at ~/Library/Caches/TextEcho/hf/
+
 ## 2026-02-12 — Distribution & Bug Fix Session
 
 **Focus:** App icon bundling, DMG rebuild, fix critical runtime bugs (ffmpeg PATH, CGEventTap timeout)
@@ -32,7 +56,7 @@
 **Focus:** Technical debt cleanup, stability fixes, dead code removal
 
 ### Phase 1: Documentation Alignment
-- Rewrote CLAUDE.md from generic template to devax project format
+- Rewrote CLAUDE.md from generic template to chippy project format
 - Populated ARCHITECTURE.md with component diagram, IPC protocol, build pipeline
 - Populated FEATURES.md with complete feature inventory
 - Populated SECURITY.md with permissions, signing, data handling
@@ -73,4 +97,4 @@
 - Final documentation pass
 
 ## 2026-02-11 — Documentation Scaffold
-- Ran devax-scaffold-docs to create claude_docs/ structure
+- Ran chippy-scaffold-docs to create claude_docs/ structure

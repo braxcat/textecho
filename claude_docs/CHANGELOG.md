@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-18 — MLX Whisper Upgrade
+
+### Transcription Engine
+- **Replaced `lightning-whisper-mlx` with `mlx-whisper`** — actively maintained library with broader model support
+- **Default model upgraded to `large-v3-turbo`** — near large-v3 quality at 8x speed, ideal for M4 Max
+- Accurate mode now uses `whisper-large-v3-mlx` (full 1.55B param model)
+- Models are now HuggingFace repo IDs (e.g. `mlx-community/whisper-large-v3-turbo`), downloaded and cached automatically
+- Removed batch_size and quantization config — mlx-whisper manages this internally
+- Updated pyproject.toml, build script, and PythonServiceManager
+
+### Config Changes
+- `mlx_model` / `mlx_model_fast` / `mlx_model_accurate` now accept HuggingFace repo IDs
+- Removed: `mlx_batch_size`, `mlx_quant`, and per-mode variants
+- Users must delete `.venv-bundle-cache` and rebuild to pick up the new library
+
 ## 2026-02-12 — Distribution & Bug Fix Release
 
 ### Distribution
@@ -20,7 +35,7 @@
 ## 2026-02-11 — Cleanup & Hardening Release
 
 ### Documentation
-- Rewrote CLAUDE.md to devax project format (removed generic template boilerplate)
+- Rewrote CLAUDE.md to chippy project format (removed generic template boilerplate)
 - Populated all claude_docs/ files: ARCHITECTURE, FEATURES, SECURITY, ROADMAP, TESTING
 - Updated README.md to reflect current Swift-native architecture
 
@@ -59,7 +74,7 @@
 
 ## 2026-02-11 — Documentation Scaffold
 
-- Initial claude_docs/ structure created via devax-scaffold-docs
+- Initial claude_docs/ structure created via chippy-scaffold-docs
 
 ## 2026-02-06 — Native Swift App
 

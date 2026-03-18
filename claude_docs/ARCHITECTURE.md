@@ -29,8 +29,8 @@ TextEcho is a native macOS menu bar application written in Swift that manages tw
 │  transcription     │  │   llm_daemon.py    │
 │  _daemon_mlx.py    │  │                    │
 │                    │  │  llama-cpp-python   │
-│  lightning-whisper │  │  Metal GPU accel   │
-│  -mlx              │  │                    │
+│  mlx-whisper       │  │  Metal GPU accel   │
+│  (large-v3-turbo)  │  │                    │
 │  /tmp/textecho_    │  │  /tmp/textecho_    │
 │  transcription.sock│  │  llm.sock          │
 └────────────────────┘  └────────────────────┘

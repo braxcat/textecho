@@ -4,19 +4,20 @@
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1 | COMPLETE | Documentation Alignment — devax methodology |
+| 1 | COMPLETE | Documentation Alignment — chippy methodology |
 | 2 | COMPLETE | Critical Stability Fixes — process lifecycle, socket timeouts, thread safety |
 | 3 | COMPLETE | Resource Management Hardening — log rotation, graceful shutdown, thread safety |
 | 4 | COMPLETE | Dead Code Removal — 4,500+ lines of legacy Python UI, stale files |
 | 5 | COMPLETE | Code Quality — user-friendly errors, final docs |
-| 6 | PLANNED | Distribution — DMG signing, notarization, auto-update |
-| 7 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
-| 8 | PLANNED | LLM Improvements — conversation memory, model switching |
+| 6 | COMPLETE | MLX Whisper Upgrade — mlx-whisper + large-v3-turbo |
+| 7 | PLANNED | Distribution — DMG signing, notarization, auto-update |
+| 8 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
+| 9 | PLANNED | LLM Improvements — conversation memory, model switching |
 
 ## Phase 1: Documentation Alignment
 **Status:** COMPLETE
 
-Aligned TextEcho with devax documentation methodology:
+Aligned TextEcho with chippy documentation methodology:
 - Rewrote CLAUDE.md to match wombat-wise/fbar-bot format
 - Populated all claude_docs/ files (ARCHITECTURE, FEATURES, SECURITY, etc.)
 - Updated README.md to reflect Swift-native architecture
@@ -55,12 +56,20 @@ Removed ~4,500 lines of dead legacy code and stale files.
 - User-friendly error messages in TranscriptionClient
 - Final documentation pass
 
-## Phase 6+: Future Work (TBD)
+## Phase 6: MLX Whisper Upgrade
+**Status:** COMPLETE
+
+- Replaced `lightning-whisper-mlx` (unmaintained since April 2024) with `mlx-whisper` (actively maintained)
+- Default model upgraded from `distil-medium.en` to `whisper-large-v3-turbo` (~8x faster than large-v3, near-identical quality)
+- Accurate mode upgraded from `distil-large-v3` to `whisper-large-v3-mlx` (full model)
+- Config now uses HuggingFace repo IDs for model selection
+
+## Phase 7+: Future Work (TBD)
 
 - DMG signing and notarization for distribution
 - Auto-update mechanism
 - Multi-language transcription support
-- Speaker diarization
+- Speaker diarization (possible via mlx-audio)
 - LLM conversation memory across sessions
 - Model management UI (download/switch models)
 

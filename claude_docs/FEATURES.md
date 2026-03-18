@@ -7,11 +7,13 @@
 - Cancel recording with ESC
 
 ## Local MLX Whisper Transcription
-- Apple Silicon native via lightning-whisper-mlx
+- Apple Silicon native via mlx-whisper
+- Default model: whisper-large-v3-turbo (809M params, ~1.6GB, near large-v3 quality at 8x speed)
+- Accurate mode: whisper-large-v3 (1.55B params, ~3GB, highest quality)
+- Models are HuggingFace repo IDs — downloaded and cached automatically on first use
 - Lazy model loading — first use downloads/loads, subsequent uses instant
 - Auto-unload after configurable idle timeout (default 1 hour) to free RAM
-- Multiple model options: distil-medium.en (default), distil-large-v3, etc.
-- Configurable batch size and quantization (4bit, 8bit, none)
+- Hallucination filtering (known phrases, repeated segments, silence detection)
 
 ## Local LLM Processing (Optional)
 - llama-cpp-python with Metal acceleration

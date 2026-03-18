@@ -11,6 +11,7 @@ final class AppState {
     private let transcription = TranscriptionClient()
     private let textInjector = TextInjector()
     private let pythonServices = PythonServiceManager()
+    private let pedalMonitor = StreamDeckPedalMonitor()
 
     private var settingsWindow: SettingsWindowController?
     private var logsWindow: LogsWindowController?
@@ -40,6 +41,11 @@ final class AppState {
             self?.endRecording(userInitiated: false)
         }
 
+        // Stream Deck Pedal — push-to-talk
+        if config.model.pedalEnabled {
+            startPedalMonitor()
+        }
+
         // Pre-warm the transcription daemon so the first recording doesn't
         // have to wait for it to start and load the model.
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -55,6 +61,7 @@ final class AppState {
     func stop() {
         logger.info("Stopping TextEcho")
         inputMonitor.stop()
+        pedalMonitor.stop()
         recorder.stop()
         overlay.hide()
         pythonServices.stopAll()
@@ -229,6 +236,20 @@ final class AppState {
     func quit() {
         stop()
         NSApplication.shared.terminate(nil)
+    }
+
+    private func startPedalMonitor() {
+        pedalMonitor.activePedal = PedalPosition(rawValue: config.model.pedalPosition) ?? .center
+        pedalMonitor.onPedalDown = { [weak self] in
+            self?.beginRecording(mode: .standard)
+        }
+        pedalMonitor.onPedalUp = { [weak self] in
+            self?.endRecording(userInitiated: true)
+        }
+        pedalMonitor.onConnectionChanged = { [weak self] connected in
+            self?.logger.info("Stream Deck Pedal \(connected ? "connected" : "disconnected")")
+        }
+        pedalMonitor.start()
     }
 
     private func cleanStaleSocket(path: String) {

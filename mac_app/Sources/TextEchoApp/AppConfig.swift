@@ -29,6 +29,8 @@ final class AppConfig {
         var daemonScriptsDir: String
         var transcriptionSocket: String
         var llmSocket: String
+        var pedalEnabled: Bool
+        var pedalPosition: Int // 0=left, 1=center, 2=right
     }
 
     private(set) var model = Model(
@@ -46,7 +48,9 @@ final class AppConfig {
         pythonPath: AppConfig.defaultPythonPath(),
         daemonScriptsDir: AppConfig.defaultDaemonsDir(),
         transcriptionSocket: "/tmp/textecho_transcription.sock",
-        llmSocket: "/tmp/textecho_llm.sock"
+        llmSocket: "/tmp/textecho_llm.sock",
+        pedalEnabled: true,
+        pedalPosition: 1
     )
 
     var triggerButton: Int { queue.sync { model.triggerButton } }
@@ -90,6 +94,8 @@ final class AppConfig {
         if let value = obj["daemon_scripts_dir"] as? String { updated.daemonScriptsDir = value }
         if let value = obj["transcription_socket"] as? String { updated.transcriptionSocket = value }
         if let value = obj["llm_socket"] as? String { updated.llmSocket = value }
+        if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
+        if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
 
         model = updated
     }
@@ -116,6 +122,8 @@ final class AppConfig {
         dict["daemon_scripts_dir"] = model.daemonScriptsDir
         dict["transcription_socket"] = model.transcriptionSocket
         dict["llm_socket"] = model.llmSocket
+        dict["pedal_enabled"] = model.pedalEnabled
+        dict["pedal_position"] = model.pedalPosition
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL)

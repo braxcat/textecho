@@ -8,7 +8,7 @@ authors = [
     {name = "Braxton Bragg", email = "braxcat@users.noreply.github.com"}
 ]
 dependencies = [
-    "lightning-whisper-mlx",
+    "mlx-whisper>=0.4.0",
     "numpy>=2.0.0",
     "soundfile>=0.13.1",
 ]

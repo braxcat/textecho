@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Transcription daemon for macOS using MLX Whisper (Apple Silicon optimized)
+Transcription daemon for macOS using mlx-whisper (Apple Silicon optimized)
 
-Replaces OpenVINO-based transcription_daemon.py for macOS.
-Uses lightning-whisper-mlx for fast Whisper inference on Apple Silicon.
+Uses mlx-whisper for Whisper inference on Apple Silicon via MLX.
+Supports large-v3-turbo and large-v3 models from mlx-community on HuggingFace.
 """
 
 import json
@@ -19,16 +19,16 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-# MLX Whisper import - will fail on non-macOS or without the package
+# mlx-whisper import
 try:
-    from lightning_whisper_mlx import LightningWhisperMLX
+    import mlx_whisper
 except ImportError as e:
     import traceback
-    print("Error: lightning-whisper-mlx not installed.")
+    print("Error: mlx-whisper not installed.")
     print(f"Import error: {e}")
     print("Traceback:")
     traceback.print_exc()
-    print("Install with: pip install lightning-whisper-mlx")
+    print("Install with: pip install mlx-whisper")
     sys.exit(1)
 
 # Configuration (can be overridden by command-line args)
@@ -49,19 +49,19 @@ else:  # single mode (default)
 
 CONFIG_FILE = os.path.expanduser("~/.textecho_config")
 
-# MLX Whisper model options
-# Models: "tiny", "base", "small", "medium", "large-v3", "distil-medium.en", "distil-large-v3"
-# Quantization: None, "4bit", "8bit"
+# mlx-whisper model options (HuggingFace repo IDs from mlx-community)
+# large-v3-turbo: 809M params, ~1.6GB RAM, near large-v3 quality at 8x speed
+# large-v3: 1.55B params, ~3GB RAM, highest quality
+# distil-large-v3: 756M params, ~1.5GB RAM, fast with good quality
 DEFAULT_MODELS = {
-    "fast": {"model": "distil-medium.en", "batch_size": 12, "quant": "4bit"},
-    "accurate": {"model": "distil-large-v3", "batch_size": 6, "quant": None},
-    "single": {"model": "distil-medium.en", "batch_size": 12, "quant": None},
+    "fast": {"model": "mlx-community/whisper-large-v3-turbo"},
+    "accurate": {"model": "mlx-community/whisper-large-v3-mlx"},
+    "single": {"model": "mlx-community/whisper-large-v3-turbo"},
 }
 
 
 class TranscriptionDaemon:
     def __init__(self):
-        self.model = None
         self.model_loaded = False
         self.last_request_time = None
         self.unload_timer = None
@@ -75,19 +75,13 @@ class TranscriptionDaemon:
         # Get model settings based on daemon mode
         mode_defaults = DEFAULT_MODELS.get(DAEMON_MODE, DEFAULT_MODELS["single"])
 
-        # Allow config overrides for MLX-specific settings
+        # Allow config overrides for model
         if DAEMON_MODE == "fast":
-            self.model_name = self.config.get("mlx_model_fast", mode_defaults["model"])
-            self.batch_size = self.config.get("mlx_batch_size_fast", mode_defaults["batch_size"])
-            self.quant = self.config.get("mlx_quant_fast", mode_defaults["quant"])
+            self.model_repo = self.config.get("mlx_model_fast", mode_defaults["model"])
         elif DAEMON_MODE == "accurate":
-            self.model_name = self.config.get("mlx_model_accurate", mode_defaults["model"])
-            self.batch_size = self.config.get("mlx_batch_size_accurate", mode_defaults["batch_size"])
-            self.quant = self.config.get("mlx_quant_accurate", mode_defaults["quant"])
+            self.model_repo = self.config.get("mlx_model_accurate", mode_defaults["model"])
         else:
-            self.model_name = self.config.get("mlx_model", mode_defaults["model"])
-            self.batch_size = self.config.get("mlx_batch_size", mode_defaults["batch_size"])
-            self.quant = self.config.get("mlx_quant", mode_defaults["quant"])
+            self.model_repo = self.config.get("mlx_model", mode_defaults["model"])
 
         # Language setting (None = auto-detect, "en" = force English)
         self.language = self.config.get("language", None)
@@ -95,14 +89,15 @@ class TranscriptionDaemon:
         # Preload model option
         self.preload_model = self.config.get("preload_transcription_model", False)
 
-        print(f"Transcription daemon initialized (mode: {DAEMON_MODE.upper()}, backend: MLX)")
-        print(f"Model: {self.model_name}, Batch size: {self.batch_size}, Quantization: {self.quant}")
+        print(f"Transcription daemon initialized (mode: {DAEMON_MODE.upper()}, backend: mlx-whisper)")
+        print(f"Model: {self.model_repo}")
         print(f"Model idle timeout: {self.idle_timeout}s ({self.idle_timeout / 60:.1f} minutes)")
 
-        # Preload model if configured
+        # Preload model if configured — mlx_whisper downloads and caches on first call,
+        # so we do a dummy transcribe to warm the cache
         if self.preload_model:
             print("Preloading model at startup...")
-            self.load_model()
+            self._preload_model()
 
     def load_config(self):
         """Load configuration from file"""
@@ -116,42 +111,40 @@ class TranscriptionDaemon:
                 print(f"Warning: Could not load config: {e}")
         return {}
 
-    def load_model(self):
-        """Load Whisper model into memory"""
+    def _preload_model(self):
+        """Preload model by running a short dummy transcription."""
         with self.lock:
-            self._load_model_locked()
-
-    def _load_model_locked(self):
-        """Load Whisper model into memory (caller must hold self.lock)"""
-        if self.model_loaded:
-            return
-
-        print("Loading MLX Whisper model...")
-        start_time = time.time()
-
-        try:
-            self.model = LightningWhisperMLX(
-                model=self.model_name,
-                batch_size=self.batch_size,
-                quant=self.quant
-            )
-            self.model_loaded = True
-            elapsed = time.time() - start_time
-            print(f"Model loaded successfully in {elapsed:.2f}s")
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            raise
+            if self.model_loaded:
+                return
+            print("Downloading/loading MLX Whisper model...")
+            start_time = time.time()
+            try:
+                # Generate a short silent WAV to trigger model download/load
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    tmp_path = tmp.name
+                    silence = np.zeros(16000, dtype=np.float32)  # 1 second of silence
+                    sf.write(tmp_path, silence, 16000)
+                try:
+                    kwargs = {"path_or_hf_repo": self.model_repo}
+                    if self.language:
+                        kwargs["language"] = self.language
+                    mlx_whisper.transcribe(tmp_path, **kwargs)
+                finally:
+                    os.unlink(tmp_path)
+                self.model_loaded = True
+                elapsed = time.time() - start_time
+                print(f"Model loaded successfully in {elapsed:.2f}s")
+            except Exception as e:
+                print(f"Error preloading model: {e}")
 
     def unload_model(self):
-        """Unload model from memory to free RAM"""
+        """Mark model as unloaded. mlx-whisper manages its own caching,
+        but we track load state for status reporting."""
         with self.lock:
             if not self.model_loaded:
                 return
-
-            print("Unloading model to free RAM...")
-            self.model = None
+            print("Marking model as idle (mlx-whisper manages memory internally)")
             self.model_loaded = False
-            print("Model unloaded")
 
     def reset_unload_timer(self):
         """Reset the auto-unload timer"""
@@ -162,16 +155,22 @@ class TranscriptionDaemon:
         self.unload_timer.daemon = True
         self.unload_timer.start()
 
+    def _transcribe_file(self, audio_path):
+        """Run mlx_whisper.transcribe on an audio file."""
+        kwargs = {"path_or_hf_repo": self.model_repo}
+        if self.language:
+            kwargs["language"] = self.language
+        result = mlx_whisper.transcribe(audio_path, **kwargs)
+        self.model_loaded = True
+        return result.get("text", "").strip()
+
     def transcribe(self, audio_file):
         """Transcribe audio file"""
         try:
             with self.lock:
-                if not self.model_loaded:
-                    self._load_model_locked()
                 if self.unload_timer:
                     self.unload_timer.cancel()
-                result = self.model.transcribe(audio_path=audio_file)
-                transcription = result.get("text", "").strip()
+                transcription = self._transcribe_file(audio_file)
 
             self.last_request_time = time.time()
             self.reset_unload_timer()
@@ -180,13 +179,77 @@ class TranscriptionDaemon:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    # Known Whisper hallucination phrases (lowercased).
+    # These appear when the model is fed silence or noise.
+    HALLUCINATION_PHRASES = {
+        "you're going to be",
+        "you're going to",
+        "you're",
+        "thank you",
+        "thanks for watching",
+        "thank you for watching",
+        "please subscribe",
+        "like and subscribe",
+        "the end",
+        "bye",
+        "goodbye",
+        "subtitles by",
+        "translated by",
+        "amara.org",
+        "www.mooji.org",
+        "moffatts",
+    }
+
+    # Minimum RMS energy to attempt transcription (below this = silence)
+    SILENCE_RMS_THRESHOLD = 0.005
+
+    def _is_hallucination(self, text):
+        """Detect Whisper hallucination patterns."""
+        if not text:
+            return True
+
+        cleaned = text.strip().rstrip(".!?,").lower()
+
+        # Check against known hallucination phrases
+        if cleaned in self.HALLUCINATION_PHRASES:
+            return True
+
+        # Detect repeated segments: "Hello. Hello. Hello." → hallucination
+        # Split on sentence boundaries and check for repetition
+        import re
+        segments = [s.strip() for s in re.split(r'[.!?]+', cleaned) if s.strip()]
+        if len(segments) >= 2:
+            unique = set(segments)
+            if len(unique) == 1:
+                return True
+            # Mostly repeated (e.g. 4 out of 5 segments identical)
+            if len(segments) >= 3:
+                from collections import Counter
+                most_common_count = Counter(segments).most_common(1)[0][1]
+                if most_common_count / len(segments) >= 0.7:
+                    return True
+
+        return False
+
+    def _audio_rms(self, float_data):
+        """Compute RMS energy of float32 audio data."""
+        if len(float_data) == 0:
+            return 0.0
+        return float(np.sqrt(np.mean(float_data ** 2)))
+
     def transcribe_raw(self, audio_data, sample_rate):
-        """Transcribe raw audio data (write to temp file for MLX)"""
+        """Transcribe raw audio data (write to temp file for mlx-whisper)"""
         try:
             # Convert bytes to numpy array
             data = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
-            # Resample if needed (MLX Whisper expects 16kHz)
+            # Skip transcription if audio is too quiet (silence/noise)
+            rms = self._audio_rms(data)
+            if rms < self.SILENCE_RMS_THRESHOLD:
+                print(f"Skipping transcription: audio too quiet (RMS={rms:.6f})")
+                return {"success": True, "transcription": ""}
+
+            # Resample if needed (Whisper expects 16kHz)
             if sample_rate != 16000:
                 ratio = 16000 / sample_rate
                 new_length = int(len(data) * ratio)
@@ -194,19 +257,21 @@ class TranscriptionDaemon:
                     np.linspace(0, len(data), new_length), np.arange(len(data)), data
                 )
 
-            # Write to temporary file (MLX Whisper API uses file paths)
+            # Write to temporary file (mlx-whisper API uses file paths)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_path = tmp.name
                 sf.write(tmp_path, data, 16000)
 
             try:
                 with self.lock:
-                    if not self.model_loaded:
-                        self._load_model_locked()
                     if self.unload_timer:
                         self.unload_timer.cancel()
-                    result = self.model.transcribe(audio_path=tmp_path)
-                    transcription = result.get("text", "").strip()
+                    transcription = self._transcribe_file(tmp_path)
+
+                # Filter hallucinated output
+                if self._is_hallucination(transcription):
+                    print(f"Filtered hallucination: \"{transcription}\"")
+                    transcription = ""
 
                 self.last_request_time = time.time()
                 self.reset_unload_timer()
@@ -283,15 +348,14 @@ class TranscriptionDaemon:
                     "model_loaded": self.model_loaded,
                     "last_request": self.last_request_time,
                     "idle_timeout": self.idle_timeout,
-                    "backend": "mlx",
-                    "model": self.model_name,
-                    "quant": self.quant,
+                    "backend": "mlx-whisper",
+                    "model": self.model_repo,
                 }
                 response = json.dumps(status) + "\n"
                 conn.sendall(response.encode())
 
             elif command == "preload":
-                self.load_model()
+                self._preload_model()
                 response = json.dumps({"success": True, "model_loaded": self.model_loaded}) + "\n"
                 conn.sendall(response.encode())
 
@@ -338,7 +402,7 @@ class TranscriptionDaemon:
         with open(PID_FILE, "w") as f:
             f.write(str(os.getpid()))
 
-        print(f"Transcription daemon (MLX) listening on {SOCKET_PATH}")
+        print(f"Transcription daemon (mlx-whisper) listening on {SOCKET_PATH}")
         print(f"PID: {os.getpid()}")
 
         # Use thread pool to limit concurrent connections

@@ -1,6 +1,6 @@
 # TextEcho
 
-Native macOS menu bar app for voice-to-text dictation. Uses MLX Whisper for local Apple Silicon transcription and optional local LLM processing via llama-cpp-python. Swift UI with embedded Python daemons — no cloud, no network, fully offline.
+Native macOS menu bar app for voice-to-text dictation. Uses mlx-whisper (large-v3-turbo) for local Apple Silicon transcription and optional local LLM processing via llama-cpp-python. Swift UI with embedded Python daemons — no cloud, no network, fully offline.
 
 ### Documentation Index
 
@@ -92,9 +92,10 @@ Python Daemons (bundled venv)
 - **macOS only** — Apple Silicon (ARM64)
 - **Python 3.12** required — 3.13+ breaks tiktoken (Rust/pyo3 segfault)
 - **Do NOT auto-install deps** — no sudo, no pip install, no downloads
-- Delete `.venv-bundle-cache` to force venv rebuild
+- Delete `.venv-bundle-cache` to force venv rebuild (required after switching whisper library)
 - Unix sockets for IPC (not HTTP), JSON protocol with newline delimiters
 - Lazy model loading, auto-unload after idle timeout
+- Models are HuggingFace repo IDs (e.g. `mlx-community/whisper-large-v3-turbo`) — downloaded and cached automatically
 
 ## Known Gotchas
 

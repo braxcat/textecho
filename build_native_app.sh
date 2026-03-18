@@ -92,7 +92,7 @@ if [ ! -x "$VENV_CACHE_DIR/bin/python3" ]; then
     rm -rf "$VENV_CACHE_DIR"
     "$PYTHON_BIN" -m venv "$VENV_CACHE_DIR"
     "$VENV_CACHE_DIR/bin/python3" -m pip install --upgrade pip
-    "$VENV_CACHE_DIR/bin/python3" -m pip install numpy soundfile lightning-whisper-mlx
+    "$VENV_CACHE_DIR/bin/python3" -m pip install numpy soundfile mlx-whisper
 else
     echo "==> Reusing cached Python venv..."
 fi

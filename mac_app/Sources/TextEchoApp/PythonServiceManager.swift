@@ -57,7 +57,7 @@ final class PythonServiceManager {
         process.arguments = ["-u", scriptPath]
         var env = ProcessInfo.processInfo.environment
 
-        // Ensure Homebrew paths are in PATH so ffmpeg (needed by lightning-whisper-mlx) is found.
+        // Ensure Homebrew paths are in PATH so ffmpeg (needed by mlx-whisper) is found.
         // .app bundles launched from Finder have a minimal PATH that excludes Homebrew.
         let extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
         let currentPath = env["PATH"] ?? "/usr/bin:/bin"

@@ -10,6 +10,16 @@
 - Removed batch_size and quantization config — mlx-whisper manages this internally
 - Updated pyproject.toml, build script, and PythonServiceManager
 
+### Transcription UX
+- Empty transcriptions (silence/noise filtered by daemon) now hide the overlay instead of pasting empty string
+- Added transcription text and error logging for debugging
+
+### Stream Deck Pedal (WIP)
+- Added `StreamDeckPedalMonitor` — IOKit HID integration for Elgato Stream Deck Pedal push-to-talk
+- Configurable pedal position (left/center/right) via `pedal_position` config
+- Device seize for exclusive access (no Elgato software needed)
+- Not yet confirmed working — needs testing with physical hardware
+
 ### Config Changes
 - `mlx_model` / `mlx_model_fast` / `mlx_model_accurate` now accept HuggingFace repo IDs
 - Removed: `mlx_batch_size`, `mlx_quant`, and per-mode variants

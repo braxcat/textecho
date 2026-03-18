@@ -19,6 +19,16 @@
 - Preload now uses dummy silent WAV to trigger model download/cache
 - Preserved all existing features: hallucination filtering, silence detection, IPC protocol, idle unload
 
+### Transcription Logging
+- Added empty transcription handling — hides overlay instead of pasting empty string
+- Added success/error logging to transcription result handler
+
+### Stream Deck Pedal (WIP, committed from prior uncommitted work)
+- StreamDeckPedalMonitor.swift: IOKit HID for Elgato pedal (VID 0x0FD9, PID 0x0086)
+- AppConfig: pedal_enabled, pedal_position config fields
+- AppState: wired pedal into recording flow
+- Not yet tested with physical hardware
+
 ### Deployment
 - Created feature branch `feature/mlx-whisper-turbo`, pushed to GitHub
 - Merged via PR #1, cleaned up branch

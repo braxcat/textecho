@@ -193,10 +193,10 @@ struct OverlayView: View {
                 .shadow(color: CyberColors.magenta.opacity(0.7), radius: 6)
         case .processing:
             Circle()
-                .fill(CyberColors.cyan)
+                .fill(CyberColors.purple)
                 .frame(width: 8, height: 8)
                 .opacity(glowIntensity)
-                .shadow(color: CyberColors.cyan.opacity(0.5), radius: 4)
+                .shadow(color: CyberColors.purple.opacity(0.5), radius: 4)
         case .downloading:
             Circle()
                 .fill(CyberColors.amber)
@@ -264,11 +264,11 @@ struct OverlayView: View {
     private var accentColor: Color {
         switch viewModel.state {
         case .recording: return CyberColors.magenta
-        case .processing: return CyberColors.cyan
+        case .processing: return CyberColors.purple
         case .downloading: return CyberColors.amber
         case .result(let isLLM): return isLLM ? CyberColors.purple : CyberColors.green
         case .error: return CyberColors.red
-        case .hidden: return CyberColors.cyan
+        case .hidden: return CyberColors.green
         }
     }
 
@@ -368,13 +368,13 @@ struct ScannerBarView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(
                     LinearGradient(
-                        colors: [.clear, CyberColors.cyan.opacity(0.8), CyberColors.cyan, CyberColors.cyan.opacity(0.8), .clear],
+                        colors: [.clear, CyberColors.purple.opacity(0.8), CyberColors.purple, CyberColors.purple.opacity(0.8), .clear],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
                 .frame(width: barWidth)
-                .shadow(color: CyberColors.cyan.opacity(0.6), radius: 8)
+                .shadow(color: CyberColors.purple.opacity(0.6), radius: 8)
                 .offset(x: -barWidth + travel * offset)
                 .onAppear {
                     withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {

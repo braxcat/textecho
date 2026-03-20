@@ -27,11 +27,24 @@ actor WhisperKitTranscriber: Transcriber {
         let description: String
     }
 
+    /// Model names must match exact directory names in argmaxinc/whisperkit-coreml HF repo.
+    /// WhisperKit uses these as glob patterns — underscore before "turbo" is critical.
     static let availableModelList: [ModelInfo] = [
-        ModelInfo(name: "large-v3-turbo", displayName: "Large V3 Turbo", size: "~1.6 GB", description: "Fast, near-best quality (Recommended)"),
-        ModelInfo(name: "large-v3", displayName: "Large V3", size: "~3 GB", description: "Highest quality, slower"),
-        ModelInfo(name: "base.en", displayName: "Base (English)", size: "~140 MB", description: "Very fast, good enough for clear speech"),
+        ModelInfo(name: "openai_whisper-large-v3_turbo", displayName: "Large V3 Turbo", size: "~1.6 GB", description: "Fast, near-best quality (Recommended)"),
+        ModelInfo(name: "openai_whisper-large-v3", displayName: "Large V3", size: "~3 GB", description: "Highest quality, slower"),
+        ModelInfo(name: "openai_whisper-base.en", displayName: "Base (English)", size: "~140 MB", description: "Very fast, good enough for clear speech"),
     ]
+
+    /// Migrates old short model names to full HF repo directory names.
+    private static func migrateModelName(_ name: String) -> String {
+        switch name {
+        case "large-v3-turbo": return "openai_whisper-large-v3_turbo"
+        case "large-v3": return "openai_whisper-large-v3"
+        case "base.en": return "openai_whisper-base.en"
+        case "base": return "openai_whisper-base"
+        default: return name
+        }
+    }
 
     // MARK: - Hallucination filter
 
@@ -59,8 +72,8 @@ actor WhisperKitTranscriber: Transcriber {
 
     // MARK: - Init
 
-    init(modelName: String = "large-v3-turbo", idleTimeout: Int = 3600) {
-        self.modelName = modelName
+    init(modelName: String = "openai_whisper-large-v3_turbo", idleTimeout: Int = 3600) {
+        self.modelName = Self.migrateModelName(modelName)
         self.idleTimeout = TimeInterval(max(60, min(idleTimeout, 86400)))
     }
 
@@ -132,7 +145,7 @@ actor WhisperKitTranscriber: Transcriber {
 
     func switchModel(_ newModelName: String) async throws {
         // Validate model name: only allow safe characters
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-./"))
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._/"))
         guard newModelName.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
             throw TranscriberError.invalidModelName
         }
@@ -140,7 +153,7 @@ actor WhisperKitTranscriber: Transcriber {
         idleTask?.cancel()
         whisperKit = nil
         _isModelLoaded = false
-        modelName = newModelName
+        modelName = Self.migrateModelName(newModelName)
         try await initWhisperKit()
     }
 
@@ -170,19 +183,20 @@ actor WhisperKitTranscriber: Transcriber {
         return dirs
     }
 
-    /// Maps our short model names to the HF Hub directory prefix patterns.
-    /// WhisperKit uses "openai_whisper-" prefix in the repo.
+    /// Checks if a directory name matches a model name.
+    /// Handles both full names (openai_whisper-large-v3_turbo) and legacy short names (large-v3-turbo).
     private nonisolated static func matchesModel(_ dirName: String, _ modelName: String) -> Bool {
-        // Exact match: openai_whisper-large-v3-turbo
+        // Direct match (full HF directory name)
+        if dirName == modelName { return true }
+        // Prefix match (handles size suffixes like _954MB)
+        if dirName.hasPrefix(modelName) { return true }
+        // Legacy short name support: prepend openai_whisper- prefix
+        let migrated = migrateModelName(modelName)
+        if dirName == migrated { return true }
+        if dirName.hasPrefix(migrated) { return true }
+        // Also try with openai_whisper- prefix directly
         if dirName == "openai_whisper-\(modelName)" { return true }
-        // With underscores instead of hyphens in turbo: openai_whisper-large-v3_turbo
-        let underscored = modelName.replacingOccurrences(of: "-turbo", with: "_turbo")
-        if dirName == "openai_whisper-\(underscored)" { return true }
-        // With size suffix: openai_whisper-large-v3-turbo_954MB
         if dirName.hasPrefix("openai_whisper-\(modelName)") { return true }
-        if dirName.hasPrefix("openai_whisper-\(underscored)") { return true }
-        // For base.en: openai_whisper-base.en or openai_whisper-base
-        if dirName == "openai_whisper-\(modelName.replacingOccurrences(of: ".en", with: ""))" { return true }
         return false
     }
 

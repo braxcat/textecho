@@ -63,7 +63,7 @@ final class AppConfig {
         llmSocket: "/tmp/textecho_llm.sock",
         pedalEnabled: false,
         pedalPosition: 1,
-        whisperModel: "large-v3-turbo",
+        whisperModel: "openai_whisper-large-v3_turbo",
         whisperIdleTimeout: 3600,
         inputDeviceUID: ""
     )

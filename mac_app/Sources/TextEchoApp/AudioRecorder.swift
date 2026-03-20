@@ -142,7 +142,16 @@ final class AudioRecorder {
         waveformLevels = Array(repeating: 0.0, count: waveformWindow)
         os_unfair_lock_unlock(lock)
 
-        // Ensure clean state: remove any leftover tap, then prepare the engine
+        // Defer engine start to the next run loop cycle.
+        // IOHIDDevice callbacks run in a context that can block AVAudioEngine
+        // from receiving audio data if the engine is started synchronously.
+        DispatchQueue.main.async { [self] in
+            startEngine(sampleRate: sampleRate)
+        }
+    }
+
+    private func startEngine(sampleRate: Double) {
+        // Ensure clean state
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         engine.reset()
@@ -190,6 +199,7 @@ final class AudioRecorder {
 
         do {
             try engine.start()
+            AppLogger.shared.info("AudioRecorder: engine started successfully")
         } catch {
             AppLogger.shared.error("Failed to start audio engine: \(error)")
         }

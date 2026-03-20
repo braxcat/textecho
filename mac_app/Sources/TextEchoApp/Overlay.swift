@@ -120,14 +120,15 @@ struct OverlayView: View {
 
                     Spacer()
 
-                    // Logo
+                    // Logo: silver TEXT + neon green ECHO
                     HStack(spacing: 3) {
                         Text("TEXT")
                             .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.35))
+                            .foregroundColor(Color(white: 0.7))
                         Text("ECHO")
                             .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundColor(CyberColors.green.opacity(0.6))
+                            .foregroundColor(CyberColors.green.opacity(0.8))
+                            .shadow(color: CyberColors.green.opacity(0.3), radius: 4)
                     }
                     .tracking(1.5)
                 }
@@ -135,7 +136,7 @@ struct OverlayView: View {
                 // Waveform (recording state)
                 if case .recording = viewModel.state {
                     CyberWaveformView(levels: viewModel.waveform)
-                        .frame(height: 48)
+                        .frame(height: 64)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
@@ -281,9 +282,9 @@ struct OverlayView: View {
 
     private var resultTextColor: Color {
         switch viewModel.state {
-        case .result(let isLLM): return isLLM ? CyberColors.purple.opacity(0.9) : CyberColors.cyan.opacity(0.9)
+        case .result(let isLLM): return isLLM ? CyberColors.purple.opacity(0.9) : CyberColors.green.opacity(0.9)
         case .error: return CyberColors.red.opacity(0.9)
-        default: return CyberColors.cyan.opacity(0.9)
+        default: return CyberColors.green.opacity(0.9)
         }
     }
 
@@ -314,10 +315,10 @@ struct CyberWaveformView: View {
                 let isActive = level >= silenceThreshold
                 let barColor = barGradient(index: index, active: isActive)
 
-                RoundedRectangle(cornerRadius: 1.5)
+                RoundedRectangle(cornerRadius: 2)
                     .fill(barColor)
-                    .frame(width: 5, height: barHeight(level: level, active: isActive))
-                    .shadow(color: isActive ? CyberColors.cyan.opacity(0.4) : .clear, radius: 3)
+                    .frame(width: 6, height: barHeight(level: level, active: isActive))
+                    .shadow(color: isActive ? CyberColors.green.opacity(0.5) : .clear, radius: 4)
                     .animation(.easeOut(duration: 0.06), value: level)
             }
         }
@@ -325,13 +326,14 @@ struct CyberWaveformView: View {
 
     private func barGradient(index: Int, active: Bool) -> LinearGradient {
         let progress = Double(index) / Double(max(levels.count - 1, 1))
-        let startColor = active ? CyberColors.cyan : CyberColors.cyan.opacity(0.15)
-        let endColor = active ? CyberColors.magenta : CyberColors.magenta.opacity(0.1)
+        // Magenta (left) → Neon green (right)
+        let startColor = active ? CyberColors.magenta : CyberColors.magenta.opacity(0.1)
+        let endColor = active ? CyberColors.green : CyberColors.green.opacity(0.1)
 
         return LinearGradient(
             colors: [
                 interpolateColor(startColor, endColor, progress),
-                interpolateColor(startColor, endColor, progress).opacity(active ? 0.7 : 0.1)
+                interpolateColor(startColor, endColor, progress).opacity(active ? 0.8 : 0.1)
             ],
             startPoint: .bottom,
             endPoint: .top
@@ -344,9 +346,9 @@ struct CyberWaveformView: View {
     }
 
     private func barHeight(level: Double, active: Bool) -> CGFloat {
-        guard active else { return 2 }
-        let maxHeight: CGFloat = 44
-        let minActive: CGFloat = 4
+        guard active else { return 3 }
+        let maxHeight: CGFloat = 60
+        let minActive: CGFloat = 6
         let normalized = min(max(level, 0.0), 1.0)
         let scaled = pow(normalized, 0.5) // more responsive to quiet sounds
         return minActive + (maxHeight - minActive) * CGFloat(scaled)

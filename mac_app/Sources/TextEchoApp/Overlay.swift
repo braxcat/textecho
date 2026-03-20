@@ -85,7 +85,20 @@ struct OverlayView: View {
     @State private var scanOffset: CGFloat = 0.0
     @State private var glowIntensity: Double = 0.4
 
-    private let width: CGFloat = 380
+    private let width: CGFloat = 420
+
+    /// Friendly model name for display
+    private static var modelBadge: String {
+        let configName = AppConfig.shared.model.whisperModel
+        if let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == configName }) {
+            return info.displayName.uppercased()
+        }
+        // Fallback: strip prefix and clean up
+        return configName
+            .replacingOccurrences(of: "openai_whisper-", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+            .uppercased()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -107,11 +120,19 @@ struct OverlayView: View {
 
                     Spacer()
 
-                    // Subtle branding
-                    Text("TEXTECHO")
-                        .font(.system(size: 8, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.15))
-                        .tracking(2)
+                    // Model badge + branding
+                    HStack(spacing: 6) {
+                        if case .recording = viewModel.state {
+                            Text(Self.modelBadge)
+                                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                                .foregroundColor(CyberColors.cyan.opacity(0.4))
+                                .tracking(0.5)
+                        }
+                        Text("TEXTECHO")
+                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.15))
+                            .tracking(2)
+                    }
                 }
 
                 // Waveform (recording state)
@@ -129,12 +150,12 @@ struct OverlayView: View {
                         .transition(.opacity)
                 }
 
-                // Result text
+                // Result text — expands to show full transcription
                 if !viewModel.resultText.isEmpty {
                     Text(viewModel.resultText)
                         .font(.system(size: 12, weight: .regular, design: .monospaced))
                         .foregroundColor(resultTextColor)
-                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
@@ -142,6 +163,7 @@ struct OverlayView: View {
             .padding(.vertical, 12)
         }
         .frame(width: width, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .background(backgroundView)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(borderOverlay)
@@ -388,7 +410,9 @@ final class OverlayWindowController {
         DispatchQueue.main.async {
             self.viewModel.showResult(text, isLLM: isLLM)
             self.show()
-            self.autoHide(after: 3.0)
+            // Scale display time: 3s base + 1s per 50 chars, max 8s
+            let displayTime = min(3.0 + Double(text.count) / 50.0, 8.0)
+            self.autoHide(after: displayTime)
         }
     }
 
@@ -443,7 +467,10 @@ final class OverlayWindowController {
 
     private func setupWindow() {
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
-        hostingView.frame = NSRect(x: 0, y: 0, width: 380, height: 140)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 420, height: 200)
+        // Allow SwiftUI to resize the hosting view dynamically
+        hostingView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        hostingView.setContentCompressionResistancePriority(.required, for: .vertical)
 
         let window = NSWindow(
             contentRect: hostingView.frame,

@@ -416,8 +416,8 @@ final class OverlayWindowController {
         DispatchQueue.main.async {
             self.viewModel.showResult(text, isLLM: isLLM)
             self.show()
-            // Scale display time: 3s base + 1s per 50 chars, max 8s
-            let displayTime = min(3.0 + Double(text.count) / 50.0, 8.0)
+            // Quick flash: 1.5s base + 0.5s per 50 chars, max 4s
+            let displayTime = min(1.5 + Double(text.count) / 100.0, 4.0)
             self.autoHide(after: displayTime)
         }
     }

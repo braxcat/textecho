@@ -1,179 +1,200 @@
 # TextEcho
 
-Voice-to-text dictation tool for macOS with automatic silence detection and native WhisperKit transcription. Runs entirely on Apple Silicon — no cloud, no Python, fully offline after first model download.
+Voice-to-text dictation for macOS with native WhisperKit transcription on Apple Silicon. Hold a button, speak, release — your words appear as text. No cloud, no Python, fully offline after first model download.
 
 **Author:** Braxton Bragg
 
+```
+┌─────────────────────────────────────────────────────┐
+│ ╔══════════════════════════════════════════════════╗ │
+│ ║  ● RECORDING              TEXT ECHO             ║ │
+│ ║                                                  ║ │
+│ ║  ▐█▌▐██▌▐█▌▐▌▐██▌▐███▌▐█▌▐██▌▐█▌▐▌▐██▌▐███▌  ║ │
+│ ║                                                  ║ │
+│ ║          WHISPER // LARGE V3 TURBO               ║ │
+│ ╚══════════════════════════════════════════════════╝ │
+│                                                     │
+│  Pink recording → Purple processing → Green result  │
+│  Cyberpunk overlay follows your cursor              │
+└─────────────────────────────────────────────────────┘
+```
+
 ## Features
 
-- Native WhisperKit transcription (Apple Neural Engine via Core ML)
-- Real-time audio recording with waveform visualization
-- Fast model loading with auto-unload after idle
-- Automatic text pasting into active window
-- Middle-click or Ctrl+D trigger (hold to record, release to transcribe)
-- Floating overlay with recording status and waveform
-- Menu bar app with settings, help, and log viewer
-- Stream Deck Pedal push-to-talk support
-- Auto-start on login via launchd
-- Optional local LLM processing (build with `--with-llm`)
+- **Native WhisperKit** — transcription via Apple Neural Engine (Core ML), ~1.6GB RAM
+- **Push-to-talk** — middle-click, Ctrl+D, or Stream Deck Pedal
+- **Cyberpunk overlay** — pink→purple→neon green states, waveform visualization
+- **Stream Deck Pedal** — center=dictate, left=paste, right=enter (auto-detect, no Elgato software)
+- **Instant paste** — transcribed text goes straight to your cursor via clipboard
+- **Fully offline** — no cloud, no accounts, audio never leaves your Mac
+- **Fast model loading** — lazy load on first use, auto-unload after idle
+- **Menu bar app** — settings, help, log viewer, setup wizard
+- **Optional LLM** — local llama-cpp-python processing (build with `--with-llm`)
 
 ## Requirements
 
 - macOS 14+ (Apple Silicon)
-- Microphone access
-- Accessibility permissions
-- Internet connection for first-time model download (~1.6GB)
+- Microphone + Accessibility permissions
+- Internet for first model download (~1.6GB)
 
-## Installation
+## Quick Start
 
-### Build from source
+```bash
+# Build
+./build_native_app.sh
 
+# Deploy + launch
+./rebuild.sh
+```
+
+Or step by step:
 ```bash
 ./build_native_app.sh
+cp -R dist/TextEcho.app /Applications/
+open /Applications/TextEcho.app
 ```
 
-Run directly:
-```bash
-open dist/TextEcho.app
-```
+Grant **Accessibility** and **Microphone** in System Settings when prompted. First launch downloads the transcription model.
 
-Or deploy to Applications:
-```bash
-cp -R dist/TextEcho.app /Applications/ && open /Applications/TextEcho.app
-```
+## Scripts
 
-### Build with LLM support (optional)
-
-```bash
-PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh --with-llm
-```
-
-Requires Python 3.12 (NOT 3.13+). Adds local LLM processing via llama-cpp-python.
-
-### Create DMG (optional)
-
-```bash
-./build_native_dmg.sh
-# Creates TextEcho.dmg — drag to Applications to install
-```
-
-### Grant macOS permissions
-
-Go to **System Settings > Privacy & Security** and grant:
-
-| Permission | What to add | Why |
-|------------|-------------|-----|
-| **Accessibility** | `TextEcho.app` | Input monitoring + paste |
-| **Microphone** | Allow when prompted | Audio recording |
+| Script | What it does |
+|--------|-------------|
+| `./rebuild.sh` | Pull + build + deploy + launch (one command) |
+| `./rebuild.sh --clean` | Full clean rebuild |
+| `./rebuild.sh --uninstall` | Wipe everything, then fresh rebuild |
+| `./uninstall.sh` | Remove app, config, models, logs, everything |
+| `./build_native_app.sh` | Build only (no deploy) |
+| `./build_native_app.sh --with-llm` | Build with optional LLM module |
 
 ## Usage
 
 | Action | How |
 |--------|-----|
-| **Transcribe** | Middle-click and hold > speak > release |
-| **Transcribe (keyboard)** | Ctrl+D (hold to record) |
-| **LLM prompt (keyboard)** | Ctrl+Shift+D (requires LLM build) |
+| **Dictate (mouse)** | Middle-click hold → speak → release |
+| **Dictate (keyboard)** | Ctrl+D hold → speak → release |
+| **Dictate (pedal)** | Center pedal hold → speak → release |
+| **Paste (pedal)** | Left pedal |
+| **Enter (pedal)** | Right pedal |
+| **LLM prompt** | Ctrl+Shift+D (requires `--with-llm` build) |
 | **Save to register** | Cmd+Option+1-9 |
 | **Clear registers** | Cmd+Option+0 |
 | **Settings** | Cmd+Option+Space |
-| **Cancel recording** | ESC |
-
-**First use:** Model downloads (~1.6GB) and loads on first launch. Subsequent uses are instant.
+| **Cancel** | ESC |
 
 ## Architecture
 
 ```
-TextEcho.app (Swift)
-├── InputMonitor (CGEventTap → hotkeys)
-├── AudioRecorder (AVAudioEngine → PCM)
-├── WhisperKitTranscriber (Core ML → Neural Engine)
-├── Overlay (SwiftUI floating window)
-└── TextInjector (clipboard + Cmd+V paste)
-
-Optional (--with-llm):
-└── llm_daemon.py (llama-cpp-python, Unix socket IPC)
+                    ┌─────────────────────────────────────┐
+                    │         TextEcho.app (Swift)         │
+                    │                                     │
+  Hotkey/Mouse/     │  AppMain → AppState (orchestrator)  │
+  Pedal input  ───► │      │         │          │         │
+                    │  InputMonitor  │    StreamDeck       │
+                    │  (CGEventTap)  │    PedalMonitor     │
+                    │                │    (IOKit HID)      │
+                    │         AudioRecorder                │
+                    │         (AVAudioEngine)              │
+                    │                │                     │
+                    │                ▼                     │
+                    │    WhisperKitTranscriber (actor)     │
+                    │    ┌────────────────────────┐       │
+                    │    │  Core ML / Neural Engine│       │
+                    │    │  Whisper large-v3-turbo │       │
+                    │    └────────────────────────┘       │
+                    │                │                     │
+                    │                ▼                     │
+                    │         TextInjector                 │
+  Text pasted  ◄─── │    (clipboard + Cmd+V paste)        │
+  into app          │                                     │
+                    │         Overlay (SwiftUI)            │
+                    │    ┌────────────────────────┐       │
+                    │    │ ● RECORDING   TEXTECHO │       │
+                    │    │ ▐█▌▐██▌▐█▌▐▌▐██▌▐███▌ │       │
+                    │    │   WHISPER // LG V3 TURBO│      │
+                    │    └────────────────────────┘       │
+                    │                                     │
+                    │    Optional: llm_daemon.py           │
+                    │    (Unix socket IPC, --with-llm)     │
+                    └─────────────────────────────────────┘
 ```
 
-Transcription is fully native — no Python, no IPC, no temp files. Audio goes directly from AVAudioEngine to WhisperKit as a float array.
+### Data Flow
+
+1. **Input** — CGEventTap (keyboard/mouse) or IOKit HID (pedal) triggers recording
+2. **Capture** — AVAudioEngine records PCM Int16 audio via tap callback
+3. **Transcribe** — WhisperKitTranscriber actor converts to Float32, resamples to 16kHz, runs inference on Neural Engine
+4. **Filter** — RMS silence check, hallucination filter (17 known phrases + repeat detection)
+5. **Paste** — TextInjector writes to clipboard, sends Cmd+V keystroke to active app
+6. **Display** — Cyberpunk overlay shows state: pink recording → purple processing → neon green result
+
+### Key Design Decisions
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Transcription | WhisperKit (native Swift) | Neural Engine, no Python, ~1.6GB vs ~3GB RAM |
+| Concurrency | Swift actor | No shared mutable state, no data races |
+| Audio start | DispatchQueue.main.async | IOKit HID callbacks block AVAudioEngine if started synchronously |
+| Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
+| LLM | Optional Python daemon | Rarely used, not worth native port complexity |
+| Pedal | IOKit HID (shared mode) | No kernel extension, no Elgato software needed |
 
 ## Transcription Models
 
 | Model | Download | RAM | Speed | Quality |
 |-------|----------|-----|-------|---------|
-| **large-v3-turbo** (default) | ~1.6GB | ~1.6GB | Fast | Near-best |
-| large-v3 | ~3GB | ~3.5GB | Slower | Best |
-| base.en | ~140MB | ~180MB | Very fast | Good for clear speech |
+| **Large V3 Turbo** (default) | ~1.6GB | ~1.6GB | Fast | Near-best |
+| Large V3 | ~3GB | ~3.5GB | Slower | Best |
+| Base (English) | ~140MB | ~180MB | Very fast | Good for clear speech |
 
-Select your model during first-launch setup or change it anytime in Settings.
+Models download from HuggingFace on first use and cache at `~/Documents/huggingface/models/`. Select in Setup Wizard or Settings.
 
 ## Configuration
 
-Edit `~/.textecho_config` (JSON):
+`~/.textecho_config` (JSON):
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `trigger_button` | Mouse button (0=left, 1=right, 2=middle) | `2` |
-| `dictation_keycode` | Keyboard trigger keycode (2=D) | `2` |
-| `silence_duration` | Seconds of silence before auto-stop | `2.5` |
-| `silence_threshold` | Audio level threshold for silence detection | `0.015` |
-| `sample_rate` | Audio sample rate in Hz | `16000` |
-| `whisper_model` | WhisperKit model name | `large-v3-turbo` |
-| `whisper_idle_timeout` | Seconds before model unloads from RAM | `3600` |
-| `llm_enabled` | Enable LLM processing (requires --with-llm build) | `false` |
-| `llm_model_path` | Path to GGUF model file | `""` |
-| `show_menu_bar_icon` | Show icon in menu bar | `true` |
+| Option | Default | Description |
+|--------|---------|-------------|
+| `trigger_button` | `2` | Mouse button (0=left, 1=right, 2=middle) |
+| `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
+| `silence_duration` | `2.5` | Seconds of silence before auto-stop |
+| `silence_threshold` | `0.015` | Audio level for silence detection |
+| `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
+| `whisper_idle_timeout` | `3600` | Seconds before model unloads from RAM |
+| `pedal_enabled` | `false` | Enable Stream Deck Pedal |
+| `pedal_position` | `1` | Push-to-talk pedal (0=left, 1=center, 2=right) |
+
+## Stream Deck Pedal
+
+Elgato Stream Deck Pedal works out of the box via IOKit HID — no Elgato software needed (actually, quit it first).
+
+| Pedal | Action |
+|-------|--------|
+| Left | Paste (Cmd+V) |
+| Center | Push-to-talk (hold to record) |
+| Right | Enter |
+
+Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-reconnects on unplug/replug.
 
 ## Troubleshooting
 
-### Transcription not working
-1. Check that Accessibility + Microphone permissions are granted
-2. Open **Logs** from the menu bar and check for errors
-3. Restart the app after changing permissions
-
-### Model not downloading
-- Check internet connection — the first launch downloads the Core ML model
-- Models are cached at `~/Library/Caches/com.argmaxinc.WhisperKit/`
-
-### Auto-paste not working
-- Ensure `TextEcho.app` is in **Accessibility** permissions
-- Restart the app after adding permissions
-
-### Two mic icons in menu bar
-- Kill duplicates: `pkill -f TextEcho`
-- Relaunch the app
-
-### Permissions lost after rebuild
-- Ad-hoc code signing changes every rebuild — re-grant Accessibility in System Settings
-
-## LLM Setup (Optional)
-
-1. Build with LLM support:
-   ```bash
-   PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh --with-llm
-   ```
-
-2. Download a GGUF model (Llama 3.2 3B recommended)
-
-3. Configure in Settings or `~/.textecho_config`:
-   ```json
-   {
-     "llm_enabled": true,
-     "llm_model_path": "/path/to/model.gguf"
-   }
-   ```
-
-4. Restart TextEcho. Use Ctrl+Shift+D to record with LLM processing.
+| Problem | Fix |
+|---------|-----|
+| No transcription | Check Accessibility + Microphone in System Settings |
+| Audio too quiet (RMS=0) | Reset mic permission: `tccutil reset Microphone com.textecho.app`, relaunch |
+| Pedal not detected | Quit Elgato Stream Deck app, unplug/replug pedal |
+| Permissions lost after rebuild | Re-grant in System Settings (ad-hoc signing changes signature) |
+| Model not downloading | Check internet, try `./rebuild.sh --clean` |
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and transcription flow |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and data flow |
 | [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history |
 | [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory |
 | [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan and future work |
 | [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Security and permissions |
-| [claude_docs/TESTING.md](claude_docs/TESTING.md) | Test strategy |
 
 ## License
 

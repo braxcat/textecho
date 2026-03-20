@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-03-20 — UX Polish & Cyberpunk Overlay
+
+### Stream Deck Pedal
+- **Per-pedal actions:** center=push-to-talk, left=paste (Cmd+V), right=enter
+- **Auto-detect timer:** 3-second periodic scan — no unplug/replug needed after launch
+- **Auto-reconnect:** pedal re-detected automatically after disconnect
+- **Settings UI:** pedal enable toggle + position picker, persists across saves
+
+### Overlay Redesign
+- **Cyberpunk aesthetic:** deep blue-black background, glassmorphic texture
+- **Color flow:** Pink (recording) → Electric Purple (processing) → Neon Green (result)
+- **Matrix green (#33FF33):** result text, model badge, ECHO logo
+- **Waveform:** magenta-to-green gradient, taller bars (60pt), green glow
+- **Logo:** silver TEXT + neon green ECHO
+- **Model badge:** "WHISPER // LARGE V3 TURBO" at bottom
+- **Smart display time:** 1.5s base + scales with text length, max 4s
+- **Full text visible:** no line limit on transcription result
+- **Reliability:** proper auto-hide cancellation, orderFrontRegardless(), canJoinAllSpaces
+
+### Setup Wizard
+- **6-step walkthrough:** Welcome → Accessibility → Microphone → Model → Pedal → Ready
+- **Progress dots** showing current step
+- **Back button** on all steps
+- **Pedal setup step** with auto-detection and skip option
+- **Restart button** on accessibility step
+
+### Scripts & Config
+- `rebuild.sh` — one-command pull + build + deploy + launch
+- `rebuild.sh --clean` / `--uninstall` variants
+- `build_native_app.sh --clean` flag for guaranteed fresh builds
+- Updated `uninstall.sh` — removes WhisperKit models + registers
+- Model name migration: old config names auto-fix on load
+- Fixed model cache detection (HuggingFace Hub path, not Library/Caches)
+- Fixed model names to match HF repo directories (underscore before turbo)
+
+### Audio Engine
+- Deferred engine start via DispatchQueue.main.async (fixes 0-byte capture from pedal)
+- engine.reset() between recordings for clean state
+
 ## 2026-03-20 — Native WhisperKit Migration
 
 ### Transcription Engine

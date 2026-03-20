@@ -70,7 +70,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 | `trigger_button` | `2` | Mouse button (2=middle) |
 | `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
 | `silence_duration` | `2.5` | Seconds before auto-stop |
-| `whisper_model` | `large-v3-turbo` | WhisperKit model name |
+| `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
 | `whisper_idle_timeout` | `3600` | Seconds before model unloads from RAM |
 | `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
 | `llm_model_path` | `""` | Path to GGUF model file |
@@ -95,7 +95,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 - **Python 3.12** only needed if building with `--with-llm`
 - **Do NOT auto-install deps** — no sudo, no pip install, no downloads
 - Lazy model loading, auto-unload after idle timeout
-- WhisperKit models cached at `~/Library/Caches/com.argmaxinc.WhisperKit/`
+- WhisperKit models cached at `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/`
 - All transcription runs via actor isolation (no shared mutable state)
 - CGEventTap callbacks must return fast — all async work dispatched off main thread
 

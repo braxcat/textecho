@@ -28,27 +28,41 @@
 - Configurable system prompt, temperature, repeat penalty, top-p/top-k
 - Reasoning tag stripping (<think>/<reasoning> blocks)
 
-## Native Swift Menu Bar UI
+## Cyberpunk Overlay UI
 - Floating overlay follows cursor during recording
-- Real-time waveform visualization (40-bar RMS display)
-- Tokyo Night color theme
-- Recording (red), Processing (yellow), Downloading (blue), Result (green/purple), Error states
-- Auto-hide after result display
+- Real-time waveform visualization (40-bar RMS, magenta→neon green gradient)
+- Cyberpunk color flow: Pink recording → Electric Purple processing → Neon Green result
+- Silver TEXT + neon green ECHO logo
+- Model badge: "WHISPER // LARGE V3 TURBO" at bottom
+- Full transcription text visible (no line limit, auto-expands)
+- Smart auto-hide: 1.5s base + scales with text length, max 4s
+- Glassmorphic dark background with accent glow borders
+- Animated scanner bar during processing
+- Pulsing recording indicator
+
+## Stream Deck Pedal
+- Elgato Stream Deck Pedal via IOKit HID (shared mode, no Elgato software needed)
+- Per-pedal actions: center=push-to-talk, left=paste (Cmd+V), right=enter
+- 3-second auto-detect timer — no unplug/replug needed
+- Auto-reconnect after disconnect
+- Configurable push-to-talk pedal position (left/center/right)
 
 ## Setup Wizard
-- First-launch guided setup
-- Accessibility permission check + direct link to System Settings
-- Microphone permission check + request
+- 6-step walkthrough: Welcome → Accessibility → Microphone → Model → Pedal → Ready
+- Progress dots showing current step with back navigation
+- Accessibility + microphone permission checks with direct System Settings links
 - Model picker with 3 options (size, speed, quality comparison)
-- Recommended model pre-selected with badge
-- Shows cached/not-cached status per model
-- Hotkey reference on completion
+- Recommended model pre-selected with cached/not-cached badges
+- Pedal setup step with auto-detection and skip option
+- Restart button for permission changes
+- Re-openable from menu bar
 
 ## Settings Panel
 - Trigger button configuration (mouse button selection)
 - Keyboard shortcut customization (key code + modifiers)
 - Audio settings (silence duration, silence threshold, sample rate)
-- Transcription model picker (active model, manage models section)
+- Transcription model picker (active model, manage models with download/delete)
+- Stream Deck Pedal toggle + position picker
 - LLM configuration (enable, model path) — only visible when LLM module installed
 - Python path and daemon scripts directory — only visible when LLM module installed
 
@@ -64,5 +78,6 @@
 - Menu bar icon with daemon controls
 - Log viewer (app + Python daemon logs)
 - CGEventTap for global input monitoring
-- Stream Deck Pedal push-to-talk (IOKit HID)
 - Ad-hoc code signed .app bundle
+- `rebuild.sh` — one-command pull + build + deploy + launch
+- `uninstall.sh` — full cleanup (app, config, models, logs, permissions)

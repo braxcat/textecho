@@ -11,8 +11,21 @@
 | 5 | COMPLETE | Code Quality — user-friendly errors, final docs |
 | 6 | COMPLETE | MLX Whisper Upgrade — mlx-whisper + large-v3-turbo |
 | 7 | COMPLETE | Native WhisperKit Migration — replace Python daemon with Swift WhisperKit |
-| 8 | PLANNED | Distribution — DMG signing, notarization, auto-update |
-| 9 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
+| 8 | COMPLETE | UX Polish — pedal actions, auto-detect, cyberpunk overlay, wizard redesign |
+| 9 | PLANNED | Distribution — DMG signing, notarization, auto-update |
+| 10 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
+
+## Phase 8: UX Polish & Cyberpunk Overlay
+**Status:** COMPLETE
+
+- Per-pedal actions: center=push-to-talk, left=paste, right=enter
+- 3-second auto-detect timer for pedal (no unplug/replug)
+- Cyberpunk overlay: pink→purple→neon green, matrix green waveform, silver+green logo
+- 6-step setup wizard with progress dots, back buttons, pedal detection
+- Pedal toggle + position in Settings UI (no more config resetting)
+- rebuild.sh one-command deploy, uninstall.sh cleanup
+- Fixed audio capture from pedal (deferred engine start)
+- Fixed model cache detection and name resolution
 
 ## Phase 7: Native WhisperKit Migration
 **Status:** COMPLETE
@@ -26,7 +39,7 @@
 - In-app Help window with embedded user documentation
 - macOS 14+ minimum (required by WhisperKit)
 
-## Phase 8+: Future Work (TBD)
+## Phase 9+: Future Work (TBD)
 
 - DMG signing and notarization for distribution
 - Auto-update mechanism

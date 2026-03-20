@@ -1,5 +1,43 @@
 # Worklog
 
+## 2026-03-20 — UX Polish & Cyberpunk Overlay
+
+**Focus:** Per-pedal actions, auto-detect, Settings persistence, overlay redesign, setup wizard
+
+### Stream Deck Pedal
+- Added per-pedal callbacks: center=push-to-talk, left=paste, right=enter
+- Fixed audio capture from pedal: deferred engine.start() via DispatchQueue.main.async (IOKit HID callback was blocking AVAudioEngine)
+- Added 3-second auto-detect retry timer — no unplug/replug needed
+- Auto-reconnect on disconnect
+- Added detectConnectedPedals() static method for one-shot USB check
+- Pedal toggle + position picker in Settings UI, persists across saves
+
+### Overlay Redesign
+- Cyberpunk aesthetic: deep blue-black glassmorphic background
+- Color flow: Pink (magenta) → Electric Purple → Neon Green (matrix #33FF33)
+- Waveform: magenta-to-green gradient, 60pt bars, green glow shadows
+- Logo: silver TEXT + neon green ECHO with glow
+- Model badge: "WHISPER // LARGE V3 TURBO" at bottom
+- Full transcription visible (removed 4-line limit)
+- Smart auto-hide: 1.5s base + text length scaling, max 4s
+- Fixed overlay drop-out: proper auto-hide cancellation, orderFrontRegardless(), canJoinAllSpaces
+
+### Setup Wizard Redesign
+- 6 steps: Welcome → Accessibility → Microphone → Model → Pedal → Ready
+- Progress dots, back buttons, restart helper
+- Pedal detection step with auto-scan
+
+### Model & Config Fixes
+- Fixed model names: HF repo uses `openai_whisper-large-v3_turbo` (underscore, not hyphen)
+- Fixed cache detection: models at `~/Documents/huggingface/models/` not `~/Library/Caches/`
+- Model name migration on config load (old short names auto-fix)
+- Error display in Settings manage models + Setup Wizard
+
+### Scripts
+- Created `rebuild.sh` — one-command pull + build + deploy + launch
+- Added `--clean` flag to `build_native_app.sh`
+- Updated `uninstall.sh` — removes WhisperKit models + registers
+
 ## 2026-03-20 — Native WhisperKit Migration
 
 **Focus:** Replace Python MLX Whisper daemon with native Swift WhisperKit for transcription

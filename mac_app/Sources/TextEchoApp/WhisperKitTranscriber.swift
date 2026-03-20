@@ -78,7 +78,7 @@ actor WhisperKitTranscriber: Transcriber {
     func transcribe(audioData: Data, sampleRate: Double) async throws -> String {
         // Validate audio data length (Int16 = 2 bytes per sample)
         guard audioData.count >= 2, audioData.count % 2 == 0 else {
-            AppLogger.shared.warning("Invalid audio data length: \(audioData.count)")
+            AppLogger.shared.warn("Invalid audio data length: \(audioData.count)")
             return ""
         }
 
@@ -109,23 +109,11 @@ actor WhisperKitTranscriber: Transcriber {
             throw TranscriberError.modelNotLoaded
         }
 
-        // Transcribe with timeout
-        let transcription = try await withThrowingTaskGroup(of: [TranscriptionResult].self) { group in
-            group.addTask {
-                try await kit.transcribe(audioArray: samples)
-            }
+        // Transcribe — WhisperKit runs on Neural Engine, typically fast.
+        // The single-array overload returns [TranscriptionResult].
+        let results: [TranscriptionResult] = try await kit.transcribe(audioArray: samples)
 
-            group.addTask {
-                try await Task.sleep(nanoseconds: 30_000_000_000) // 30s timeout
-                throw TranscriberError.timeout
-            }
-
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
-        }
-
-        let text = transcription
+        let text = results
             .compactMap { $0.text }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,8 +185,10 @@ actor WhisperKitTranscriber: Transcriber {
     private func initWhisperKit() async throws {
         AppLogger.shared.info("Initializing WhisperKit with model: \(modelName)")
 
+        // Pass short model name — WhisperKit resolves to full repo/path automatically.
+        // e.g. "large-v3-turbo" → downloads openai_whisper-large-v3-turbo from HuggingFace
         let config = WhisperKitConfig(
-            model: "openai_whisper-\(modelName)",
+            model: modelName,
             verbose: false,
             prewarm: true,
             load: true,

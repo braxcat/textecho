@@ -30,13 +30,13 @@ final class AudioRecorder {
         lock.deallocate()
     }
 
-    /// Stores desired input device ID. Applied during start() to avoid graph conflicts.
-    private var pendingDeviceID: AudioDeviceID = 0
-
     /// Set the input device by its Core Audio device ID.
-    /// The device is applied when start() is called next.
+    /// NOTE: Custom device selection is disabled — always uses system default.
+    /// AVAudioEngine's inputNode graph conflicts cause crashes when changing devices.
     func setInputDevice(deviceID: AudioDeviceID) {
-        pendingDeviceID = deviceID
+        if deviceID != 0 {
+            AppLogger.shared.info("AudioRecorder: custom input device requested (\(deviceID)) but not applied — using system default")
+        }
     }
 
     /// List available audio input devices.
@@ -141,28 +141,6 @@ final class AudioRecorder {
         isRecording = true
         waveformLevels = Array(repeating: 0.0, count: waveformWindow)
         os_unfair_lock_unlock(lock)
-
-        // Apply pending input device BEFORE accessing inputNode format.
-        // engine.reset() clears the old graph so the device change takes effect.
-        if pendingDeviceID != 0 {
-            engine.reset()
-            if let audioUnit = engine.inputNode.audioUnit {
-                var devID = pendingDeviceID
-                let status = AudioUnitSetProperty(
-                    audioUnit,
-                    kAudioOutputUnitProperty_CurrentDevice,
-                    kAudioUnitScope_Global,
-                    0,
-                    &devID,
-                    UInt32(MemoryLayout<AudioDeviceID>.size)
-                )
-                if status != noErr {
-                    AppLogger.shared.error("AudioRecorder: failed to set input device (status=\(status))")
-                } else {
-                    AppLogger.shared.info("AudioRecorder: set input device to ID \(pendingDeviceID)")
-                }
-            }
-        }
 
         let input = engine.inputNode
         let format = input.inputFormat(forBus: 0)

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextEcho UX Polish Checklist</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; background: #1a1a2e; color: #e0e0e0; }
+  h1 { color: #00d4aa; font-size: 1.5em; }
+  h2 { color: #7b8cde; font-size: 1.15em; margin-top: 28px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  .phase { margin-bottom: 24px; }
+  .task { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; }
+  .task input[type="checkbox"] { margin-top: 4px; accent-color: #00d4aa; }
+  .task label { cursor: pointer; }
+  .task label.done { text-decoration: line-through; opacity: 0.5; }
+  .risk { font-size: 0.75em; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+  .risk-low { background: #1b4332; color: #95d5b2; }
+  .risk-med { background: #3d2e00; color: #ffd166; }
+  .gate { background: #16213e; border: 1px solid #7b8cde; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .gate h3 { margin: 0 0 8px; color: #7b8cde; font-size: 0.95em; }
+  .protected { background: #2d1117; border: 1px solid #f85149; border-radius: 8px; padding: 12px; margin: 16px 0; }
+  .protected h3 { margin: 0 0 8px; color: #f85149; font-size: 0.95em; }
+  .progress { text-align: center; color: #00d4aa; font-size: 1.1em; margin: 16px 0; }
+  small { color: #888; }
+</style>
+<script>
+  function toggle(cb) {
+    const label = cb.parentElement.querySelector('label');
+    label.classList.toggle('done', cb.checked);
+    save();
+    updateProgress();
+  }
+  function save() {
+    const checks = {};
+    document.querySelectorAll('input[type=checkbox]').forEach(cb => { checks[cb.id] = cb.checked; });
+    localStorage.setItem('textecho-ux-polish', JSON.stringify(checks));
+  }
+  function load() {
+    try {
+      const checks = JSON.parse(localStorage.getItem('textecho-ux-polish') || '{}');
+      Object.entries(checks).forEach(([id, val]) => {
+        const cb = document.getElementById(id);
+        if (cb) { cb.checked = val; const label = cb.parentElement.querySelector('label'); label.classList.toggle('done', val); }
+      });
+    } catch(e) {}
+    updateProgress();
+  }
+  function updateProgress() {
+    const all = document.querySelectorAll('input[type=checkbox]');
+    const done = [...all].filter(cb => cb.checked).length;
+    document.getElementById('progress').textContent = done + ' / ' + all.length + ' tasks complete';
+  }
+  window.onload = load;
+</script>
+</head>
+<body>
+<h1>TextEcho UX Polish</h1>
+<div class="progress" id="progress">0 / 0 tasks complete</div>
+
+<div class="protected">
+  <h3>DO NOT MODIFY (working code)</h3>
+  AudioRecorder.swift, WhisperKitTranscriber.swift, Transcriber.swift, InputMonitor.swift, TextInjector.swift
+</div>
+
+<div class="phase">
+  <h2>Phase 1: Config & Settings Stability</h2>
+
+  <div class="task"><input type="checkbox" id="p1-1" onchange="toggle(this)"><label for="p1-1">Add pedal toggle to Settings UI</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p1-2" onchange="toggle(this)"><label for="p1-2">Add pedal position picker to Settings UI</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p1-3" onchange="toggle(this)"><label for="p1-3">Show pedal connection status in Settings</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p1-4" onchange="toggle(this)"><label for="p1-4">Wire pedalEnabled + pedalPosition into Settings save()</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p1-5" onchange="toggle(this)"><label for="p1-5">Migrate old whisper_model names in AppConfig.load()</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p1-6" onchange="toggle(this)"><label for="p1-6">Test: pedal_enabled persists across Settings save + restart</label><span class="risk risk-low">low</span></div>
+
+  <div class="gate">
+    <h3>Gate 1: Config stability</h3>
+    <div class="task"><input type="checkbox" id="g1-1" onchange="toggle(this)"><label for="g1-1">Mouse dictation works (3 consecutive recordings)</label></div>
+    <div class="task"><input type="checkbox" id="g1-2" onchange="toggle(this)"><label for="g1-2">Pedal dictation works</label></div>
+    <div class="task"><input type="checkbox" id="g1-3" onchange="toggle(this)"><label for="g1-3">pedal_enabled survives Settings save + app restart</label></div>
+  </div>
+</div>
+
+<div class="phase">
+  <h2>Phase 2: Pedal Auto-Detect</h2>
+
+  <div class="task"><input type="checkbox" id="p2-1" onchange="toggle(this)"><label for="p2-1">Add 3-second retry timer for device matching</label><span class="risk risk-med">med</span></div>
+  <div class="task"><input type="checkbox" id="p2-2" onchange="toggle(this)"><label for="p2-2">Cancel timer on device connect</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p2-3" onchange="toggle(this)"><label for="p2-3">Restart timer on device disconnect (auto-reconnect)</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p2-4" onchange="toggle(this)"><label for="p2-4">Test: launch app, then plug in pedal — detected within 3s</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p2-5" onchange="toggle(this)"><label for="p2-5">Test: unplug, replug — reconnects automatically</label><span class="risk risk-low">low</span></div>
+
+  <div class="gate">
+    <h3>Gate 2: Pedal auto-detect</h3>
+    <div class="task"><input type="checkbox" id="g2-1" onchange="toggle(this)"><label for="g2-1">Pedal connects without manual unplug/replug</label></div>
+    <div class="task"><input type="checkbox" id="g2-2" onchange="toggle(this)"><label for="g2-2">All three pedal actions still work</label></div>
+    <div class="task"><input type="checkbox" id="g2-3" onchange="toggle(this)"><label for="g2-3">Mouse dictation unaffected</label></div>
+  </div>
+</div>
+
+<div class="phase">
+  <h2>Phase 3: Setup Wizard Redesign</h2>
+
+  <div class="task"><input type="checkbox" id="p3-1" onchange="toggle(this)"><label for="p3-1">Add Welcome step (step 1)</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-2" onchange="toggle(this)"><label for="p3-2">Add step progress indicator (dots/bar)</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-3" onchange="toggle(this)"><label for="p3-3">Keep existing Accessibility step</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-4" onchange="toggle(this)"><label for="p3-4">Keep existing Microphone step</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-5" onchange="toggle(this)"><label for="p3-5">Keep existing Model download step</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-6" onchange="toggle(this)"><label for="p3-6">Add Pedal setup step (optional, skip-able)</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-7" onchange="toggle(this)"><label for="p3-7">Add Ready/summary step with usage instructions</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-8" onchange="toggle(this)"><label for="p3-8">Add Restart button if permissions were just granted</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p3-9" onchange="toggle(this)"><label for="p3-9">Add Back button on applicable steps</label><span class="risk risk-low">low</span></div>
+
+  <div class="gate">
+    <h3>Gate 3: Wizard works end-to-end</h3>
+    <div class="task"><input type="checkbox" id="g3-1" onchange="toggle(this)"><label for="g3-1">Fresh config: wizard walks through all steps</label></div>
+    <div class="task"><input type="checkbox" id="g3-2" onchange="toggle(this)"><label for="g3-2">Model downloads from wizard</label></div>
+    <div class="task"><input type="checkbox" id="g3-3" onchange="toggle(this)"><label for="g3-3">Pedal detected in wizard (if plugged in)</label></div>
+    <div class="task"><input type="checkbox" id="g3-4" onchange="toggle(this)"><label for="g3-4">Wizard re-openable from menu bar</label></div>
+    <div class="task"><input type="checkbox" id="g3-5" onchange="toggle(this)"><label for="g3-5">Audio/transcription still works after wizard</label></div>
+  </div>
+</div>
+
+<div class="phase">
+  <h2>Phase 4: Quality of Life</h2>
+
+  <div class="task"><input type="checkbox" id="p4-1" onchange="toggle(this)"><label for="p4-1">Show pedal status in menu bar dropdown</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p4-2" onchange="toggle(this)"><label for="p4-2">Auto-enable pedal on first detection</label><span class="risk risk-low">low</span></div>
+  <div class="task"><input type="checkbox" id="p4-3" onchange="toggle(this)"><label for="p4-3">Show notification if accessibility permission lost after rebuild</label><span class="risk risk-low">low</span></div>
+
+  <div class="gate">
+    <h3>Final Gate</h3>
+    <div class="task"><input type="checkbox" id="gf-1" onchange="toggle(this)"><label for="gf-1">Clean build from scratch works</label></div>
+    <div class="task"><input type="checkbox" id="gf-2" onchange="toggle(this)"><label for="gf-2">Fresh install experience is smooth</label></div>
+    <div class="task"><input type="checkbox" id="gf-3" onchange="toggle(this)"><label for="gf-3">All recording methods work (mouse, pedal)</label></div>
+    <div class="task"><input type="checkbox" id="gf-4" onchange="toggle(this)"><label for="gf-4">Merge to main</label></div>
+  </div>
+</div>
+
+</body>
+</html>

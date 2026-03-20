@@ -15,7 +15,7 @@ final class SetupWizardController {
             let view = SetupWizardView(onClose: onClose)
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+                contentRect: NSRect(x: 0, y: 0, width: 540, height: 640),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
@@ -36,104 +36,86 @@ final class SetupWizardController {
 }
 
 private enum WizardStep: Int, CaseIterable {
-    case accessibility = 0
-    case microphone = 1
-    case model = 2
-    case ready = 3
+    case welcome = 0
+    case accessibility = 1
+    case microphone = 2
+    case model = 3
+    case pedal = 4
+    case ready = 5
+
+    var title: String {
+        switch self {
+        case .welcome: return "Welcome"
+        case .accessibility: return "Accessibility"
+        case .microphone: return "Microphone"
+        case .model: return "Model"
+        case .pedal: return "Pedal"
+        case .ready: return "Ready"
+        }
+    }
 }
 
 struct SetupWizardView: View {
-    @State private var currentStep: WizardStep = .accessibility
+    @State private var currentStep: WizardStep = .welcome
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var timer: Timer?
-    @State private var modelStatus: String = "Waiting..."
+    @State private var modelStatus: String = ""
     @State private var modelLoaded: Bool = false
     @State private var downloadStarted: Bool = false
     @State private var selectedModel: String = AppConfig.shared.model.whisperModel
+    @State private var pedalDetected: Bool = false
+    @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
+    @State private var pedalScanning: Bool = false
 
     let onClose: () -> Void
-
-    private var permissionsGranted: Bool {
-        accessibilityTrusted && micStatus == .authorized
-    }
 
     private let models = WhisperKitTranscriber.availableModelList
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Welcome to TextEcho")
-                    .font(.system(size: 18, weight: .bold))
+            // Progress dots
+            progressDots
+                .padding(.top, 20)
+                .padding(.bottom, 12)
 
-                Text(headerText)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Divider()
 
-                Divider()
-
-                // Step 1: Accessibility
-                permissionRow(
-                    step: "1",
-                    title: "Accessibility",
-                    description: "Allows TextEcho to detect keyboard shortcuts and paste text.",
-                    granted: accessibilityTrusted,
-                    active: currentStep == .accessibility,
-                    action: { openSystemPreferences(anchor: "Privacy_Accessibility") },
-                    buttonLabel: "Open Accessibility Settings"
-                )
-
-                // Step 2: Microphone
-                permissionRow(
-                    step: "2",
-                    title: "Microphone",
-                    description: "Allows TextEcho to record audio for transcription.",
-                    granted: micStatus == .authorized,
-                    active: currentStep == .microphone,
-                    action: { openSystemPreferences(anchor: "Privacy_Microphone") },
-                    buttonLabel: "Open Microphone Settings"
-                )
-
-                // Step 3: Model download
-                modelRow()
-
-                // Step 4: Ready
-                if currentStep == .ready {
-                    readySection()
+            // Step content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    switch currentStep {
+                    case .welcome:
+                        welcomeStep
+                    case .accessibility:
+                        accessibilityStep
+                    case .microphone:
+                        microphoneStep
+                    case .model:
+                        modelStep
+                    case .pedal:
+                        pedalStep
+                    case .ready:
+                        readyStep
+                    }
                 }
+                .padding(28)
             }
-            .padding(24)
 
             Spacer()
 
             Divider()
 
-            HStack {
-                footerStatus
-
-                Spacer()
-
-                Button("Restart TextEcho") {
-                    restartApp()
-                }
-
-                if currentStep == .ready {
-                    Button("Get Started") {
-                        onClose()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(16)
+            // Navigation buttons
+            navigationBar
+                .padding(16)
         }
-        .frame(minWidth: 480, minHeight: 520)
+        .frame(minWidth: 500, minHeight: 560)
         .onAppear {
+            // Skip to first incomplete step
             determineInitialStep()
-            refreshStatus()
             timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 refreshStatus()
-                advanceIfReady()
             }
         }
         .onDisappear {
@@ -141,124 +123,407 @@ struct SetupWizardView: View {
         }
     }
 
-    private var headerText: String {
-        switch currentStep {
-        case .accessibility, .microphone:
-            return "Grant the permissions below so TextEcho can work."
-        case .model:
-            return "Choose and download a transcription model. This only happens once."
-        case .ready:
-            return "You're all set! Here's how to use TextEcho."
-        }
-    }
+    // MARK: - Progress dots
 
-    @ViewBuilder
-    private var footerStatus: some View {
-        switch currentStep {
-        case .accessibility, .microphone:
-            Text("Grant permissions above to continue")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-        case .model:
-            Text(modelStatus)
-                .font(.system(size: 12))
-                .foregroundColor(.orange)
-        case .ready:
-            Text("TextEcho is ready")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.green)
-        }
-    }
+    private var progressDots: some View {
+        HStack(spacing: 8) {
+            ForEach(WizardStep.allCases, id: \.rawValue) { step in
+                VStack(spacing: 4) {
+                    Circle()
+                        .fill(dotColor(for: step))
+                        .frame(width: 10, height: 10)
+                        .overlay(
+                            step.rawValue < currentStep.rawValue
+                                ? Image(systemName: "checkmark")
+                                    .font(.system(size: 6, weight: .bold))
+                                    .foregroundColor(.white)
+                                : nil
+                        )
 
-    // MARK: - Step rows
-
-    private func permissionRow(step: String, title: String, description: String, granted: Bool, active: Bool, action: @escaping () -> Void, buttonLabel: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                stepCircle(step: step, completed: granted, active: active)
-
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(active || granted ? .primary : .secondary)
-
-                Spacer()
-
-                statusBadge(granted)
+                    Text(step.title)
+                        .font(.system(size: 9))
+                        .foregroundColor(step == currentStep ? .primary : .secondary)
+                }
             }
+        }
+    }
 
-            if active || granted {
-                Text(description)
+    private func dotColor(for step: WizardStep) -> Color {
+        if step.rawValue < currentStep.rawValue {
+            return .green
+        } else if step == currentStep {
+            return .accentColor
+        } else {
+            return Color.gray.opacity(0.3)
+        }
+    }
+
+    // MARK: - Step views
+
+    private var welcomeStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Welcome to TextEcho")
+                .font(.system(size: 24, weight: .bold))
+
+            Text("Voice-to-text dictation that runs entirely on your Mac.")
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                featureRow(icon: "waveform", title: "Local Transcription", detail: "Powered by WhisperKit on Apple Neural Engine. No cloud, fully offline after setup.")
+                featureRow(icon: "keyboard", title: "Push-to-Talk", detail: "Hold a key or mouse button, speak, release to paste text wherever your cursor is.")
+                featureRow(icon: "lock.shield", title: "Private by Design", detail: "Audio never leaves your Mac. No accounts, no data collection.")
+            }
+            .padding(.top, 8)
+
+            Text("Let's set you up in a few quick steps.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .padding(.top, 8)
+        }
+    }
+
+    private func featureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .frame(width: 24, height: 24)
+                .foregroundColor(.accentColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(detail)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .padding(.leading, 30)
-            }
-
-            if active && !granted {
-                Button(buttonLabel, action: action)
-                    .padding(.leading, 30)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    @ViewBuilder
-    private func modelRow() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var accessibilityStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(title: "Accessibility Permission", icon: "hand.raised")
+
+            Text("TextEcho needs Accessibility access to detect keyboard shortcuts and paste transcribed text into other apps.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             HStack {
-                stepCircle(step: "3", completed: modelLoaded, active: currentStep == .model)
+                Text("Status:")
+                    .font(.system(size: 13))
+                statusBadge(accessibilityTrusted)
+            }
 
-                Text("Transcription Model")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(currentStep.rawValue >= WizardStep.model.rawValue ? .primary : .secondary)
+            if !accessibilityTrusted {
+                Text("Click the button below, find TextEcho in the list, and enable it.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
 
-                Spacer()
+                Button("Open Accessibility Settings") {
+                    openSystemPreferences(anchor: "Privacy_Accessibility")
+                }
+                .buttonStyle(.borderedProminent)
 
-                if modelLoaded {
-                    statusBadge(true)
-                } else if currentStep == .model && downloadStarted {
+                Text("After enabling, TextEcho may need a restart for the change to take effect.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+            } else {
+                Text("Accessibility permission granted.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.green)
+            }
+        }
+    }
+
+    private var microphoneStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(title: "Microphone Permission", icon: "mic")
+
+            Text("TextEcho needs microphone access to record audio for transcription.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("Status:")
+                    .font(.system(size: 13))
+                statusBadge(micStatus == .authorized)
+            }
+
+            if micStatus != .authorized {
+                Button("Open Microphone Settings") {
+                    openSystemPreferences(anchor: "Privacy_Microphone")
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Text("Microphone permission granted.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.green)
+            }
+        }
+    }
+
+    private var modelStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(title: "Transcription Model", icon: "brain")
+
+            Text("Choose a model to download. This only happens once — the model is cached locally for future use.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(models, id: \.name) { model in
+                    modelCard(model: model, isSelected: selectedModel == model.name)
+                        .onTapGesture {
+                            if !downloadStarted {
+                                selectedModel = model.name
+                            }
+                        }
+                }
+            }
+
+            if !downloadStarted && !modelLoaded {
+                Button("Download & Continue") {
+                    startModelDownload()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if downloadStarted && !modelLoaded {
+                HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
+                    Text(modelStatus)
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
                 }
             }
 
-            if currentStep == .model || modelLoaded {
-                if !modelLoaded && currentStep == .model {
-                    // Model picker cards
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(models, id: \.name) { model in
-                            modelCard(model: model, isSelected: selectedModel == model.name)
-                                .onTapGesture {
-                                    selectedModel = model.name
-                                }
+            if !modelStatus.isEmpty && !downloadStarted && !modelLoaded {
+                Text(modelStatus)
+                    .font(.system(size: 12))
+                    .foregroundColor(.red)
+            }
+
+            if modelLoaded {
+                Text("Model downloaded and ready.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.green)
+            }
+
+            Text("You can change this later in Settings.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var pedalStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(title: "Stream Deck Pedal", icon: "gamecontroller")
+
+            Text("Do you have an Elgato Stream Deck Pedal? TextEcho can use it for hands-free push-to-talk.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if pedalDetected {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Stream Deck Pedal detected!")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.green)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    pedalActionRow(position: "Left pedal", action: "Paste (Cmd+V)")
+                    pedalActionRow(position: "Center pedal", action: "Push-to-talk")
+                    pedalActionRow(position: "Right pedal", action: "Enter")
+                }
+                .padding(.leading, 4)
+
+                Toggle("Enable Stream Deck Pedal", isOn: $pedalEnabled)
+                    .onChange(of: pedalEnabled) { newValue in
+                        AppConfig.shared.update { model in
+                            model.pedalEnabled = newValue
                         }
                     }
-                    .padding(.leading, 30)
-                    .padding(.top, 4)
-
-                    if !downloadStarted {
-                        Button("Download & Continue") {
-                            startModelDownload()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.leading, 30)
-                        .padding(.top, 4)
+            } else {
+                HStack(spacing: 8) {
+                    if pedalScanning {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Scanning for pedal...")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
                     } else {
-                        Text(modelStatus)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.orange)
-                            .padding(.leading, 30)
+                        Image(systemName: "xmark.circle")
+                            .foregroundColor(.secondary)
+                        Text("No pedal detected")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
                     }
-                } else {
-                    Text("Model ready: \(selectedModel)")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 30)
                 }
 
-                Text("You can change this later in Settings.")
-                    .font(.system(size: 10))
+                Text("Make sure the pedal is plugged in via USB and the Elgato Stream Deck app is quit.")
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .padding(.leading, 30)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Scan Again") {
+                    pedalScanning = true
+                    // The timer will pick up the connection
+                }
             }
+
+            Text("You can skip this step if you don't have a pedal.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func pedalActionRow(position: String, action: String) -> some View {
+        HStack(spacing: 8) {
+            Text(position)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .frame(width: 100, alignment: .leading)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 6)
+                .background(Color.primary.opacity(0.08))
+                .cornerRadius(4)
+
+            Text(action)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var readyStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(title: "You're All Set!", icon: "checkmark.seal")
+
+            Text("TextEcho is ready to use. Here's how:")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recording")
+                    .font(.system(size: 12, weight: .semibold))
+                hotkeyRow(keys: "Middle mouse (hold)", action: "Push-to-talk via mouse")
+                if pedalEnabled {
+                    hotkeyRow(keys: "Center pedal (hold)", action: "Push-to-talk via pedal")
+                    hotkeyRow(keys: "Left pedal", action: "Paste")
+                    hotkeyRow(keys: "Right pedal", action: "Enter")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Other")
+                    .font(.system(size: 12, weight: .semibold))
+                hotkeyRow(keys: "Esc", action: "Cancel recording")
+                hotkeyRow(keys: "Cmd + Opt + Space", action: "Open Settings")
+                hotkeyRow(keys: "Cmd + Opt + 1-9", action: "Save clipboard to register")
+            }
+
+            Text("TextEcho lives in your menu bar. Right-click the icon for Settings, Help, and more.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+        }
+    }
+
+    // MARK: - Navigation
+
+    private var navigationBar: some View {
+        HStack {
+            if currentStep != .welcome {
+                Button("Back") {
+                    goBack()
+                }
+            }
+
+            Spacer()
+
+            if currentStep == .accessibility && !accessibilityTrusted {
+                Button("Restart TextEcho") {
+                    restartApp()
+                }
+            }
+
+            switch currentStep {
+            case .welcome:
+                Button("Get Started") {
+                    currentStep = .accessibility
+                }
+                .buttonStyle(.borderedProminent)
+
+            case .accessibility:
+                Button("Next") {
+                    currentStep = .microphone
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!accessibilityTrusted)
+
+            case .microphone:
+                Button("Next") {
+                    currentStep = .model
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(micStatus != .authorized)
+
+            case .model:
+                Button("Next") {
+                    currentStep = .pedal
+                    pedalScanning = true
+                    checkPedalConnection()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!modelLoaded)
+
+            case .pedal:
+                Button(pedalDetected ? "Next" : "Skip") {
+                    currentStep = .ready
+                }
+                .buttonStyle(.borderedProminent)
+
+            case .ready:
+                Button("Start Using TextEcho") {
+                    AppConfig.shared.update { model in
+                        model.firstLaunch = false
+                    }
+                    onClose()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private func goBack() {
+        switch currentStep {
+        case .welcome: break
+        case .accessibility: currentStep = .welcome
+        case .microphone: currentStep = .accessibility
+        case .model: currentStep = .microphone
+        case .pedal: currentStep = .model
+        case .ready: currentStep = .pedal
+        }
+    }
+
+    // MARK: - Shared components
+
+    private func stepHeader(title: String, icon: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(.accentColor)
+                .frame(width: 28)
+
+            Text(title)
+                .font(.system(size: 20, weight: .bold))
         }
     }
 
@@ -268,7 +533,7 @@ struct SetupWizardView: View {
                 HStack(spacing: 4) {
                     Text(model.displayName)
                         .font(.system(size: 12, weight: .semibold))
-                    if model.name == "large-v3-turbo" {
+                    if model.name == WhisperKitTranscriber.availableModelList.first?.name {
                         Text("Recommended")
                             .font(.system(size: 9, weight: .bold))
                             .padding(.horizontal, 4)
@@ -305,27 +570,6 @@ struct SetupWizardView: View {
         )
     }
 
-    @ViewBuilder
-    private func readySection() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                stepCircle(step: "4", completed: true, active: true)
-
-                Text("Ready!")
-                    .font(.system(size: 14, weight: .semibold))
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                hotkeyRow(keys: "Ctrl + D (hold)", action: "Start/stop dictation")
-                hotkeyRow(keys: "Ctrl + Shift + D (hold)", action: "Dictation + LLM processing")
-                hotkeyRow(keys: "Middle mouse (hold)", action: "Start/stop dictation")
-                hotkeyRow(keys: "Esc", action: "Cancel recording")
-            }
-            .padding(.leading, 30)
-            .padding(.top, 4)
-        }
-    }
-
     private func hotkeyRow(keys: String, action: String) -> some View {
         HStack(spacing: 8) {
             Text(keys)
@@ -341,19 +585,8 @@ struct SetupWizardView: View {
         }
     }
 
-    // MARK: - Helpers
-
-    private func stepCircle(step: String, completed: Bool, active: Bool) -> some View {
-        Text(completed ? "\u{2713}" : step)
-            .font(.system(size: 11, weight: .bold, design: .rounded))
-            .frame(width: 22, height: 22)
-            .background(completed ? Color.green : (active ? Color.accentColor : Color.gray.opacity(0.3)))
-            .foregroundColor(completed || active ? .white : .secondary)
-            .clipShape(Circle())
-    }
-
     private func statusBadge(_ ok: Bool) -> some View {
-        Text(ok ? "Done" : "Missing")
+        Text(ok ? "Granted" : "Missing")
             .font(.system(size: 11, weight: .semibold))
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
@@ -361,52 +594,44 @@ struct SetupWizardView: View {
             .cornerRadius(6)
     }
 
+    // MARK: - Logic
+
     private func determineInitialStep() {
+        if !AppConfig.shared.model.firstLaunch {
+            // Re-opened from menu — start at welcome but allow quick navigation
+            currentStep = .welcome
+            return
+        }
         if !accessibilityTrusted {
             currentStep = .accessibility
         } else if micStatus != .authorized {
             currentStep = .microphone
-        } else {
+        } else if !WhisperKitTranscriber.isModelCached(selectedModel) {
             currentStep = .model
-            // If model already cached, auto-advance
-            if WhisperKitTranscriber.isModelCached(selectedModel) {
-                modelLoaded = true
-                modelStatus = "Model ready"
-                currentStep = .ready
-            }
+        } else {
+            modelLoaded = true
+            currentStep = .ready
         }
     }
 
-    private func advanceIfReady() {
-        switch currentStep {
-        case .accessibility:
-            if accessibilityTrusted {
-                if micStatus == .authorized {
-                    currentStep = .model
-                    if WhisperKitTranscriber.isModelCached(selectedModel) {
-                        modelLoaded = true
-                        modelStatus = "Model ready"
-                        currentStep = .ready
-                    }
-                } else {
-                    currentStep = .microphone
-                }
+    private func refreshStatus() {
+        accessibilityTrusted = AccessibilityHelper.isTrusted()
+        micStatus = MicrophoneHelper.authorizationStatus()
+        if currentStep == .pedal && pedalScanning {
+            checkPedalConnection()
+        }
+    }
+
+    private func checkPedalConnection() {
+        // Check if a Stream Deck Pedal is visible on USB
+        let devices = StreamDeckPedalMonitor.detectConnectedPedals()
+        pedalDetected = !devices.isEmpty
+        if pedalDetected {
+            pedalScanning = false
+            pedalEnabled = true
+            AppConfig.shared.update { model in
+                model.pedalEnabled = true
             }
-        case .microphone:
-            if micStatus == .authorized {
-                currentStep = .model
-                if WhisperKitTranscriber.isModelCached(selectedModel) {
-                    modelLoaded = true
-                    modelStatus = "Model ready"
-                    currentStep = .ready
-                }
-            }
-        case .model:
-            if modelLoaded {
-                currentStep = .ready
-            }
-        case .ready:
-            break
         }
     }
 
@@ -414,7 +639,6 @@ struct SetupWizardView: View {
         downloadStarted = true
         modelStatus = "Downloading and loading model..."
 
-        // Save selected model to config
         AppConfig.shared.update { model in
             model.whisperModel = selectedModel
         }
@@ -428,7 +652,7 @@ struct SetupWizardView: View {
                 try await transcriber.preload()
                 await MainActor.run {
                     self.modelLoaded = true
-                    self.modelStatus = "Model loaded!"
+                    self.modelStatus = "Model downloaded!"
                 }
             } catch {
                 await MainActor.run {
@@ -438,11 +662,6 @@ struct SetupWizardView: View {
                 AppLogger.shared.error("Setup wizard model preload failed: \(error)")
             }
         }
-    }
-
-    private func refreshStatus() {
-        accessibilityTrusted = AccessibilityHelper.isTrusted()
-        micStatus = MicrophoneHelper.authorizationStatus()
     }
 
     private func openSystemPreferences(anchor: String) {

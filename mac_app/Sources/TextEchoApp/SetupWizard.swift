@@ -432,11 +432,10 @@ struct SetupWizardView: View {
                 }
             } catch {
                 await MainActor.run {
-                    // Still mark as done so user isn't stuck — model will load on first use
-                    self.modelLoaded = true
-                    self.modelStatus = "Ready (model will load on first use)"
+                    self.downloadStarted = false
+                    self.modelStatus = "Download failed: \(error.localizedDescription)"
                 }
-                AppLogger.shared.error("Setup wizard model preload failed: \(error.localizedDescription)")
+                AppLogger.shared.error("Setup wizard model preload failed: \(error)")
             }
         }
     }

@@ -151,32 +151,85 @@ actor WhisperKitTranscriber: Transcriber {
         AppLogger.shared.info("WhisperKit model unloaded (idle)")
     }
 
-    nonisolated static func modelCacheDirectory() -> URL {
+    /// WhisperKit downloads models via HuggingFace Hub to ~/Documents/huggingface/models/...
+    /// The repo structure is: models/argmaxinc/whisperkit-coreml/<variant>/
+    nonisolated static func modelCacheDirectories() -> [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var dirs: [URL] = []
+        // Primary: HuggingFace Hub default download location
+        let hfDir = home
+            .appendingPathComponent("Documents", isDirectory: true)
+            .appendingPathComponent("huggingface", isDirectory: true)
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("argmaxinc", isDirectory: true)
+            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+        dirs.append(hfDir)
+        // Fallback: old cache location (in case WhisperKit changes behavior)
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        return caches.appendingPathComponent("com.argmaxinc.WhisperKit", isDirectory: true)
+        dirs.append(caches.appendingPathComponent("com.argmaxinc.WhisperKit", isDirectory: true))
+        return dirs
+    }
+
+    /// Maps our short model names to the HF Hub directory prefix patterns.
+    /// WhisperKit uses "openai_whisper-" prefix in the repo.
+    private nonisolated static func matchesModel(_ dirName: String, _ modelName: String) -> Bool {
+        // Exact match: openai_whisper-large-v3-turbo
+        if dirName == "openai_whisper-\(modelName)" { return true }
+        // With underscores instead of hyphens in turbo: openai_whisper-large-v3_turbo
+        let underscored = modelName.replacingOccurrences(of: "-turbo", with: "_turbo")
+        if dirName == "openai_whisper-\(underscored)" { return true }
+        // With size suffix: openai_whisper-large-v3-turbo_954MB
+        if dirName.hasPrefix("openai_whisper-\(modelName)") { return true }
+        if dirName.hasPrefix("openai_whisper-\(underscored)") { return true }
+        // For base.en: openai_whisper-base.en or openai_whisper-base
+        if dirName == "openai_whisper-\(modelName.replacingOccurrences(of: ".en", with: ""))" { return true }
+        return false
     }
 
     nonisolated static func isModelCached(_ modelName: String) -> Bool {
-        let cacheDir = modelCacheDirectory()
-        let modelDir = cacheDir.appendingPathComponent("openai_whisper-\(modelName)", isDirectory: true)
-        return FileManager.default.fileExists(atPath: modelDir.path)
+        for cacheDir in modelCacheDirectories() {
+            guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }
+            for entry in contents {
+                if matchesModel(entry, modelName) {
+                    let fullPath = cacheDir.appendingPathComponent(entry, isDirectory: true)
+                    // Verify it has actual model files inside (not just an empty dir)
+                    if let files = try? FileManager.default.contentsOfDirectory(atPath: fullPath.path),
+                       files.contains(where: { $0.hasSuffix(".mlmodelc") || $0.hasSuffix(".mlpackage") }) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 
     nonisolated static func cachedModels() -> [String] {
-        let cacheDir = modelCacheDirectory()
-        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else {
-            return []
+        var found: Set<String> = []
+        for cacheDir in modelCacheDirectories() {
+            guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }
+            for entry in contents where entry.hasPrefix("openai_whisper-") {
+                let entryPath = cacheDir.appendingPathComponent(entry, isDirectory: true)
+                // Verify it has model files
+                guard let files = try? FileManager.default.contentsOfDirectory(atPath: entryPath.path),
+                      files.contains(where: { $0.hasSuffix(".mlmodelc") || $0.hasSuffix(".mlpackage") }) else { continue }
+                // Map back to our short model names
+                for model in availableModelList {
+                    if matchesModel(entry, model.name) {
+                        found.insert(model.name)
+                    }
+                }
+            }
         }
-        return contents
-            .filter { $0.hasPrefix("openai_whisper-") }
-            .map { $0.replacingOccurrences(of: "openai_whisper-", with: "") }
+        return Array(found)
     }
 
     nonisolated static func deleteModel(_ modelName: String) throws {
-        let cacheDir = modelCacheDirectory()
-        let modelDir = cacheDir.appendingPathComponent("openai_whisper-\(modelName)", isDirectory: true)
-        if FileManager.default.fileExists(atPath: modelDir.path) {
-            try FileManager.default.removeItem(at: modelDir)
+        for cacheDir in modelCacheDirectories() {
+            guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }
+            for entry in contents where matchesModel(entry, modelName) {
+                let modelDir = cacheDir.appendingPathComponent(entry, isDirectory: true)
+                try FileManager.default.removeItem(at: modelDir)
+            }
         }
     }
 
@@ -185,25 +238,30 @@ actor WhisperKitTranscriber: Transcriber {
     private func initWhisperKit() async throws {
         AppLogger.shared.info("Initializing WhisperKit with model: \(modelName)")
 
-        // Pass short model name — WhisperKit resolves to full repo/path automatically.
-        // e.g. "large-v3-turbo" → downloads openai_whisper-large-v3-turbo from HuggingFace
-        let config = WhisperKitConfig(
-            model: modelName,
-            verbose: false,
-            prewarm: true,
-            load: true,
-            download: true
-        )
-        let kit = try await WhisperKit(config)
-        self.whisperKit = kit
-        self._isModelLoaded = true
+        do {
+            // WhisperKit resolves model names against argmaxinc/whisperkit-coreml repo.
+            // Use verbose=true during init so download/load issues appear in console.
+            let config = WhisperKitConfig(
+                model: modelName,
+                verbose: true,
+                prewarm: true,
+                load: true,
+                download: true
+            )
+            let kit = try await WhisperKit(config)
+            self.whisperKit = kit
+            self._isModelLoaded = true
 
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: Self.downloadCompleteNotification, object: nil)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Self.downloadCompleteNotification, object: nil)
+            }
+
+            AppLogger.shared.info("WhisperKit model loaded: \(modelName)")
+            resetIdleTimer()
+        } catch {
+            AppLogger.shared.error("WhisperKit init failed for model '\(modelName)': \(error)")
+            throw error
         }
-
-        AppLogger.shared.info("WhisperKit model loaded: \(modelName)")
-        resetIdleTimer()
     }
 
     private func resetIdleTimer() {

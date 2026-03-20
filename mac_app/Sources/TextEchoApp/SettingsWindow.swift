@@ -55,6 +55,7 @@ struct SettingsView: View {
     @State private var cachedModels: [String] = WhisperKitTranscriber.cachedModels()
     @State private var showManageModels: Bool = false
     @State private var downloadingModel: String? = nil
+    @State private var downloadError: String? = nil
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
@@ -146,6 +147,15 @@ struct SettingsView: View {
 
                 DisclosureGroup("Manage Models", isExpanded: $showManageModels) {
                     VStack(alignment: .leading, spacing: 8) {
+                        if let error = downloadError {
+                            Text(error)
+                                .font(.system(size: 11))
+                                .foregroundColor(.red)
+                                .padding(8)
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+
                         ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -403,6 +413,7 @@ struct SettingsView: View {
 
     private func downloadModel(_ modelName: String) {
         downloadingModel = modelName
+        downloadError = nil
         Task {
             let transcriber = WhisperKitTranscriber(
                 modelName: modelName,
@@ -410,8 +421,14 @@ struct SettingsView: View {
             )
             do {
                 try await transcriber.preload()
+                await MainActor.run {
+                    self.downloadError = nil
+                }
             } catch {
-                AppLogger.shared.error("Model download failed: \(error.localizedDescription)")
+                AppLogger.shared.error("Model download failed: \(error)")
+                await MainActor.run {
+                    self.downloadError = "Download failed: \(error.localizedDescription)"
+                }
             }
             await MainActor.run {
                 self.downloadingModel = nil

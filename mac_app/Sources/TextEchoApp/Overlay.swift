@@ -69,7 +69,7 @@ private struct CyberColors {
     static let cyan = Color(red: 0.0, green: 1.0, blue: 0.88)       // #00FFE0
     static let magenta = Color(red: 1.0, green: 0.0, blue: 0.4)     // #FF0066
     static let purple = Color(red: 0.54, green: 0.36, blue: 0.96)   // #8A5CF6
-    static let green = Color(red: 0.0, green: 0.96, blue: 0.4)      // #00F566
+    static let green = Color(red: 0.2, green: 1.0, blue: 0.2)       // #33FF33 matrix green
     static let amber = Color(red: 1.0, green: 0.76, blue: 0.0)      // #FFC200
     static let red = Color(red: 1.0, green: 0.2, blue: 0.2)         // #FF3333
     static let bgDark = Color(red: 0.04, green: 0.04, blue: 0.1)    // #0A0A1A
@@ -127,7 +127,7 @@ struct OverlayView: View {
                             .foregroundColor(.white.opacity(0.35))
                         Text("ECHO")
                             .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundColor(CyberColors.cyan.opacity(0.5))
+                            .foregroundColor(CyberColors.green.opacity(0.6))
                     }
                     .tracking(1.5)
                 }
@@ -161,7 +161,7 @@ struct OverlayView: View {
                     Spacer()
                     Text("WHISPER // \(Self.modelBadge)")
                         .font(.system(size: 7, weight: .medium, design: .monospaced))
-                        .foregroundColor(CyberColors.cyan.opacity(0.25))
+                        .foregroundColor(CyberColors.green.opacity(0.3))
                         .tracking(1)
                 }
             }

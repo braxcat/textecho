@@ -233,12 +233,27 @@ final class AppState {
 
     private func startPedalMonitor() {
         pedalMonitor.activePedal = PedalPosition(rawValue: config.model.pedalPosition) ?? .center
-        pedalMonitor.onPedalDown = { [weak self] in
+
+        // Left pedal: paste (Cmd+V)
+        pedalMonitor.onPedalDownByPosition[PedalPosition.left.rawValue] = { [weak self] in
+            self?.logger.info("Pedal action: paste")
+            self?.injector.sendPaste()
+        }
+
+        // Center pedal: push-to-talk (hold to record, release to transcribe)
+        pedalMonitor.onPedalDownByPosition[PedalPosition.center.rawValue] = { [weak self] in
             self?.beginRecording(mode: .standard)
         }
-        pedalMonitor.onPedalUp = { [weak self] in
+        pedalMonitor.onPedalUpByPosition[PedalPosition.center.rawValue] = { [weak self] in
             self?.endRecording(userInitiated: true)
         }
+
+        // Right pedal: enter
+        pedalMonitor.onPedalDownByPosition[PedalPosition.right.rawValue] = { [weak self] in
+            self?.logger.info("Pedal action: enter")
+            self?.injector.sendEnter()
+        }
+
         pedalMonitor.onConnectionChanged = { [weak self] connected in
             self?.logger.info("Stream Deck Pedal \(connected ? "connected" : "disconnected")")
         }

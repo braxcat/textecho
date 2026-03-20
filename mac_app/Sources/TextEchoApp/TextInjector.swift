@@ -69,6 +69,21 @@ final class TextInjector {
         }
     }
 
+    /// Send Cmd+V paste keystroke (public for pedal use)
+    func sendPaste() {
+        sendPasteKeystroke()
+    }
+
+    /// Send Return/Enter keystroke
+    func sendEnter() {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let returnKey = CGKeyCode(36) // Return
+        let keyDown = CGEvent(keyboardEventSource: src, virtualKey: returnKey, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: src, virtualKey: returnKey, keyDown: false)
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+    }
+
     private func sendPasteKeystroke() {
         let src = CGEventSource(stateID: .combinedSessionState)
         let vKey = CGKeyCode(9) // V

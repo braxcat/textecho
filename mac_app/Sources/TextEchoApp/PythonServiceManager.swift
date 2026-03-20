@@ -1,22 +1,20 @@
 import Foundation
 
+/// Manages the optional Python LLM daemon process.
+/// Transcription is now handled natively by WhisperKit — this class only manages LLM.
 final class PythonServiceManager {
-    private var transcriptionProcess: Process?
     private var llmProcess: Process?
 
     deinit {
         stopAll()
     }
 
-    func ensureTranscriptionDaemon() {
-        if UnixSocket.ping(socketPath: AppConfig.shared.model.transcriptionSocket, command: "status") {
-            return
-        }
-        startTranscription()
-    }
-
     func ensureLLMDaemon() {
         guard AppConfig.shared.model.llmEnabled else { return }
+        guard AppConfig.shared.model.llmAvailable else {
+            AppLogger.shared.info("LLM module not installed — skipping daemon launch")
+            return
+        }
         if UnixSocket.ping(socketPath: AppConfig.shared.model.llmSocket, command: "ping") {
             return
         }
@@ -24,20 +22,8 @@ final class PythonServiceManager {
     }
 
     func stopAll() {
-        transcriptionProcess?.terminate()
-        transcriptionProcess = nil
         llmProcess?.terminate()
         llmProcess = nil
-    }
-
-    private func startTranscription() {
-        guard transcriptionProcess == nil else { return }
-        guard let script = ScriptLocator.locate(name: "transcription_daemon_mlx.py") else {
-            AppLogger.shared.error("Could not locate transcription daemon script")
-            return
-        }
-        cleanStaleSocket(path: AppConfig.shared.model.transcriptionSocket)
-        transcriptionProcess = launchPython(scriptPath: script)
     }
 
     private func startLLM() {
@@ -57,8 +43,7 @@ final class PythonServiceManager {
         process.arguments = ["-u", scriptPath]
         var env = ProcessInfo.processInfo.environment
 
-        // Ensure Homebrew paths are in PATH so ffmpeg (needed by mlx-whisper) is found.
-        // .app bundles launched from Finder have a minimal PATH that excludes Homebrew.
+        // Ensure Homebrew paths are in PATH so dependencies are found.
         let extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"]
         let currentPath = env["PATH"] ?? "/usr/bin:/bin"
         let missingPaths = extraPaths.filter { !currentPath.contains($0) }
@@ -66,7 +51,6 @@ final class PythonServiceManager {
             env["PATH"] = (missingPaths + [currentPath]).joined(separator: ":")
         }
 
-        // Redirect caches away from the app bundle (read-only) to user caches.
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let cachesDir = homeDir.appendingPathComponent("Library/Caches/TextEcho", isDirectory: true)
         try? FileManager.default.createDirectory(at: cachesDir, withIntermediateDirectories: true)
@@ -75,7 +59,6 @@ final class PythonServiceManager {
         env["PYTHONPYCACHEPREFIX"] = cachePath + "/__pycache__"
         env["HF_HOME"] = cachePath + "/hf"
         env["TRANSFORMERS_CACHE"] = cachePath + "/hf"
-        env["MLX_CACHE"] = cachePath + "/mlx"
         env["HOME"] = homeDir.path
         env["TMPDIR"] = cachePath + "/tmp"
         env["PYTHONUNBUFFERED"] = "1"
@@ -94,12 +77,9 @@ final class PythonServiceManager {
         process.standardOutput = logHandle
         process.standardError = logHandle
         process.terminationHandler = { [weak self] proc in
-            AppLogger.shared.error("Python daemon exited (status=\(proc.terminationStatus), reason=\(proc.terminationReason.rawValue))")
+            AppLogger.shared.error("Python LLM daemon exited (status=\(proc.terminationStatus), reason=\(proc.terminationReason.rawValue))")
             try? logHandle?.close()
             guard let self else { return }
-            if self.transcriptionProcess === proc {
-                self.transcriptionProcess = nil
-            }
             if self.llmProcess === proc {
                 self.llmProcess = nil
             }
@@ -108,10 +88,10 @@ final class PythonServiceManager {
         do {
             try process.run()
             AppLogger.shared.info("Python executable: \(pythonPath)")
-            AppLogger.shared.info("Started python daemon: \(scriptPath)")
+            AppLogger.shared.info("Started LLM daemon: \(scriptPath)")
             return process
         } catch {
-            AppLogger.shared.error("Failed to start python daemon: \(error)")
+            AppLogger.shared.error("Failed to start LLM daemon: \(error)")
             return nil
         }
     }

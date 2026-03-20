@@ -10,7 +10,7 @@ final class SettingsWindowController {
             let view = SettingsView()
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 700),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered,
                 defer: false
@@ -49,6 +49,13 @@ struct SettingsView: View {
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var pythonPath: String = AppConfig.shared.model.pythonPath
     @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
+
+    // WhisperKit model settings
+    @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
+    @State private var cachedModels: [String] = WhisperKitTranscriber.cachedModels()
+    @State private var showManageModels: Bool = false
+
+    private let llmAvailable = AppConfig.shared.model.llmAvailable
 
     init() {
         let trigger = AppConfig.shared.model.triggerButton
@@ -115,6 +122,61 @@ struct SettingsView: View {
 
                 Divider()
 
+                // Transcription Model section
+                Text("Transcription Model")
+                    .font(.system(size: 14, weight: .semibold))
+
+                HStack {
+                    Text("Active Model")
+                    Spacer()
+                    Picker("", selection: $selectedWhisperModel) {
+                        ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
+                            let cached = cachedModels.contains(model.name)
+                            Text("\(model.displayName)\(cached ? "" : " (not downloaded)")")
+                                .tag(model.name)
+                        }
+                    }
+                    .frame(width: 240)
+                }
+
+                DisclosureGroup("Manage Models", isExpanded: $showManageModels) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(model.displayName)
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text(model.size)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+
+                                if cachedModels.contains(model.name) {
+                                    Text("Downloaded")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.green)
+
+                                    Button("Delete") {
+                                        try? WhisperKitTranscriber.deleteModel(model.name)
+                                        cachedModels = WhisperKitTranscriber.cachedModels()
+                                    }
+                                    .font(.system(size: 11))
+                                } else {
+                                    Text("Not downloaded")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(.leading, 4)
+                }
+
+                Divider()
+
                 Text("Key Bindings")
                     .font(.system(size: 14, weight: .semibold))
 
@@ -175,38 +237,50 @@ struct SettingsView: View {
 
                 Divider()
 
-                Text("LLM")
-                    .font(.system(size: 14, weight: .semibold))
+                // LLM section — only show if module is installed
+                if llmAvailable {
+                    Text("LLM")
+                        .font(.system(size: 14, weight: .semibold))
 
-                Toggle("Enable LLM", isOn: $llmEnabled)
+                    Toggle("Enable LLM", isOn: $llmEnabled)
 
-                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+                    HStack {
+                        Text("LLM Model Path")
+                        Spacer()
+                        TextField("/path/to/model.gguf", text: $llmModelPath)
+                            .frame(width: 260)
+                    }
 
-                HStack {
-                    Text("LLM Model Path")
-                    Spacer()
-                    TextField("/path/to/model.gguf", text: $llmModelPath)
-                        .frame(width: 260)
+                    Divider()
+
+                    Text("Python (LLM)")
+                        .font(.system(size: 14, weight: .semibold))
+
+                    HStack {
+                        Text("Python Path")
+                        Spacer()
+                        TextField("/opt/homebrew/bin/python3", text: $pythonPath)
+                            .frame(width: 260)
+                    }
+
+                    HStack {
+                        Text("Daemons Dir")
+                        Spacer()
+                        TextField("/path/to/scripts", text: $scriptsDir)
+                            .frame(width: 260)
+                    }
+                } else {
+                    Text("LLM")
+                        .font(.system(size: 14, weight: .semibold))
+
+                    Text("LLM module not installed. Rebuild with: ./build_native_app.sh --with-llm")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
 
                 Divider()
 
-                Text("Python")
-                    .font(.system(size: 14, weight: .semibold))
-
-                HStack {
-                    Text("Python Path")
-                    Spacer()
-                    TextField("/opt/homebrew/bin/python3", text: $pythonPath)
-                        .frame(width: 260)
-                }
-
-                HStack {
-                    Text("Daemons Dir")
-                    Spacer()
-                    TextField("/path/to/scripts", text: $scriptsDir)
-                        .frame(width: 260)
-                }
+                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
 
                 Divider()
 
@@ -229,6 +303,7 @@ struct SettingsView: View {
         .frame(minWidth: 520, minHeight: 520)
         .onAppear {
             refreshPermissions()
+            cachedModels = WhisperKitTranscriber.cachedModels()
         }
     }
 
@@ -278,6 +353,7 @@ struct SettingsView: View {
             model.showMenuBarIcon = showMenuBarIcon
             model.pythonPath = pythonPath
             model.daemonScriptsDir = scriptsDir
+            model.whisperModel = selectedWhisperModel
         }
     }
 

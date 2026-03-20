@@ -8,10 +8,11 @@ final class AppState {
     private let overlay = OverlayWindowController()
     private let inputMonitor = InputMonitor()
     private let recorder = AudioRecorder()
-    private let transcription = TranscriptionClient()
     private let textInjector = TextInjector()
     private let pythonServices = PythonServiceManager()
     private let pedalMonitor = StreamDeckPedalMonitor()
+
+    private let transcriber: WhisperKitTranscriber
 
     private var settingsWindow: SettingsWindowController?
     private var logsWindow: LogsWindowController?
@@ -19,11 +20,18 @@ final class AppState {
     private var isRecording = false
     private var isLLMMode = false
 
+    init() {
+        let model = AppConfig.shared.model
+        transcriber = WhisperKitTranscriber(
+            modelName: model.whisperModel,
+            idleTimeout: model.whisperIdleTimeout
+        )
+    }
+
     func start() {
         logger.info("Starting TextEcho")
 
-        // Clean stale sockets from previous sessions
-        cleanStaleSocket(path: config.model.transcriptionSocket)
+        // Clean stale LLM socket from previous sessions
         cleanStaleSocket(path: config.model.llmSocket)
 
         AccessibilityHelper.requestIfNeeded()
@@ -46,10 +54,15 @@ final class AppState {
             startPedalMonitor()
         }
 
-        // Pre-warm the transcription daemon so the first recording doesn't
-        // have to wait for it to start and load the model.
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.pythonServices.ensureTranscriptionDaemon()
+        // Pre-warm the WhisperKit model so first recording is fast
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.transcriber.preload()
+                self.logger.info("WhisperKit model preloaded")
+            } catch {
+                self.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -122,12 +135,9 @@ final class AppState {
                 return
             }
 
-            // Dispatch off the main thread — recorder.stop calls this completion
-            // synchronously on the caller's thread (the main run loop), and
-            // transcribe() blocks waiting for the daemon socket. Blocking the
-            // main run loop causes macOS to disable the CGEventTap.
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.transcribe(audioData: audioData, isLLM: isLLM)
+            // Dispatch transcription off the main thread to avoid blocking CGEventTap
+            Task(priority: .userInitiated) {
+                await self.transcribe(audioData: audioData, isLLM: isLLM)
             }
         }
     }
@@ -140,58 +150,35 @@ final class AppState {
         overlay.hide()
     }
 
-    private func transcribe(audioData: Data, isLLM: Bool) {
-        let pythonPath = AppConfig.shared.model.pythonPath
-        if !FileManager.default.isExecutableFile(atPath: pythonPath) {
-            overlay.showError("Python not found at \(pythonPath). Update Python Path in Settings and relaunch.")
-            return
-        }
-        pythonServices.ensureTranscriptionDaemon()
-        let socketPath = AppConfig.shared.model.transcriptionSocket
-        if !waitForTranscriptionSocket(socketPath: socketPath) {
-            overlay.showError("Transcription daemon not running (socket missing). Check Python Path and Daemons Dir in Settings, then relaunch.")
-            return
-        }
+    private func transcribe(audioData: Data, isLLM: Bool) async {
+        do {
+            let text = try await transcriber.transcribe(
+                audioData: audioData,
+                sampleRate: config.sampleRate
+            )
 
-        transcription.transcribeRaw(
-            audioData: audioData,
-            sampleRate: config.sampleRate
-        ) { [weak self] result in
-            guard let self else { return }
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let text):
-                    if text.isEmpty {
-                        self.logger.info("No speech detected (empty transcription)")
-                        self.overlay.hide()
-                    } else if isLLM {
-                        self.handleLLM(text: text)
-                    } else {
-                        self.logger.info("Transcription: \(text)")
-                        self.overlay.showResult(text, isLLM: false)
-                        self.textInjector.inject(text)
-                    }
-                case .failure(let error):
-                    self.logger.error("Transcription failed: \(error.localizedDescription)")
-                    self.overlay.showError(error.localizedDescription)
+            await MainActor.run {
+                if text.isEmpty {
+                    self.logger.info("No speech detected (empty transcription)")
+                    self.overlay.hide()
+                } else if isLLM {
+                    self.handleLLM(text: text)
+                } else {
+                    self.logger.info("Transcription: \(text)")
+                    self.overlay.showResult(text, isLLM: false)
+                    self.textInjector.inject(text)
                 }
             }
-        }
-    }
-
-    private func waitForTranscriptionSocket(socketPath: String) -> Bool {
-        let deadline = Date().addingTimeInterval(5.0)
-        while Date() < deadline {
-            if UnixSocket.ping(socketPath: socketPath, command: "status") {
-                return true
+        } catch {
+            await MainActor.run {
+                self.logger.error("Transcription failed: \(error.localizedDescription)")
+                self.overlay.showError(error.localizedDescription)
             }
-            Thread.sleep(forTimeInterval: 0.2)
         }
-        return false
     }
 
     private func handleLLM(text: String) {
-        guard config.llmEnabled else {
+        guard config.llmEnabled, config.model.llmAvailable else {
             overlay.showResult(text, isLLM: false)
             textInjector.inject(text)
             return

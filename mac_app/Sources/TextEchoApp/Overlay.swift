@@ -5,6 +5,7 @@ enum OverlayState {
     case hidden
     case recording
     case processing
+    case downloading
     case result(isLLM: Bool)
     case error
 }
@@ -31,6 +32,12 @@ final class OverlayViewModel: ObservableObject {
         state = .result(isLLM: isLLM)
         statusText = isLLM ? "LLM Response" : "Transcribed"
         resultText = text
+    }
+
+    func showDownloading() {
+        state = .downloading
+        statusText = "Downloading model..."
+        resultText = "This only happens once."
     }
 
     func showError(_ message: String) {
@@ -103,6 +110,8 @@ struct OverlayView: View {
             return .red
         case .processing:
             return .yellow
+        case .downloading:
+            return .blue
         case .result(let isLLM):
             return isLLM ? .purple : .green
         case .error:
@@ -174,6 +183,13 @@ final class OverlayWindowController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.hide()
             }
+        }
+    }
+
+    func showDownloading() {
+        DispatchQueue.main.async {
+            self.viewModel.showDownloading()
+            self.show()
         }
     }
 

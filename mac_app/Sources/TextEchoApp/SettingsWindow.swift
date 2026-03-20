@@ -54,6 +54,7 @@ struct SettingsView: View {
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
     @State private var cachedModels: [String] = WhisperKitTranscriber.cachedModels()
     @State private var showManageModels: Bool = false
+    @State private var downloadingModel: String? = nil
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
@@ -150,9 +151,13 @@ struct SettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(model.displayName)
                                         .font(.system(size: 12, weight: .semibold))
-                                    Text(model.size)
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
+                                    HStack(spacing: 4) {
+                                        Text(model.size)
+                                        Text("—")
+                                        Text(model.description)
+                                    }
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
                                 }
 
                                 Spacer()
@@ -167,10 +172,17 @@ struct SettingsView: View {
                                         cachedModels = WhisperKitTranscriber.cachedModels()
                                     }
                                     .font(.system(size: 11))
-                                } else {
-                                    Text("Not downloaded")
+                                } else if downloadingModel == model.name {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Downloading...")
                                         .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(.orange)
+                                } else {
+                                    Button("Download") {
+                                        downloadModel(model.name)
+                                    }
+                                    .font(.system(size: 11))
                                 }
                             }
                             .padding(.vertical, 2)
@@ -387,6 +399,25 @@ struct SettingsView: View {
         if cmd { mask |= UInt(NSEvent.ModifierFlags.command.rawValue) }
         if shift { mask |= UInt(NSEvent.ModifierFlags.shift.rawValue) }
         return mask
+    }
+
+    private func downloadModel(_ modelName: String) {
+        downloadingModel = modelName
+        Task {
+            let transcriber = WhisperKitTranscriber(
+                modelName: modelName,
+                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+            )
+            do {
+                try await transcriber.preload()
+            } catch {
+                AppLogger.shared.error("Model download failed: \(error.localizedDescription)")
+            }
+            await MainActor.run {
+                self.downloadingModel = nil
+                self.cachedModels = WhisperKitTranscriber.cachedModels()
+            }
+        }
     }
 
     private func refreshPermissions() {

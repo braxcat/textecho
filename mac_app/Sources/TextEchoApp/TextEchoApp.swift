@@ -42,6 +42,10 @@ struct TextEchoApp: App {
                 appModel.openHelp()
             }
 
+            Button("Setup Wizard…") {
+                appModel.openSetupWizard()
+            }
+
             Divider()
 
             Toggle(
@@ -133,6 +137,17 @@ final class AppModel: ObservableObject {
             helpWindow = HelpWindowController()
         }
         helpWindow?.show()
+    }
+
+    func openSetupWizard() {
+        if setupWizard == nil {
+            setupWizard = SetupWizardController(onClose: { [weak self] in
+                self?.setupWizard?.close()
+                self?.setupWizard = nil
+                self?.appState.restartInputMonitor()
+            })
+        }
+        setupWizard?.show()
     }
 
     func uninstall() {

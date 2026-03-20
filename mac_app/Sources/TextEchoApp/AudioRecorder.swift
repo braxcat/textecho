@@ -7,7 +7,7 @@ final class AudioRecorder {
     var onWaveform: (([Double]) -> Void)?
     var onAutoStop: (() -> Void)?
 
-    private var engine = AVAudioEngine()
+    private let engine = AVAudioEngine()
     private var bufferData = Data()
     private var lastSoundTime = Date()
     private var isRecording = false
@@ -142,8 +142,10 @@ final class AudioRecorder {
         waveformLevels = Array(repeating: 0.0, count: waveformWindow)
         os_unfair_lock_unlock(lock)
 
-        // Create a fresh engine each recording to avoid stale state after stop/start cycles
-        engine = AVAudioEngine()
+        // Ensure clean state: remove any leftover tap, then prepare the engine
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        engine.reset()
 
         let input = engine.inputNode
         let format = input.inputFormat(forBus: 0)

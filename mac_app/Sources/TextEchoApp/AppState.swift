@@ -237,7 +237,7 @@ final class AppState {
         // Left pedal: paste (Cmd+V)
         pedalMonitor.onPedalDownByPosition[PedalPosition.left.rawValue] = { [weak self] in
             self?.logger.info("Pedal action: paste")
-            self?.injector.sendPaste()
+            self?.textInjector.sendPaste()
         }
 
         // Center pedal: push-to-talk (hold to record, release to transcribe)
@@ -251,7 +251,7 @@ final class AppState {
         // Right pedal: enter
         pedalMonitor.onPedalDownByPosition[PedalPosition.right.rawValue] = { [weak self] in
             self?.logger.info("Pedal action: enter")
-            self?.injector.sendEnter()
+            self?.textInjector.sendEnter()
         }
 
         pedalMonitor.onConnectionChanged = { [weak self] connected in

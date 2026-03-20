@@ -33,6 +33,7 @@ final class AppConfig {
         var pedalPosition: Int // 0=left, 1=center, 2=right
         var whisperModel: String
         var whisperIdleTimeout: Int
+        var inputDeviceUID: String  // empty = system default
 
         /// Whether the LLM daemon script is bundled in the app.
         var llmAvailable: Bool {
@@ -63,7 +64,8 @@ final class AppConfig {
         pedalEnabled: false,
         pedalPosition: 1,
         whisperModel: "large-v3-turbo",
-        whisperIdleTimeout: 3600
+        whisperIdleTimeout: 3600,
+        inputDeviceUID: ""
     )
 
     var triggerButton: Int { queue.sync { model.triggerButton } }
@@ -111,6 +113,7 @@ final class AppConfig {
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
         if let value = obj["whisper_model"] as? String { updated.whisperModel = value }
         if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = max(60, min(value, 86400)) }
+        if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
 
         model = updated
     }
@@ -141,6 +144,7 @@ final class AppConfig {
         dict["pedal_position"] = model.pedalPosition
         dict["whisper_model"] = model.whisperModel
         dict["whisper_idle_timeout"] = model.whisperIdleTimeout
+        dict["input_device_uid"] = model.inputDeviceUID
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL)

@@ -113,6 +113,12 @@ final class AppState {
         logger.info("Recording started (mode: \(mode.rawValue))")
         overlay.showRecording(isLLM: isLLMMode)
 
+        // Set configured input device (empty = system default)
+        let deviceUID = config.model.inputDeviceUID
+        if !deviceUID.isEmpty, let deviceID = AudioRecorder.deviceID(forUID: deviceUID) {
+            recorder.setInputDevice(deviceID: deviceID)
+        }
+
         recorder.start(
             silenceDuration: config.silenceDuration,
             silenceThreshold: config.silenceThreshold,

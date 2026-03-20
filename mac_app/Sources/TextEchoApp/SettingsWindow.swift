@@ -55,6 +55,10 @@ struct SettingsView: View {
     @State private var cachedModels: [String] = WhisperKitTranscriber.cachedModels()
     @State private var showManageModels: Bool = false
 
+    // Input device
+    @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
+    @State private var inputDevices: [(id: UInt32, uid: String, name: String)] = AudioRecorder.availableInputDevices()
+
     private let llmAvailable = AppConfig.shared.model.llmAvailable
 
     init() {
@@ -215,6 +219,23 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .semibold))
 
                 HStack {
+                    Text("Input Device")
+                    Spacer()
+                    Picker("", selection: $selectedDeviceUID) {
+                        Text("System Default").tag("")
+                        ForEach(inputDevices, id: \.uid) { device in
+                            Text(device.name).tag(device.uid)
+                        }
+                    }
+                    .frame(width: 240)
+
+                    Button("Refresh") {
+                        inputDevices = AudioRecorder.availableInputDevices()
+                    }
+                    .font(.system(size: 11))
+                }
+
+                HStack {
                     Text("Silence Duration (sec)")
                     Spacer()
                     TextField("2.5", text: $silenceDuration)
@@ -304,6 +325,7 @@ struct SettingsView: View {
         .onAppear {
             refreshPermissions()
             cachedModels = WhisperKitTranscriber.cachedModels()
+            inputDevices = AudioRecorder.availableInputDevices()
         }
     }
 
@@ -354,6 +376,7 @@ struct SettingsView: View {
             model.pythonPath = pythonPath
             model.daemonScriptsDir = scriptsDir
             model.whisperModel = selectedWhisperModel
+            model.inputDeviceUID = selectedDeviceUID
         }
     }
 

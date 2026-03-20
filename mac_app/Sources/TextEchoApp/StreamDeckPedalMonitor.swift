@@ -52,9 +52,7 @@ final class StreamDeckPedalMonitor {
     /// Quick one-shot check if any Stream Deck Pedal is visible on USB.
     /// Does not open the device — just checks if it's present.
     static func detectConnectedPedals() -> [IOHIDDevice] {
-        guard let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone)) else {
-            return []
-        }
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let matchDict: [String: Any] = [
             kIOHIDVendorIDKey as String: vendorID,
             kIOHIDProductIDKey as String: productID,

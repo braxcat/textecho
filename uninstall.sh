@@ -60,7 +60,23 @@ rm -f ~/.textecho_llm.pid && echo "    Removed ~/.textecho_llm.pid" || true
 echo "    Done"
 echo ""
 
-# 5. Remove log directory
+# 5. Remove registers file
+echo "==> Removing registers..."
+rm -f ~/.textecho_registers.json && echo "    Removed ~/.textecho_registers.json" || true
+echo ""
+
+# 6. Remove WhisperKit models
+echo "==> Removing WhisperKit models..."
+HF_MODELS="$HOME/Documents/huggingface/models/argmaxinc/whisperkit-coreml"
+if [ -d "$HF_MODELS" ]; then
+    rm -rf "$HF_MODELS"
+    echo "    Removed $HF_MODELS"
+else
+    echo "    No WhisperKit models found"
+fi
+echo ""
+
+# 7. Remove log directory
 echo "==> Removing log files..."
 if [ -d ~/Library/Logs/TextEcho ]; then
     rm -rf ~/Library/Logs/TextEcho
@@ -70,19 +86,19 @@ else
 fi
 echo ""
 
-# 6. Remove sockets
+# 8. Remove sockets
 echo "==> Removing sockets..."
 rm -f /tmp/textecho_transcription.sock && echo "    Removed transcription socket" || true
 rm -f /tmp/textecho_llm.sock && echo "    Removed LLM socket" || true
 echo "    Done"
 echo ""
 
-# 7. Eject any mounted DMG
+# 9. Eject any mounted DMG
 echo "==> Ejecting DMG if mounted..."
 hdiutil detach /Volumes/TextEcho 2>/dev/null && echo "    Ejected TextEcho DMG" || echo "    No DMG mounted"
 echo ""
 
-# 8. Reset TCC permissions (requires manual action)
+# 10. Reset TCC permissions (requires manual action)
 echo "==> Permission Cleanup"
 echo ""
 echo "    To fully remove permissions, you need to manually remove TextEcho from:"

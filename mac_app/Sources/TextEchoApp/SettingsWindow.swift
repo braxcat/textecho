@@ -61,6 +61,10 @@ struct SettingsView: View {
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
     @State private var inputDevices: [(id: UInt32, uid: String, name: String)] = AudioRecorder.availableInputDevices()
 
+    // Pedal
+    @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
+    @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
+
     private let llmAvailable = AppConfig.shared.model.llmAvailable
 
     init() {
@@ -280,6 +284,35 @@ struct SettingsView: View {
 
                 Divider()
 
+                Text("Stream Deck Pedal")
+                    .font(.system(size: 14, weight: .semibold))
+
+                Toggle("Enable Stream Deck Pedal", isOn: $pedalEnabled)
+
+                if pedalEnabled {
+                    HStack {
+                        Text("Push-to-talk pedal")
+                        Spacer()
+                        Picker("", selection: $pedalPosition) {
+                            Text("Left").tag(0)
+                            Text("Center").tag(1)
+                            Text("Right").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 200)
+                    }
+
+                    Text("Left = Paste, Center = Push-to-talk, Right = Enter")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+
+                    Text("Quit Elgato Stream Deck app if pedal is not detected.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+
+                Divider()
+
                 // LLM section — only show if module is installed
                 if llmAvailable {
                     Text("LLM")
@@ -399,6 +432,8 @@ struct SettingsView: View {
             model.daemonScriptsDir = scriptsDir
             model.whisperModel = selectedWhisperModel
             model.inputDeviceUID = selectedDeviceUID
+            model.pedalEnabled = pedalEnabled
+            model.pedalPosition = pedalPosition
         }
     }
 

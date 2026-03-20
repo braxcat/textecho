@@ -35,6 +35,7 @@ final class StreamDeckPedalMonitor {
     private var reportBuffer: UnsafeMutablePointer<UInt8>?
     private var pedalStates: [Bool] = [false, false, false]
     private var connected = false
+    private var retryTimer: Timer?
 
     init() {
         reportBuffer = .allocate(capacity: Self.reportBufferSize)
@@ -84,9 +85,14 @@ final class StreamDeckPedalMonitor {
         } else {
             AppLogger.shared.error("Failed to open HID manager: \(result)")
         }
+
+        // Start periodic re-scan in case device isn't matched immediately
+        // (e.g. Elgato software was just quit, or USB device is slow to enumerate)
+        startRetryTimer()
     }
 
     func stop() {
+        stopRetryTimer()
         guard let manager else { return }
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
@@ -98,6 +104,7 @@ final class StreamDeckPedalMonitor {
     private func deviceConnected(_ device: IOHIDDevice) {
         connected = true
         pedalStates = [false, false, false]
+        stopRetryTimer()
         AppLogger.shared.info("Stream Deck Pedal connected")
         onConnectionChanged?(true)
 
@@ -122,7 +129,31 @@ final class StreamDeckPedalMonitor {
         pedalStates = [false, false, false]
         AppLogger.shared.info("Stream Deck Pedal disconnected")
         onConnectionChanged?(false)
+        // Auto-retry to reconnect if device is replugged
+        startRetryTimer()
     }
+
+    // MARK: - Device retry timer
+
+    private func startRetryTimer() {
+        guard retryTimer == nil else { return }
+        retryTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self, !self.connected, let manager = self.manager else { return }
+            AppLogger.shared.info("Stream Deck Pedal: scanning for device...")
+            let matchDict: [String: Any] = [
+                kIOHIDVendorIDKey as String: Self.vendorID,
+                kIOHIDProductIDKey as String: Self.productID,
+            ]
+            IOHIDManagerSetDeviceMatching(manager, matchDict as CFDictionary)
+        }
+    }
+
+    private func stopRetryTimer() {
+        retryTimer?.invalidate()
+        retryTimer = nil
+    }
+
+    // MARK: - HID reports
 
     private func handleReport(_ data: UnsafeMutablePointer<UInt8>, length: CFIndex) {
         // Log raw bytes for debugging

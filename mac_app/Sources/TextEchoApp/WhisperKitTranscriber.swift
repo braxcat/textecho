@@ -36,7 +36,7 @@ actor WhisperKitTranscriber: Transcriber {
     ]
 
     /// Migrates old short model names to full HF repo directory names.
-    private static func migrateModelName(_ name: String) -> String {
+    nonisolated static func migrateModelName(_ name: String) -> String {
         switch name {
         case "large-v3-turbo": return "openai_whisper-large-v3_turbo"
         case "large-v3": return "openai_whisper-large-v3"

@@ -1,13 +1,25 @@
 import AppKit
 import SwiftUI
 
-enum OverlayState {
+enum OverlayState: Equatable {
     case hidden
     case recording
     case processing
     case downloading
     case result(isLLM: Bool)
     case error
+
+    static func == (lhs: OverlayState, rhs: OverlayState) -> Bool {
+        switch (lhs, rhs) {
+        case (.hidden, .hidden), (.recording, .recording), (.processing, .processing),
+             (.downloading, .downloading), (.error, .error):
+            return true
+        case (.result(let a), .result(let b)):
+            return a == b
+        default:
+            return false
+        }
+    }
 }
 
 final class OverlayViewModel: ObservableObject {
@@ -18,31 +30,31 @@ final class OverlayViewModel: ObservableObject {
 
     func showRecording(isLLM: Bool) {
         state = .recording
-        statusText = isLLM ? "Recording (LLM)…" : "Recording…"
+        statusText = isLLM ? "RECORDING // LLM" : "RECORDING"
         resultText = ""
         waveform = Array(repeating: 0.0, count: 40)
     }
 
     func showProcessing(isLLM: Bool) {
         state = .processing
-        statusText = isLLM ? "Processing (LLM)…" : "Transcribing…"
+        statusText = isLLM ? "PROCESSING // LLM" : "TRANSCRIBING"
     }
 
     func showResult(_ text: String, isLLM: Bool) {
         state = .result(isLLM: isLLM)
-        statusText = isLLM ? "LLM Response" : "Transcribed"
+        statusText = isLLM ? "LLM RESPONSE" : "TRANSCRIBED"
         resultText = text
     }
 
     func showDownloading() {
         state = .downloading
-        statusText = "Downloading model..."
+        statusText = "DOWNLOADING MODEL"
         resultText = "This only happens once."
     }
 
     func showError(_ message: String) {
         state = .error
-        statusText = "Error"
+        statusText = "ERROR"
         resultText = message
     }
 
@@ -51,112 +63,306 @@ final class OverlayViewModel: ObservableObject {
     }
 }
 
+// MARK: - Color palette (Artificer Cyber)
+
+private struct CyberColors {
+    static let cyan = Color(red: 0.0, green: 1.0, blue: 0.88)       // #00FFE0
+    static let magenta = Color(red: 1.0, green: 0.0, blue: 0.4)     // #FF0066
+    static let purple = Color(red: 0.54, green: 0.36, blue: 0.96)   // #8A5CF6
+    static let green = Color(red: 0.0, green: 0.96, blue: 0.4)      // #00F566
+    static let amber = Color(red: 1.0, green: 0.76, blue: 0.0)      // #FFC200
+    static let red = Color(red: 1.0, green: 0.2, blue: 0.2)         // #FF3333
+    static let bgDark = Color(red: 0.04, green: 0.04, blue: 0.1)    // #0A0A1A
+    static let bgMid = Color(red: 0.06, green: 0.06, blue: 0.14)    // #0F0F24
+    static let borderGlow = Color(red: 0.0, green: 0.8, blue: 0.7)  // #00CCB3
+}
+
+// MARK: - Main overlay view
+
 struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
+    @State private var pulseScale: CGFloat = 1.0
+    @State private var scanOffset: CGFloat = 0.0
+    @State private var glowIntensity: Double = 0.4
 
-    private let width: CGFloat = 420
+    private let width: CGFloat = 380
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                if case .recording = viewModel.state {
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 10, height: 10)
-                        .shadow(color: .red.opacity(0.5), radius: 4)
+        VStack(alignment: .leading, spacing: 0) {
+            // Top accent line
+            Rectangle()
+                .fill(accentGradient)
+                .frame(height: 2)
+                .shadow(color: accentColor.opacity(0.6), radius: 6)
+
+            VStack(alignment: .leading, spacing: 10) {
+                // Status row
+                HStack(spacing: 8) {
+                    statusIndicator
+
+                    Text(viewModel.statusText)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(accentColor)
+                        .tracking(1.5)
+
+                    Spacer()
+
+                    // Subtle branding
+                    Text("TEXTECHO")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.15))
+                        .tracking(2)
                 }
 
-                Text(viewModel.statusText)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(statusColor)
+                // Waveform (recording state)
+                if case .recording = viewModel.state {
+                    CyberWaveformView(levels: viewModel.waveform)
+                        .frame(height: 48)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
 
-                Spacer()
-            }
+                // Scanner bar (processing state)
+                if case .processing = viewModel.state {
+                    ScannerBarView()
+                        .frame(height: 4)
+                        .padding(.vertical, 6)
+                        .transition(.opacity)
+                }
 
-            if case .recording = viewModel.state {
-                WaveformView(levels: viewModel.waveform)
-                    .frame(height: 50)
+                // Result text
+                if !viewModel.resultText.isEmpty {
+                    Text(viewModel.resultText)
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .foregroundColor(resultTextColor)
+                        .lineLimit(4)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
-
-            if !viewModel.resultText.isEmpty {
-                Text(viewModel.resultText)
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
-                    .foregroundColor(.cyan.opacity(0.9))
-                    .lineLimit(4)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .padding(14)
         .frame(width: width, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.black.opacity(0.75), Color.black.opacity(0.55)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
-        .shadow(color: .black.opacity(0.45), radius: 16, x: 0, y: 8)
+        .background(backgroundView)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(borderOverlay)
+        .shadow(color: accentColor.opacity(0.15), radius: 20, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.5), radius: 12, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.25), value: viewModel.state)
+        .onAppear { startAnimations() }
     }
 
-    private var statusColor: Color {
+    // MARK: - Status indicator
+
+    @ViewBuilder
+    private var statusIndicator: some View {
         switch viewModel.state {
         case .recording:
-            return .red
+            Circle()
+                .fill(CyberColors.magenta)
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulseScale)
+                .shadow(color: CyberColors.magenta.opacity(0.7), radius: 6)
         case .processing:
-            return .yellow
+            Circle()
+                .fill(CyberColors.cyan)
+                .frame(width: 8, height: 8)
+                .opacity(glowIntensity)
+                .shadow(color: CyberColors.cyan.opacity(0.5), radius: 4)
         case .downloading:
-            return .blue
-        case .result(let isLLM):
-            return isLLM ? .purple : .green
+            Circle()
+                .fill(CyberColors.amber)
+                .frame(width: 8, height: 8)
+                .shadow(color: CyberColors.amber.opacity(0.5), radius: 4)
+        case .result:
+            Circle()
+                .fill(CyberColors.green)
+                .frame(width: 8, height: 8)
+                .shadow(color: CyberColors.green.opacity(0.5), radius: 4)
         case .error:
-            return .red
+            Circle()
+                .fill(CyberColors.red)
+                .frame(width: 8, height: 8)
+                .shadow(color: CyberColors.red.opacity(0.5), radius: 4)
         case .hidden:
-            return .white
+            EmptyView()
+        }
+    }
+
+    // MARK: - Background
+
+    private var backgroundView: some View {
+        ZStack {
+            // Base dark gradient
+            LinearGradient(
+                colors: [CyberColors.bgDark, CyberColors.bgMid],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            // Subtle noise/texture overlay
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.08)
+
+            // Accent glow from top
+            LinearGradient(
+                colors: [accentColor.opacity(0.06), .clear],
+                startPoint: .top,
+                endPoint: .center
+            )
+        }
+    }
+
+    private var borderOverlay: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        accentColor.opacity(0.3),
+                        accentColor.opacity(0.08),
+                        CyberColors.purple.opacity(0.15),
+                        accentColor.opacity(0.2)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+    }
+
+    // MARK: - Colors
+
+    private var accentColor: Color {
+        switch viewModel.state {
+        case .recording: return CyberColors.magenta
+        case .processing: return CyberColors.cyan
+        case .downloading: return CyberColors.amber
+        case .result(let isLLM): return isLLM ? CyberColors.purple : CyberColors.green
+        case .error: return CyberColors.red
+        case .hidden: return CyberColors.cyan
+        }
+    }
+
+    private var accentGradient: LinearGradient {
+        LinearGradient(
+            colors: [accentColor, accentColor.opacity(0.3)],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private var resultTextColor: Color {
+        switch viewModel.state {
+        case .result(let isLLM): return isLLM ? CyberColors.purple.opacity(0.9) : CyberColors.cyan.opacity(0.9)
+        case .error: return CyberColors.red.opacity(0.9)
+        default: return CyberColors.cyan.opacity(0.9)
+        }
+    }
+
+    // MARK: - Animations
+
+    private func startAnimations() {
+        // Pulse animation for recording indicator
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+            pulseScale = 1.4
+        }
+        // Glow animation for processing
+        withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+            glowIntensity = 1.0
         }
     }
 }
 
-struct WaveformView: View {
-    let levels: [Double]
+// MARK: - Cyberpunk waveform
 
-    private let silenceThreshold: Double = 0.08
+struct CyberWaveformView: View {
+    let levels: [Double]
+    private let silenceThreshold: Double = 0.05
 
     var body: some View {
         HStack(alignment: .center, spacing: 2) {
             ForEach(levels.indices, id: \.self) { index in
                 let level = levels[index]
                 let isActive = level >= silenceThreshold
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(
-                        LinearGradient(colors: [Color.cyan, Color.purple], startPoint: .bottom, endPoint: .top)
-                    )
-                    .frame(width: 4, height: barHeight(level: level, active: isActive))
-                    .opacity(isActive ? 1.0 : 0.3)
-                    .animation(.easeOut(duration: 0.08), value: level)
+                let barColor = barGradient(index: index, active: isActive)
+
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(barColor)
+                    .frame(width: 5, height: barHeight(level: level, active: isActive))
+                    .shadow(color: isActive ? CyberColors.cyan.opacity(0.4) : .clear, radius: 3)
+                    .animation(.easeOut(duration: 0.06), value: level)
             }
         }
     }
 
+    private func barGradient(index: Int, active: Bool) -> LinearGradient {
+        let progress = Double(index) / Double(max(levels.count - 1, 1))
+        let startColor = active ? CyberColors.cyan : CyberColors.cyan.opacity(0.15)
+        let endColor = active ? CyberColors.magenta : CyberColors.magenta.opacity(0.1)
+
+        return LinearGradient(
+            colors: [
+                interpolateColor(startColor, endColor, progress),
+                interpolateColor(startColor, endColor, progress).opacity(active ? 0.7 : 0.1)
+            ],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+    }
+
+    private func interpolateColor(_ a: Color, _ b: Color, _ t: Double) -> Color {
+        // Simple visual blend via opacity layering
+        return t < 0.5 ? a : b
+    }
+
     private func barHeight(level: Double, active: Bool) -> CGFloat {
         guard active else { return 2 }
-        let maxHeight: CGFloat = 70
-        let minActive: CGFloat = 6
+        let maxHeight: CGFloat = 44
+        let minActive: CGFloat = 4
         let normalized = min(max(level, 0.0), 1.0)
-        let scaled = pow(normalized, 0.6)
+        let scaled = pow(normalized, 0.5) // more responsive to quiet sounds
         return minActive + (maxHeight - minActive) * CGFloat(scaled)
     }
 }
+
+// MARK: - Scanner bar (processing animation)
+
+struct ScannerBarView: View {
+    @State private var offset: CGFloat = -1.0
+
+    var body: some View {
+        GeometryReader { geo in
+            let barWidth = geo.size.width * 0.3
+            let travel = geo.size.width + barWidth
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(
+                    LinearGradient(
+                        colors: [.clear, CyberColors.cyan.opacity(0.8), CyberColors.cyan, CyberColors.cyan.opacity(0.8), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: barWidth)
+                .shadow(color: CyberColors.cyan.opacity(0.6), radius: 8)
+                .offset(x: -barWidth + travel * offset)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                        offset = 1.0
+                    }
+                }
+        }
+        .clipped()
+    }
+}
+
+// MARK: - Window controller
 
 final class OverlayWindowController {
     private let viewModel = OverlayViewModel()
     private var window: NSWindow?
     private var followTimer: Timer?
+    private var hideWorkItem: DispatchWorkItem?
 
     init() {
         setupWindow()
@@ -164,6 +370,7 @@ final class OverlayWindowController {
 
     func showRecording(isLLM: Bool) {
         DispatchQueue.main.async {
+            self.cancelAutoHide()
             self.viewModel.showRecording(isLLM: isLLM)
             self.show()
         }
@@ -171,6 +378,7 @@ final class OverlayWindowController {
 
     func showProcessing(isLLM: Bool) {
         DispatchQueue.main.async {
+            self.cancelAutoHide()
             self.viewModel.showProcessing(isLLM: isLLM)
             self.show()
         }
@@ -180,14 +388,13 @@ final class OverlayWindowController {
         DispatchQueue.main.async {
             self.viewModel.showResult(text, isLLM: isLLM)
             self.show()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.hide()
-            }
+            self.autoHide(after: 3.0)
         }
     }
 
     func showDownloading() {
         DispatchQueue.main.async {
+            self.cancelAutoHide()
             self.viewModel.showDownloading()
             self.show()
         }
@@ -197,14 +404,13 @@ final class OverlayWindowController {
         DispatchQueue.main.async {
             self.viewModel.showError(message)
             self.show()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
-                self?.hide()
-            }
+            self.autoHide(after: 5.0)
         }
     }
 
     func hide() {
         DispatchQueue.main.async {
+            self.cancelAutoHide()
             self.stopFollow()
             self.window?.orderOut(nil)
             self.viewModel.hide()
@@ -217,9 +423,27 @@ final class OverlayWindowController {
         }
     }
 
+    // MARK: - Auto-hide with cancellation
+
+    private func autoHide(after seconds: Double) {
+        cancelAutoHide()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.hide()
+        }
+        hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: workItem)
+    }
+
+    private func cancelAutoHide() {
+        hideWorkItem?.cancel()
+        hideWorkItem = nil
+    }
+
+    // MARK: - Window setup
+
     private func setupWindow() {
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
-        hostingView.frame = NSRect(x: 0, y: 0, width: 420, height: 140)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 380, height: 140)
 
         let window = NSWindow(
             contentRect: hostingView.frame,
@@ -230,16 +454,17 @@ final class OverlayWindowController {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.level = .floating
-        window.hasShadow = true
+        window.hasShadow = false // we handle shadows in SwiftUI
         window.ignoresMouseEvents = true
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         self.window = window
     }
 
     private func show() {
         positionNearMouse()
-        window?.orderFront(nil)
+        window?.orderFrontRegardless()
         startFollow()
     }
 

@@ -109,7 +109,7 @@ struct OverlayView: View {
                 .shadow(color: accentColor.opacity(0.6), radius: 6)
 
             VStack(alignment: .leading, spacing: 10) {
-                // Status row
+                // Status row with logo
                 HStack(spacing: 8) {
                     statusIndicator
 
@@ -120,19 +120,16 @@ struct OverlayView: View {
 
                     Spacer()
 
-                    // Model badge + branding
-                    HStack(spacing: 6) {
-                        if case .recording = viewModel.state {
-                            Text(Self.modelBadge)
-                                .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                                .foregroundColor(CyberColors.cyan.opacity(0.4))
-                                .tracking(0.5)
-                        }
-                        Text("TEXTECHO")
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.15))
-                            .tracking(2)
+                    // Logo
+                    HStack(spacing: 3) {
+                        Text("TEXT")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.35))
+                        Text("ECHO")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundColor(CyberColors.cyan.opacity(0.5))
                     }
+                    .tracking(1.5)
                 }
 
                 // Waveform (recording state)
@@ -157,6 +154,15 @@ struct OverlayView: View {
                         .foregroundColor(resultTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                // Bottom bar: model badge
+                HStack(spacing: 0) {
+                    Spacer()
+                    Text("WHISPER // \(Self.modelBadge)")
+                        .font(.system(size: 7, weight: .medium, design: .monospaced))
+                        .foregroundColor(CyberColors.cyan.opacity(0.25))
+                        .tracking(1)
                 }
             }
             .padding(.horizontal, 16)

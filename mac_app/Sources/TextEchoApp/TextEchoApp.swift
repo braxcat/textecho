@@ -38,6 +38,10 @@ struct TextEchoApp: App {
                 appModel.openLogs()
             }
 
+            Button("Help") {
+                appModel.openHelp()
+            }
+
             Divider()
 
             Toggle(
@@ -77,6 +81,7 @@ final class AppModel: ObservableObject {
     private let appState = AppState()
     private var restoreWindow: RestoreWindowController?
     private var setupWizard: SetupWizardController?
+    private var helpWindow: HelpWindowController?
 
     init() {
         menuBarVisible = AppConfig.shared.model.showMenuBarIcon
@@ -121,6 +126,13 @@ final class AppModel: ObservableObject {
 
     func openLogs() {
         appState.openLogs()
+    }
+
+    func openHelp() {
+        if helpWindow == nil {
+            helpWindow = HelpWindowController()
+        }
+        helpWindow?.show()
     }
 
     func uninstall() {

@@ -7,7 +7,7 @@ final class AudioRecorder {
     var onWaveform: (([Double]) -> Void)?
     var onAutoStop: (() -> Void)?
 
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private var bufferData = Data()
     private var lastSoundTime = Date()
     private var isRecording = false
@@ -142,8 +142,12 @@ final class AudioRecorder {
         waveformLevels = Array(repeating: 0.0, count: waveformWindow)
         os_unfair_lock_unlock(lock)
 
+        // Create a fresh engine each recording to avoid stale state after stop/start cycles
+        engine = AVAudioEngine()
+
         let input = engine.inputNode
         let format = input.inputFormat(forBus: 0)
+        AppLogger.shared.info("AudioRecorder: format=\(format), sampleRate=\(format.sampleRate), channels=\(format.channelCount)")
         guard let desiredFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                                sampleRate: sampleRate,
                                                channels: 1,

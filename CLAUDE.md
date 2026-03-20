@@ -1,13 +1,13 @@
 # TextEcho
 
-Native macOS menu bar app for voice-to-text dictation. Uses mlx-whisper (large-v3-turbo) for local Apple Silicon transcription and optional local LLM processing via llama-cpp-python. Swift UI with embedded Python daemons — no cloud, no network, fully offline.
+Native macOS menu bar app for voice-to-text dictation. Uses **WhisperKit** (Core ML / Apple Neural Engine) for local transcription — fully native Swift, no Python needed. Optional local LLM processing via llama-cpp-python (build with `--with-llm`). No cloud, no network after model download, fully offline.
 
 ### Documentation Index
 
 | Document | Purpose | Update when... |
 |----------|---------|----------------|
 | [README.md](README.md) | Project overview, installation, usage | Features or setup changes |
-| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design, IPC protocol, build pipeline | Architectural changes |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design, transcription flow, build pipeline | Architectural changes |
 | [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history | After each deploy |
 | [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory | Any feature ships/changes |
 | [claude_docs/PLANNING.md](claude_docs/PLANNING.md) | Future features, research | New ideas or research |
@@ -18,11 +18,11 @@ Native macOS menu bar app for voice-to-text dictation. Uses mlx-whisper (large-v
 
 ## Quick Start
 
-**Prerequisites:** macOS 13+, Apple Silicon, Python 3.12 (NOT 3.13+), Xcode CLI tools
+**Prerequisites:** macOS 14+, Apple Silicon, Xcode CLI tools
 
 ```bash
-# Build the native app
-PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh
+# Build the native app (pure Swift, no Python needed)
+./build_native_app.sh
 
 # Deploy to /Applications
 cp -R dist/TextEcho.app /Applications/ && open /Applications/TextEcho.app
@@ -30,35 +30,36 @@ cp -R dist/TextEcho.app /Applications/ && open /Applications/TextEcho.app
 
 Grant **Accessibility** and **Microphone** permissions in System Settings when prompted.
 
+On first launch, choose a transcription model (~1.6GB download for recommended model).
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `./build_native_app.sh` | Build Swift app + bundle Python venv into .app |
-| `swift build -c release --package-path mac_app` | Build Swift only (no Python bundle) |
+| `./build_native_app.sh` | Build pure Swift app (no Python) |
+| `./build_native_app.sh --with-llm` | Build with optional LLM module (requires Python 3.12) |
+| `swift build -c release --package-path mac_app` | Build Swift only (no .app bundle) |
 | `./build_native_dmg.sh` | Create distributable DMG |
-| `./daemon_control_mac.sh status` | Check daemon status (dev diagnostic) |
 
 ## Architecture
-
-**Swift app** (`mac_app/Sources/TextEchoApp/`) is the sole entry point. It manages two Python daemons:
 
 ```
 TextEcho.app (Swift)
 ├── AppMain → AppState (orchestrator)
 ├── InputMonitor (CGEventTap → hotkeys)
 ├── AudioRecorder (AVAudioEngine → PCM)
-├── PythonServiceManager (launches daemons)
-├── TranscriptionClient (UnixSocket IPC)
+├── WhisperKitTranscriber (Core ML → Neural Engine)
+│   └── Transcriber protocol (swappable backend)
 ├── Overlay (SwiftUI floating window)
-└── TextInjector (clipboard + Cmd+V paste)
+├── TextInjector (clipboard + Cmd+V paste)
+├── HelpWindow (embedded user docs)
+└── PythonServiceManager (optional LLM daemon only)
 
-Python Daemons (bundled venv)
-├── transcription_daemon_mlx.py → /tmp/textecho_transcription.sock
+Optional (--with-llm build):
 └── llm_daemon.py → /tmp/textecho_llm.sock
 ```
 
-**IPC Protocol:** JSON header + newline + optional binary body, over Unix domain sockets.
+Transcription is fully native Swift — no IPC, no temp files, no Python process.
 
 ## Key Configuration
 
@@ -69,10 +70,10 @@ Python Daemons (bundled venv)
 | `trigger_button` | `2` | Mouse button (2=middle) |
 | `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
 | `silence_duration` | `2.5` | Seconds before auto-stop |
-| `llm_enabled` | `false` | Enable LLM processing |
-| `llm_model_path` | `""` | Path to GGUF model |
-| `python_path` | auto-detected | Python 3.12 executable |
-| `daemon_scripts_dir` | auto-detected | Directory containing daemon .py files |
+| `whisper_model` | `large-v3-turbo` | WhisperKit model name |
+| `whisper_idle_timeout` | `3600` | Seconds before model unloads from RAM |
+| `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
+| `llm_model_path` | `""` | Path to GGUF model file |
 
 ## Hotkeys
 
@@ -89,93 +90,73 @@ Python Daemons (bundled venv)
 
 ## Development Guidelines
 
-- **macOS only** — Apple Silicon (ARM64)
-- **Python 3.12** required — 3.13+ breaks tiktoken (Rust/pyo3 segfault)
+- **macOS 14+ only** — Apple Silicon (ARM64), required by WhisperKit
+- **No Python needed** for default build — pure Swift + WhisperKit
+- **Python 3.12** only needed if building with `--with-llm`
 - **Do NOT auto-install deps** — no sudo, no pip install, no downloads
-- Delete `.venv-bundle-cache` to force venv rebuild (required after switching whisper library)
-- Unix sockets for IPC (not HTTP), JSON protocol with newline delimiters
 - Lazy model loading, auto-unload after idle timeout
-- Models are HuggingFace repo IDs (e.g. `mlx-community/whisper-large-v3-turbo`) — downloaded and cached automatically
+- WhisperKit models cached at `~/Library/Caches/com.argmaxinc.WhisperKit/`
+- All transcription runs via actor isolation (no shared mutable state)
+- CGEventTap callbacks must return fast — all async work dispatched off main thread
 
 ## Known Gotchas
 
-### Python Version Issue
-
-**Python 3.13+ breaks tiktoken** — Rust/pyo3 segfault in ThreadPoolExecutor. Must use Python 3.12 or 3.11.
-
-- tiktoken 0.3.3 Rust/pyo3 bindings segfault on Python 3.13+ (specifically 3.14)
-- Crash: `_tiktoken.cpython-314-darwin.so` → `EXC_BAD_ACCESS` in `ThreadPoolExecutor-0_0`
-- Root cause: `build_native_app.sh` fell back to `python3` which was Homebrew 3.14
-- Fix: enforce Python <3.13 in build script, rebuild venv with 3.12
-- The bundled venv symlinks to system Python (not self-contained), so version matters
+### macOS 14 Minimum
+WhisperKit requires macOS 14+ for Core ML Neural Engine support. All Apple Silicon Macs support macOS 14.
 
 ### CGEventTap Gotcha
-
-**CGEventTap callbacks MUST return fast** — macOS disables the tap if callback blocks too long.
-
-- `recorder.stop()` calls completion synchronously on the caller's thread
-- If that thread is the main run loop (where CGEventTap lives), blocking in the completion kills the tap
-- Fix: dispatch blocking work (socket waits, transcription) to background queue
-- Safety net: handle `.tapDisabledByTimeout` to re-enable the tap
-- Symptom: input works once, then silently stops (no events logged)
-
-### .app Bundle PATH Gotcha
-
-**.app bundles launched from Finder have minimal PATH** (`/usr/bin:/bin`).
-
-- Homebrew paths (`/opt/homebrew/bin`, `/usr/local/bin`) are NOT included
-- `lightning-whisper-mlx` shells out to `ffmpeg` CLI for audio decoding → fails
-- Fix: PythonServiceManager prepends Homebrew paths to PATH env before launching daemons
+**CGEventTap callbacks MUST return fast** — macOS disables the tap if callback blocks too long. All WhisperKit transcription runs via `Task(priority:)` off the main thread.
 
 ### Accessibility Permission Annoyance
+**Ad-hoc code signing changes the signature every rebuild** — macOS invalidates Accessibility grant when signature changes. User must re-grant in System Settings.
 
-**Ad-hoc code signing changes the signature every rebuild** — macOS invalidates Accessibility grant when signature changes.
+### Model Download on First Launch
+First launch requires internet to download the WhisperKit Core ML model (~1.6GB for large-v3-turbo). After that, the app is fully offline.
 
-- User must delete old entry and re-add in System Settings → Privacy & Security
-- No fix short of proper Developer ID signing + notarization (Phase 6 roadmap)
-
-### Launchd Warning
-
-**Old plists in `~/Library/LaunchAgents/com.textecho.*` can auto-start the OLD Python app on reboot** — remove them.
-
-### Common Pitfalls
-
-- Don't use `-n` flag with `open` for app restart (causes two instances, can crash Mac)
-- Safe restart: quit first, background script does `sleep 1 && open <path>`
-- Old launchd services auto-start the Python app on reboot - must unload + remove
-- AVCaptureDevice.requestAccess doesn't trigger mic permission for AVAudioEngine apps
-  - Need to access AVAudioEngine.inputNode to trigger the macOS permission dialog
+### Python Version Issue (LLM only)
+If building with `--with-llm`: **Python 3.13+ breaks tiktoken** — Rust/pyo3 segfault. Must use Python 3.12 or 3.11.
 
 ## Project Structure
 
 ```
 dictation-mac/
 ├── mac_app/                          # Swift app (SwiftPM package)
-│   ├── Package.swift
+│   ├── Package.swift                 # WhisperKit dependency, macOS 14+
 │   └── Sources/TextEchoApp/
 │       ├── AppMain.swift             # Entry point, menu bar setup
 │       ├── AppState.swift            # Orchestrator (recording flow)
 │       ├── AppConfig.swift           # ~/.textecho_config reader
-│       ├── PythonServiceManager.swift # Daemon process lifecycle
-│       ├── TranscriptionClient.swift  # UnixSocket IPC client
+│       ├── Transcriber.swift         # Protocol for transcription backends
+│       ├── WhisperKitTranscriber.swift # Native WhisperKit transcription (actor)
+│       ├── PythonServiceManager.swift # Optional LLM daemon lifecycle
+│       ├── UnixSocket.swift          # Unix socket IPC (used by LLM only)
 │       ├── LLMClient.swift           # LLM socket client
 │       ├── InputMonitor.swift        # CGEventTap hotkey detection
 │       ├── AudioRecorder.swift       # AVAudioEngine recording
 │       ├── Overlay.swift             # SwiftUI floating overlay
 │       ├── TextInjector.swift        # Clipboard + Cmd+V paste
-│       ├── SetupWizard.swift         # First-launch permission wizard
-│       ├── SettingsWindow.swift      # Settings UI
+│       ├── SetupWizard.swift         # First-launch wizard (permissions + model)
+│       ├── SettingsWindow.swift      # Settings UI (model picker, key bindings)
+│       ├── HelpWindow.swift          # In-app user documentation
 │       ├── LogsWindow.swift          # Log viewer UI
 │       ├── LaunchdManager.swift      # Autostart via launchd
 │       ├── AccessibilityHelper.swift # AX permission checks
 │       ├── MicrophoneHelper.swift    # Mic permission checks
 │       ├── UninstallManager.swift    # Cleanup helper
-│       └── RestoreWindow.swift       # Window restore helper
-├── transcription_daemon_mlx.py       # MLX Whisper transcription daemon
-├── llm_daemon.py                     # Local LLM daemon (llama-cpp)
-├── build_native_app.sh               # Build script (Swift + bundled Python)
+│       ├── RestoreWindow.swift       # Window restore helper
+│       ├── StreamDeckPedalMonitor.swift # IOKit HID pedal monitor
+│       ├── TextEchoApp.swift         # @main SwiftUI app + menu bar
+│       └── AppLogger.swift           # File logging
+├── llm_daemon.py                     # Optional LLM daemon (llama-cpp)
+├── build_native_app.sh               # Build script (--with-llm for Python)
 ├── build_native_dmg.sh               # DMG creation script
-├── daemon_control_mac.sh             # Dev diagnostic tool
-├── pyproject.toml                    # Python dependencies
+├── pyproject.toml                    # Python deps (LLM optional only)
 └── claude_docs/                      # Project documentation
 ```
+
+## Conventions
+
+- All transcription logic lives in `WhisperKitTranscriber` (actor isolation)
+- LLM is fully optional — guard all LLM code paths with `llmAvailable` check
+- Config backward compatible — new fields have defaults, old fields preserved
+- No temp files for transcription — WhisperKit accepts float arrays directly

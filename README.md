@@ -1,32 +1,35 @@
 # TextEcho
 
-Voice-to-text dictation tool for macOS with automatic silence detection, local MLX Whisper transcription, and optional LLM processing. Optimized for Apple Silicon.
+Voice-to-text dictation tool for macOS with automatic silence detection and native WhisperKit transcription. Runs entirely on Apple Silicon — no cloud, no Python, fully offline after first model download.
 
 **Author:** Braxton Bragg
 
 ## Features
 
+- Native WhisperKit transcription (Apple Neural Engine via Core ML)
 - Real-time audio recording with waveform visualization
-- Local Whisper transcription via MLX (Apple Silicon native)
 - Fast model loading with auto-unload after idle
 - Automatic text pasting into active window
-- Middle-click trigger (hold to record, release to transcribe)
-- Floating overlay with waveform visualization
-- Menu bar app with daemon controls and settings UI
+- Middle-click or Ctrl+D trigger (hold to record, release to transcribe)
+- Floating overlay with recording status and waveform
+- Menu bar app with settings, help, and log viewer
+- Stream Deck Pedal push-to-talk support
 - Auto-start on login via launchd
+- Optional local LLM processing (build with `--with-llm`)
 
 ## Requirements
 
-- macOS 13+ (Apple Silicon recommended)
+- macOS 14+ (Apple Silicon)
 - Microphone access
 - Accessibility permissions
+- Internet connection for first-time model download (~1.6GB)
 
 ## Installation
 
 ### Build from source
 
 ```bash
-PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh
+./build_native_app.sh
 ```
 
 Run directly:
@@ -38,6 +41,14 @@ Or deploy to Applications:
 ```bash
 cp -R dist/TextEcho.app /Applications/ && open /Applications/TextEcho.app
 ```
+
+### Build with LLM support (optional)
+
+```bash
+PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh --with-llm
+```
+
+Requires Python 3.12 (NOT 3.13+). Adds local LLM processing via llama-cpp-python.
 
 ### Create DMG (optional)
 
@@ -60,36 +71,40 @@ Go to **System Settings > Privacy & Security** and grant:
 | Action | How |
 |--------|-----|
 | **Transcribe** | Middle-click and hold > speak > release |
-| **LLM prompt** | Ctrl + middle-click (requires LLM setup) |
 | **Transcribe (keyboard)** | Ctrl+D (hold to record) |
-| **LLM prompt (keyboard)** | Ctrl+Shift+D (hold to record) |
+| **LLM prompt (keyboard)** | Ctrl+Shift+D (requires LLM build) |
 | **Save to register** | Cmd+Option+1-9 |
 | **Clear registers** | Cmd+Option+0 |
 | **Settings** | Cmd+Option+Space |
 | **Cancel recording** | ESC |
 
-**First use:** Model downloads and loads (~2-5 seconds)
-**Subsequent uses:** Instant transcription
+**First use:** Model downloads (~1.6GB) and loads on first launch. Subsequent uses are instant.
 
 ## Architecture
 
 ```
-┌───────────────────────┐     ┌──────────────────────┐
-│  TextEcho.app (Swift) │────>│ Transcription Daemon  │
-│  Menu bar + overlay   │     │ (MLX Whisper, Python) │
-│  Input + audio + paste│     │ /tmp/textecho_transcription.sock
-└───────────────────────┘     └──────────────────────┘
-         │
-         └──────────────────>┌──────────────────────┐
-                             │ LLM Daemon (optional) │
-                             │ (llama-cpp, Python)   │
-                             │ /tmp/textecho_llm.sock │
-                             └──────────────────────┘
+TextEcho.app (Swift)
+├── InputMonitor (CGEventTap → hotkeys)
+├── AudioRecorder (AVAudioEngine → PCM)
+├── WhisperKitTranscriber (Core ML → Neural Engine)
+├── Overlay (SwiftUI floating window)
+└── TextInjector (clipboard + Cmd+V paste)
+
+Optional (--with-llm):
+└── llm_daemon.py (llama-cpp-python, Unix socket IPC)
 ```
 
-- **TextEcho.app** (Swift): Input monitoring, audio recording, overlay UI, text injection
-- **Transcription Daemon** (Python): MLX Whisper model, Unix socket IPC, bundled in app venv
-- **LLM Daemon** (Python, optional): Local LLM processing via llama-cpp-python
+Transcription is fully native — no Python, no IPC, no temp files. Audio goes directly from AVAudioEngine to WhisperKit as a float array.
+
+## Transcription Models
+
+| Model | Download | RAM | Speed | Quality |
+|-------|----------|-----|-------|---------|
+| **large-v3-turbo** (default) | ~1.6GB | ~1.6GB | Fast | Near-best |
+| large-v3 | ~3GB | ~3.5GB | Slower | Best |
+| base.en | ~140MB | ~180MB | Very fast | Good for clear speech |
+
+Select your model during first-launch setup or change it anytime in Settings.
 
 ## Configuration
 
@@ -102,50 +117,44 @@ Edit `~/.textecho_config` (JSON):
 | `silence_duration` | Seconds of silence before auto-stop | `2.5` |
 | `silence_threshold` | Audio level threshold for silence detection | `0.015` |
 | `sample_rate` | Audio sample rate in Hz | `16000` |
-| `llm_enabled` | Enable LLM processing | `false` |
+| `whisper_model` | WhisperKit model name | `large-v3-turbo` |
+| `whisper_idle_timeout` | Seconds before model unloads from RAM | `3600` |
+| `llm_enabled` | Enable LLM processing (requires --with-llm build) | `false` |
 | `llm_model_path` | Path to GGUF model file | `""` |
 | `show_menu_bar_icon` | Show icon in menu bar | `true` |
-| `python_path` | Python 3.12 executable (auto-detected) | auto |
-| `daemon_scripts_dir` | Directory containing daemon scripts (auto-detected) | auto |
 
 ## Troubleshooting
 
 ### Transcription not working
-
-1. Open **Logs** from the menu bar and check **Python** log
-2. Ensure Accessibility + Microphone permissions are granted
+1. Check that Accessibility + Microphone permissions are granted
+2. Open **Logs** from the menu bar and check for errors
 3. Restart the app after changing permissions
 
-### Auto-paste not working
+### Model not downloading
+- Check internet connection — the first launch downloads the Core ML model
+- Models are cached at `~/Library/Caches/com.argmaxinc.WhisperKit/`
 
+### Auto-paste not working
 - Ensure `TextEcho.app` is in **Accessibility** permissions
 - Restart the app after adding permissions
 
 ### Two mic icons in menu bar
-
 - Kill duplicates: `pkill -f TextEcho`
 - Relaunch the app
 
-### "This process is not trusted" in logs
-
-- Add TextEcho to Accessibility permissions (see Installation)
-
-### Python crashes (segfaults)
-
-- Ensure the **bundled venv** uses Python 3.12 (NOT 3.13+)
-- Rebuild with: `PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh`
-- Delete `.venv-bundle-cache` to force venv rebuild
+### Permissions lost after rebuild
+- Ad-hoc code signing changes every rebuild — re-grant Accessibility in System Settings
 
 ## LLM Setup (Optional)
 
-1. Install llama-cpp-python:
+1. Build with LLM support:
    ```bash
-   pip install llama-cpp-python
+   PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12 ./build_native_app.sh --with-llm
    ```
 
 2. Download a GGUF model (Llama 3.2 3B recommended)
 
-3. Configure `~/.textecho_config`:
+3. Configure in Settings or `~/.textecho_config`:
    ```json
    {
      "llm_enabled": true,
@@ -153,13 +162,13 @@ Edit `~/.textecho_config` (JSON):
    }
    ```
 
-4. Restart TextEcho
+4. Restart TextEcho. Use Ctrl+Shift+D to record with LLM processing.
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and IPC protocol |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and transcription flow |
 | [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history |
 | [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory |
 | [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan and future work |

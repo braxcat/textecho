@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-03-20 — Native WhisperKit Migration
+
+### Transcription Engine
+- **Replaced Python MLX Whisper daemon with native WhisperKit** — transcription now runs entirely in Swift via Apple Neural Engine (Core ML)
+- Deleted `transcription_daemon_mlx.py` (436 lines of Python) — no longer needed
+- Memory usage: ~1.6GB (down from ~3GB with Python daemon)
+- No GPU contention: Neural Engine offloads from GPU (eliminates UI stutter during inference)
+- No temp files: WhisperKit accepts float arrays directly (no WAV write/read cycle)
+
+### Architecture Changes
+- **New:** `Transcriber.swift` — protocol for swappable transcription backends
+- **New:** `WhisperKitTranscriber.swift` — actor with PCM conversion, silence detection, hallucination filtering, resampling, model lifecycle
+- **New:** `HelpWindow.swift` — in-app documentation accessible from menu bar
+- **Renamed:** `TranscriptionClient.swift` → `UnixSocket.swift` (TranscriptionClient class deleted, UnixSocket enum kept for LLM)
+- `AppState.swift` — replaced socket IPC with async/await WhisperKit calls
+- `PythonServiceManager.swift` — LLM-only (transcription methods removed)
+- `Package.swift` — added WhisperKit dependency, bumped macOS 13 → 14
+
+### LLM Made Optional
+- Default build is now **pure Swift** — zero Python dependency
+- LLM support via `./build_native_app.sh --with-llm` (creates Python venv with llama-cpp-python)
+- Settings UI: LLM/Python sections only visible when LLM module is installed
+- `pyproject.toml`: removed mlx-whisper, numpy, soundfile from dependencies
+
+### Setup & UI
+- Setup wizard: model picker with 3 options (large-v3-turbo, large-v3, base.en) with size/quality descriptions
+- Settings: Transcription Model section with active model picker and Manage Models disclosure group
+- Overlay: added "Downloading model..." state (blue) for first-launch model download
+- Menu bar: added Help menu item
+
+### Build Script
+- `build_native_app.sh`: default is pure Swift build, `--with-llm` flag for Python/LLM
+- `LSMinimumSystemVersion`: 13.0 → 14.0 (WhisperKit requires macOS 14)
+- `CFBundleVersion`: 1.0 → 2.0
+
+### Config Changes
+- New fields: `whisper_model` (default "large-v3-turbo"), `whisper_idle_timeout` (default 3600)
+- Existing fields preserved for backward compatibility
+- `llmAvailable` computed property checks if llm_daemon.py is bundled
+
 ## 2026-03-18 — MLX Whisper Upgrade
 
 ### Transcription Engine
@@ -69,25 +109,21 @@
 - AppState: stale socket cleanup at startup
 
 ### Dead Code Removal
-- Removed 8 legacy Python UI files (~4,000 lines): textecho_app_mac.py, daemon_manager.py, input_monitor_mac.py, text_injector_mac.py, overlay_swift.py, overlay_mac.py, log_config.py, transcribe.py, main.py
+- Removed 8 legacy Python UI files (~4,000 lines)
 - Removed TextEchoOverlay/ (legacy Swift overlay helper, 292KB binary)
 - Removed StatusBarController.swift (unused)
 - Removed legacy build system: build_app.sh, build_dmg.sh, setup.py
 - Removed stale files: dictation_dump.txt, config.example.json, test.wav, test2.wav, launch_recorder.sh, uv.lock
 - Trimmed pyproject.toml: removed pyobjc, pyaudio, pynput dependencies
 - Organized test files into tests/ directory
-- Updated daemon_control_mac.sh (stripped legacy textecho_app_mac.py references)
-- Updated .gitignore
 
 ### Code Quality
 - User-friendly error messages in TranscriptionClient (actionable messages instead of raw socket errors)
 
 ## 2026-02-11 — Documentation Scaffold
-
 - Initial claude_docs/ structure created via chippy-scaffold-docs
 
 ## 2026-02-06 — Native Swift App
-
 - Swift menu bar app replaces Python UI
 - Embedded Python venv in .app bundle
 - All macOS-only (Linux/GNOME artifacts removed)

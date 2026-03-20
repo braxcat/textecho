@@ -15,7 +15,7 @@ final class SetupWizardController {
             let view = SetupWizardView(onClose: onClose)
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 520, height: 560),
+                contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
@@ -38,7 +38,7 @@ final class SetupWizardController {
 private enum WizardStep: Int, CaseIterable {
     case accessibility = 0
     case microphone = 1
-    case preparing = 2
+    case model = 2
     case ready = 3
 }
 
@@ -47,15 +47,18 @@ struct SetupWizardView: View {
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var timer: Timer?
-    @State private var preparingStatus: String = "Starting transcription engine..."
+    @State private var modelStatus: String = "Waiting..."
     @State private var modelLoaded: Bool = false
-    @State private var preparingStarted: Bool = false
+    @State private var downloadStarted: Bool = false
+    @State private var selectedModel: String = AppConfig.shared.model.whisperModel
 
     let onClose: () -> Void
 
     private var permissionsGranted: Bool {
         accessibilityTrusted && micStatus == .authorized
     }
+
+    private let models = WhisperKitTranscriber.availableModelList
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,8 +95,8 @@ struct SetupWizardView: View {
                     buttonLabel: "Open Microphone Settings"
                 )
 
-                // Step 3: Preparing
-                preparingRow()
+                // Step 3: Model download
+                modelRow()
 
                 // Step 4: Ready
                 if currentStep == .ready {
@@ -124,7 +127,7 @@ struct SetupWizardView: View {
             }
             .padding(16)
         }
-        .frame(minWidth: 480, minHeight: 460)
+        .frame(minWidth: 480, minHeight: 520)
         .onAppear {
             determineInitialStep()
             refreshStatus()
@@ -142,8 +145,8 @@ struct SetupWizardView: View {
         switch currentStep {
         case .accessibility, .microphone:
             return "Grant the permissions below so TextEcho can work."
-        case .preparing:
-            return "Setting up the transcription engine. This may take a moment on first launch."
+        case .model:
+            return "Choose and download a transcription model. This only happens once."
         case .ready:
             return "You're all set! Here's how to use TextEcho."
         }
@@ -156,8 +159,8 @@ struct SetupWizardView: View {
             Text("Grant permissions above to continue")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-        case .preparing:
-            Text(preparingStatus)
+        case .model:
+            Text(modelStatus)
                 .font(.system(size: 12))
                 .foregroundColor(.orange)
         case .ready:
@@ -198,39 +201,108 @@ struct SetupWizardView: View {
     }
 
     @ViewBuilder
-    private func preparingRow() -> some View {
+    private func modelRow() -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                stepCircle(step: "3", completed: modelLoaded, active: currentStep == .preparing)
+                stepCircle(step: "3", completed: modelLoaded, active: currentStep == .model)
 
-                Text("Preparing")
+                Text("Transcription Model")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(currentStep.rawValue >= WizardStep.preparing.rawValue ? .primary : .secondary)
+                    .foregroundColor(currentStep.rawValue >= WizardStep.model.rawValue ? .primary : .secondary)
 
                 Spacer()
 
                 if modelLoaded {
                     statusBadge(true)
-                } else if currentStep == .preparing {
+                } else if currentStep == .model && downloadStarted {
                     ProgressView()
                         .controlSize(.small)
                 }
             }
 
-            if currentStep == .preparing || modelLoaded {
-                Text("Downloads and loads the voice recognition model.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+            if currentStep == .model || modelLoaded {
+                if !modelLoaded && currentStep == .model {
+                    // Model picker cards
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(models, id: \.name) { model in
+                            modelCard(model: model, isSelected: selectedModel == model.name)
+                                .onTapGesture {
+                                    selectedModel = model.name
+                                }
+                        }
+                    }
                     .padding(.leading, 30)
+                    .padding(.top, 4)
 
-                if currentStep == .preparing && !modelLoaded {
-                    Text(preparingStatus)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.orange)
+                    if !downloadStarted {
+                        Button("Download & Continue") {
+                            startModelDownload()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.leading, 30)
+                        .padding(.top, 4)
+                    } else {
+                        Text(modelStatus)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.orange)
+                            .padding(.leading, 30)
+                    }
+                } else {
+                    Text("Model ready: \(selectedModel)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                         .padding(.leading, 30)
                 }
+
+                Text("You can change this later in Settings.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 30)
             }
         }
+    }
+
+    private func modelCard(model: WhisperKitTranscriber.ModelInfo, isSelected: Bool) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(model.displayName)
+                        .font(.system(size: 12, weight: .semibold))
+                    if model.name == "large-v3-turbo" {
+                        Text("Recommended")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.accentColor.opacity(0.2))
+                            .cornerRadius(3)
+                    }
+                    if WhisperKitTranscriber.isModelCached(model.name) {
+                        Text("Cached")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.green.opacity(0.15))
+                            .cornerRadius(3)
+                    }
+                }
+                Text("\(model.size) — \(model.description)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isSelected ? .accentColor : .secondary)
+        }
+        .padding(8)
+        .background(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
+        )
     }
 
     @ViewBuilder
@@ -295,8 +367,13 @@ struct SetupWizardView: View {
         } else if micStatus != .authorized {
             currentStep = .microphone
         } else {
-            currentStep = .preparing
-            startPreparing()
+            currentStep = .model
+            // If model already cached, auto-advance
+            if WhisperKitTranscriber.isModelCached(selectedModel) {
+                modelLoaded = true
+                modelStatus = "Model ready"
+                currentStep = .ready
+            }
         }
     }
 
@@ -305,18 +382,26 @@ struct SetupWizardView: View {
         case .accessibility:
             if accessibilityTrusted {
                 if micStatus == .authorized {
-                    currentStep = .preparing
-                    startPreparing()
+                    currentStep = .model
+                    if WhisperKitTranscriber.isModelCached(selectedModel) {
+                        modelLoaded = true
+                        modelStatus = "Model ready"
+                        currentStep = .ready
+                    }
                 } else {
                     currentStep = .microphone
                 }
             }
         case .microphone:
             if micStatus == .authorized {
-                currentStep = .preparing
-                startPreparing()
+                currentStep = .model
+                if WhisperKitTranscriber.isModelCached(selectedModel) {
+                    modelLoaded = true
+                    modelStatus = "Model ready"
+                    currentStep = .ready
+                }
             }
-        case .preparing:
+        case .model:
             if modelLoaded {
                 currentStep = .ready
             }
@@ -325,54 +410,32 @@ struct SetupWizardView: View {
         }
     }
 
-    private func startPreparing() {
-        guard !preparingStarted else { return }
-        preparingStarted = true
-        preparingStatus = "Starting transcription engine..."
+    private func startModelDownload() {
+        downloadStarted = true
+        modelStatus = "Downloading and loading model..."
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Wait for socket to appear (main app via AppState handles daemon launching)
-            let socketPath = AppConfig.shared.model.transcriptionSocket
-            let socketDeadline = Date().addingTimeInterval(10.0)
-            while Date() < socketDeadline {
-                if UnixSocket.ping(socketPath: socketPath, command: "ping") {
-                    break
-                }
-                Thread.sleep(forTimeInterval: 0.5)
-            }
+        // Save selected model to config
+        AppConfig.shared.update { model in
+            model.whisperModel = selectedModel
+        }
 
-            DispatchQueue.main.async {
-                self.preparingStatus = "Loading voice model..."
-            }
-
-            // Send preload command
-            let _ = try? UnixSocket.request(
-                socketPath: socketPath,
-                header: ["command": "preload"],
-                body: nil
+        Task {
+            let transcriber = WhisperKitTranscriber(
+                modelName: selectedModel,
+                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
             )
-
-            // Poll for model_loaded
-            let modelDeadline = Date().addingTimeInterval(120.0)
-            while Date() < modelDeadline {
-                if let response = try? UnixSocket.request(
-                    socketPath: socketPath,
-                    header: ["command": "status"],
-                    body: nil
-                ), response["model_loaded"] as? Bool == true {
-                    DispatchQueue.main.async {
-                        self.modelLoaded = true
-                        self.preparingStatus = "Model loaded!"
-                    }
-                    return
+            do {
+                try await transcriber.preload()
+                await MainActor.run {
+                    self.modelLoaded = true
+                    self.modelStatus = "Model loaded!"
                 }
-                Thread.sleep(forTimeInterval: 2.0)
-            }
-
-            // Timeout — still mark as done so user isn't stuck
-            DispatchQueue.main.async {
-                self.modelLoaded = true
-                self.preparingStatus = "Ready (model will load on first use)"
+            } catch {
+                await MainActor.run {
+                    self.downloadStarted = false
+                    self.modelStatus = "Download failed: \(error.localizedDescription)"
+                }
+                AppLogger.shared.error("Setup wizard model preload failed: \(error)")
             }
         }
     }

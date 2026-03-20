@@ -10,7 +10,7 @@ final class SettingsWindowController {
             let view = SettingsView()
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 700),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered,
                 defer: false
@@ -49,6 +49,19 @@ struct SettingsView: View {
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var pythonPath: String = AppConfig.shared.model.pythonPath
     @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
+
+    // WhisperKit model settings
+    @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
+    @State private var cachedModels: [String] = WhisperKitTranscriber.cachedModels()
+    @State private var showManageModels: Bool = false
+    @State private var downloadingModel: String? = nil
+    @State private var downloadError: String? = nil
+
+    // Input device
+    @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
+    @State private var inputDevices: [(id: UInt32, uid: String, name: String)] = AudioRecorder.availableInputDevices()
+
+    private let llmAvailable = AppConfig.shared.model.llmAvailable
 
     init() {
         let trigger = AppConfig.shared.model.triggerButton
@@ -115,6 +128,81 @@ struct SettingsView: View {
 
                 Divider()
 
+                // Transcription Model section
+                Text("Transcription Model")
+                    .font(.system(size: 14, weight: .semibold))
+
+                HStack {
+                    Text("Active Model")
+                    Spacer()
+                    Picker("", selection: $selectedWhisperModel) {
+                        ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
+                            let cached = cachedModels.contains(model.name)
+                            Text("\(model.displayName)\(cached ? "" : " (not downloaded)")")
+                                .tag(model.name)
+                        }
+                    }
+                    .frame(width: 240)
+                }
+
+                DisclosureGroup("Manage Models", isExpanded: $showManageModels) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let error = downloadError {
+                            Text(error)
+                                .font(.system(size: 11))
+                                .foregroundColor(.red)
+                                .padding(8)
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+
+                        ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(model.displayName)
+                                        .font(.system(size: 12, weight: .semibold))
+                                    HStack(spacing: 4) {
+                                        Text(model.size)
+                                        Text("—")
+                                        Text(model.description)
+                                    }
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+
+                                if cachedModels.contains(model.name) {
+                                    Text("Downloaded")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.green)
+
+                                    Button("Delete") {
+                                        try? WhisperKitTranscriber.deleteModel(model.name)
+                                        cachedModels = WhisperKitTranscriber.cachedModels()
+                                    }
+                                    .font(.system(size: 11))
+                                } else if downloadingModel == model.name {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Downloading...")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.orange)
+                                } else {
+                                    Button("Download") {
+                                        downloadModel(model.name)
+                                    }
+                                    .font(.system(size: 11))
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(.leading, 4)
+                }
+
+                Divider()
+
                 Text("Key Bindings")
                     .font(.system(size: 14, weight: .semibold))
 
@@ -153,6 +241,23 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .semibold))
 
                 HStack {
+                    Text("Input Device")
+                    Spacer()
+                    Picker("", selection: $selectedDeviceUID) {
+                        Text("System Default").tag("")
+                        ForEach(inputDevices, id: \.uid) { device in
+                            Text(device.name).tag(device.uid)
+                        }
+                    }
+                    .frame(width: 240)
+
+                    Button("Refresh") {
+                        inputDevices = AudioRecorder.availableInputDevices()
+                    }
+                    .font(.system(size: 11))
+                }
+
+                HStack {
                     Text("Silence Duration (sec)")
                     Spacer()
                     TextField("2.5", text: $silenceDuration)
@@ -175,38 +280,50 @@ struct SettingsView: View {
 
                 Divider()
 
-                Text("LLM")
-                    .font(.system(size: 14, weight: .semibold))
+                // LLM section — only show if module is installed
+                if llmAvailable {
+                    Text("LLM")
+                        .font(.system(size: 14, weight: .semibold))
 
-                Toggle("Enable LLM", isOn: $llmEnabled)
+                    Toggle("Enable LLM", isOn: $llmEnabled)
 
-                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+                    HStack {
+                        Text("LLM Model Path")
+                        Spacer()
+                        TextField("/path/to/model.gguf", text: $llmModelPath)
+                            .frame(width: 260)
+                    }
 
-                HStack {
-                    Text("LLM Model Path")
-                    Spacer()
-                    TextField("/path/to/model.gguf", text: $llmModelPath)
-                        .frame(width: 260)
+                    Divider()
+
+                    Text("Python (LLM)")
+                        .font(.system(size: 14, weight: .semibold))
+
+                    HStack {
+                        Text("Python Path")
+                        Spacer()
+                        TextField("/opt/homebrew/bin/python3", text: $pythonPath)
+                            .frame(width: 260)
+                    }
+
+                    HStack {
+                        Text("Daemons Dir")
+                        Spacer()
+                        TextField("/path/to/scripts", text: $scriptsDir)
+                            .frame(width: 260)
+                    }
+                } else {
+                    Text("LLM")
+                        .font(.system(size: 14, weight: .semibold))
+
+                    Text("LLM module not installed. Rebuild with: ./build_native_app.sh --with-llm")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
 
                 Divider()
 
-                Text("Python")
-                    .font(.system(size: 14, weight: .semibold))
-
-                HStack {
-                    Text("Python Path")
-                    Spacer()
-                    TextField("/opt/homebrew/bin/python3", text: $pythonPath)
-                        .frame(width: 260)
-                }
-
-                HStack {
-                    Text("Daemons Dir")
-                    Spacer()
-                    TextField("/path/to/scripts", text: $scriptsDir)
-                        .frame(width: 260)
-                }
+                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
 
                 Divider()
 
@@ -229,6 +346,8 @@ struct SettingsView: View {
         .frame(minWidth: 520, minHeight: 520)
         .onAppear {
             refreshPermissions()
+            cachedModels = WhisperKitTranscriber.cachedModels()
+            inputDevices = AudioRecorder.availableInputDevices()
         }
     }
 
@@ -278,6 +397,8 @@ struct SettingsView: View {
             model.showMenuBarIcon = showMenuBarIcon
             model.pythonPath = pythonPath
             model.daemonScriptsDir = scriptsDir
+            model.whisperModel = selectedWhisperModel
+            model.inputDeviceUID = selectedDeviceUID
         }
     }
 
@@ -288,6 +409,32 @@ struct SettingsView: View {
         if cmd { mask |= UInt(NSEvent.ModifierFlags.command.rawValue) }
         if shift { mask |= UInt(NSEvent.ModifierFlags.shift.rawValue) }
         return mask
+    }
+
+    private func downloadModel(_ modelName: String) {
+        downloadingModel = modelName
+        downloadError = nil
+        Task {
+            let transcriber = WhisperKitTranscriber(
+                modelName: modelName,
+                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+            )
+            do {
+                try await transcriber.preload()
+                await MainActor.run {
+                    self.downloadError = nil
+                }
+            } catch {
+                AppLogger.shared.error("Model download failed: \(error)")
+                await MainActor.run {
+                    self.downloadError = "Download failed: \(error.localizedDescription)"
+                }
+            }
+            await MainActor.run {
+                self.downloadingModel = nil
+                self.cachedModels = WhisperKitTranscriber.cachedModels()
+            }
+        }
     }
 
     private func refreshPermissions() {

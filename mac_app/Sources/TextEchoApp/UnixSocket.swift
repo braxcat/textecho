@@ -1,37 +1,7 @@
 import Foundation
 import Darwin
 
-final class TranscriptionClient {
-    private let queue = DispatchQueue(label: "textecho.transcription", qos: .userInitiated)
-
-    func transcribeRaw(audioData: Data, sampleRate: Double, completion: @escaping (Result<String, Error>) -> Void) {
-        queue.async {
-            do {
-                let socketPath = AppConfig.shared.model.transcriptionSocket
-                let response = try UnixSocket.request(
-                    socketPath: socketPath,
-                    header: [
-                        "command": "transcribe_raw",
-                        "sample_rate": Int(sampleRate),
-                        "data_length": audioData.count
-                    ],
-                    body: audioData
-                )
-
-                if let success = response["success"] as? Bool, success {
-                    let text = response["transcription"] as? String ?? ""
-                    completion(.success(text))
-                } else {
-                    let message = response["error"] as? String ?? "Unknown error"
-                    completion(.failure(NSError(domain: "TextEcho.Transcription", code: 1, userInfo: [NSLocalizedDescriptionKey: message])))
-                }
-            } catch {
-                completion(.failure(TranscriptionClient.userFriendlyError(error)))
-            }
-        }
-    }
-}
-
+/// Unix domain socket utilities — used by LLMClient for IPC with the optional Python LLM daemon.
 enum UnixSocket {
     static func request(socketPath: String, header: [String: Any], body: Data?) throws -> [String: Any] {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -47,7 +17,7 @@ enum UnixSocket {
         addr.sun_family = sa_family_t(AF_UNIX)
         let pathData = socketPath.data(using: .utf8) ?? Data()
         if pathData.count >= MemoryLayout.size(ofValue: addr.sun_path) {
-            throw NSError(domain: "TextEcho.Socket", code: 2, userInfo: [NSLocalizedDescriptionKey: "Socket path too long"]) 
+            throw NSError(domain: "TextEcho.Socket", code: 2, userInfo: [NSLocalizedDescriptionKey: "Socket path too long"])
         }
 
         _ = withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
@@ -118,29 +88,5 @@ enum UnixSocket {
         let code = Int(errno)
         let message = String(cString: strerror(errno))
         return NSError(domain: "TextEcho.Socket", code: code, userInfo: [NSLocalizedDescriptionKey: "\(op) failed: \(message)"])
-    }
-}
-
-extension TranscriptionClient {
-    static func userFriendlyError(_ error: Error) -> NSError {
-        let nsError = error as NSError
-        let raw = nsError.localizedDescription.lowercased()
-
-        let friendly: String
-        if raw.contains("connection refused") {
-            friendly = "Transcription daemon not running. Restart TextEcho from the menu bar."
-        } else if raw.contains("no such file") || raw.contains("socket path") {
-            friendly = "Transcription socket not found. The daemon may still be starting — try again in a moment."
-        } else if raw.contains("timed out") || raw.contains("resource temporarily unavailable") {
-            friendly = "Transcription timed out. The model may be loading — try again shortly."
-        } else if raw.contains("broken pipe") {
-            friendly = "Lost connection to transcription daemon. It may have crashed — check Logs."
-        } else if raw.contains("invalid response") {
-            friendly = "Received unexpected response from daemon. Check Python log for errors."
-        } else {
-            return nsError
-        }
-
-        return NSError(domain: nsError.domain, code: nsError.code, userInfo: [NSLocalizedDescriptionKey: friendly])
     }
 }

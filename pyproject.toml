@@ -1,17 +1,13 @@
 [project]
 name = "textecho"
-version = "0.1.0"
-description = "Voice-to-text dictation tool with automatic silence detection, local Whisper transcription, and optional LLM processing"
+version = "0.2.0"
+description = "Voice-to-text dictation tool — optional LLM processing via llama-cpp-python"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
     {name = "Braxton Bragg", email = "braxcat@users.noreply.github.com"}
 ]
-dependencies = [
-    "mlx-whisper>=0.4.0",
-    "numpy>=2.0.0",
-    "soundfile>=0.13.1",
-]
+dependencies = []
 
 [project.optional-dependencies]
 llm = ["llama-cpp-python"]

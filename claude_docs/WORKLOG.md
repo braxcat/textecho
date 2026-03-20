@@ -1,5 +1,39 @@
 # Worklog
 
+## 2026-03-20 — Native WhisperKit Migration
+
+**Focus:** Replace Python MLX Whisper daemon with native Swift WhisperKit for transcription
+
+### Phase 1: Foundation
+- Created `Transcriber.swift` protocol for swappable backends
+- Created `WhisperKitTranscriber.swift` actor — PCM conversion, silence detection, hallucination filter, resampling, model lifecycle, 30s timeout
+- Updated `Package.swift` — added WhisperKit 0.9.0+ dependency, bumped macOS 13 → 14
+- Ported all transcription logic from Python to Swift (audio conversion, RMS, hallucination phrases, resampling)
+
+### Phase 2: Integration
+- Rewrote `AppState.swift` — replaced socket IPC with async/await WhisperKit calls, pre-warms model on start
+- Slimmed `PythonServiceManager.swift` — LLM-only, removed transcription process management
+- Added `whisperModel` and `whisperIdleTimeout` to `AppConfig.swift` with `llmAvailable` computed property
+- Rewrote `SetupWizard.swift` — model picker with 3 options, cached status badges, download flow
+- Rewrote `SettingsWindow.swift` — transcription model section, conditional LLM section
+- Added downloading state to `Overlay.swift`
+
+### Phase 3: Cleanup
+- Deleted `transcription_daemon_mlx.py` (436 lines Python)
+- Renamed `TranscriptionClient.swift` → `UnixSocket.swift`, deleted TranscriptionClient class
+- Updated `build_native_app.sh` — pure Swift default, `--with-llm` flag for optional Python/LLM
+- Updated `pyproject.toml` — removed mlx-whisper/numpy/soundfile, LLM deps optional only
+- Created `HelpWindow.swift` — embedded user documentation (8 sections)
+- Added Help menu item to `TextEchoApp.swift`
+- Updated all claude_docs, CLAUDE.md, README.md
+
+### Key decisions
+- WhisperKit actor isolation for thread safety (no shared mutable state)
+- 30s timeout wrapper on transcribe() to prevent infinite hangs
+- Model name sanitization (alphanumeric + hyphens/dots/slashes only)
+- Idle timeout clamped to 60s–86400s range
+- LLM completely optional — default install is zero Python
+
 ## 2026-03-18 — MLX Whisper Upgrade Session
 
 **Focus:** Replace unmaintained lightning-whisper-mlx with mlx-whisper, upgrade to large-v3-turbo model
@@ -19,30 +53,14 @@
 - Preload now uses dummy silent WAV to trigger model download/cache
 - Preserved all existing features: hallucination filtering, silence detection, IPC protocol, idle unload
 
-### Transcription Logging
-- Added empty transcription handling — hides overlay instead of pasting empty string
-- Added success/error logging to transcription result handler
-
-### Stream Deck Pedal (WIP, committed from prior uncommitted work)
-- StreamDeckPedalMonitor.swift: IOKit HID for Elgato pedal (VID 0x0FD9, PID 0x0086)
-- AppConfig: pedal_enabled, pedal_position config fields
-- AppState: wired pedal into recording flow
-- Not yet tested with physical hardware
-
 ### Deployment
 - Created feature branch `feature/mlx-whisper-turbo`, pushed to GitHub
 - Merged via PR #1, cleaned up branch
-- Tested on M4 Max 36GB — model downloads ~1.6GB on first use, cached at ~/Library/Caches/TextEcho/hf/
+- Tested on M4 Max 36GB — model downloads ~1.6GB on first use
 
 ## 2026-02-12 — Distribution & Bug Fix Session
 
 **Focus:** App icon bundling, DMG rebuild, fix critical runtime bugs (ffmpeg PATH, CGEventTap timeout)
-
-### Icon & DMG
-- Copied TextEcho.icns to .app/Contents/Resources/ in build_native_app.sh
-- Added CFBundleIconFile to Info.plist heredoc
-- Rebuilt DMG with all fixes
-- Updated README with "Install from DMG" instructions
 
 ### Bug Fix: ffmpeg not found
 - Root cause: lightning-whisper-mlx calls `ffmpeg` as subprocess; .app bundles from Finder have minimal PATH excluding /opt/homebrew/bin
@@ -52,59 +70,10 @@
 - Root cause: recorder.stop() calls completion synchronously on main run loop → transcribe() blocks up to 5s in waitForTranscriptionSocket() → macOS disables CGEventTap (timeout)
 - Fix: Dispatch transcribe() to DispatchQueue.global(qos: .userInitiated)
 - Safety net: Handle .tapDisabledByTimeout to re-enable tap
-- Also dispatch transcription results back to main thread for UI/paste operations
-
-### Daemon Pre-warming
-- ensureTranscriptionDaemon() now called at startup on utility queue
-- First recording no longer waits for daemon to launch + model to load
-
-### Merged to master
-- Fast-forward merge of major_change-mac_native → master, rebased over remote, pushed
 
 ## 2026-02-11 — Cleanup & Hardening Session
 
-**Focus:** Technical debt cleanup, stability fixes, dead code removal
-
-### Phase 1: Documentation Alignment
-- Rewrote CLAUDE.md from generic template to chippy project format
-- Populated ARCHITECTURE.md with component diagram, IPC protocol, build pipeline
-- Populated FEATURES.md with complete feature inventory
-- Populated SECURITY.md with permissions, signing, data handling
-- Populated ROADMAP.md with 5-phase cleanup plan
-- Updated README.md
-
-### Phase 2: Critical Stability Fixes
-- Fixed PythonServiceManager process lifecycle (nil refs, close handles, deinit)
-- Fixed InputMonitor CGEventTap disable-on-stop ordering
-- Added 30s socket timeouts and 4KB buffered reads to UnixSocket
-- Fixed thread safety in transcription_daemon_mlx.py (consolidated lock)
-- Fixed thread safety in llm_daemon.py (consolidated lock)
-- Added 5-second auto-hide to Overlay.showError()
-- Added os_unfair_lock to AudioRecorder for shared state
-
-### Phase 3: Resource Hardening
-- Added serial DispatchQueue to TextInjector for register access
-- Bounded LogsWindow file reads to last 100KB
-- Added 5MB log rotation to AppLogger
-- Fixed SetupWizard orphaned daemon (removed separate PythonServiceManager)
-- Wrapped AppConfig model reads in queue.sync
-- Moved Python signal handlers before socket creation
-- Added graceful executor shutdown with server socket timeout
-- Added stale socket cleanup in AppState.start()
-
-### Phase 4: Dead Code Removal
-- Deleted 8 legacy Python files (~4,000 lines)
-- Deleted TextEchoOverlay/ directory (legacy Swift overlay helper)
-- Deleted StatusBarController.swift
-- Deleted legacy build scripts (build_app.sh, build_dmg.sh, setup.py)
-- Deleted stale files (dumps, test audio, lock files)
-- Trimmed pyproject.toml (removed PyObjC, pyaudio, pynput)
-- Organized test files into tests/
-- Cleaned up daemon_control_mac.sh and .gitignore
-
-### Phase 5: Code Quality
-- Mapped raw socket errors to user-friendly messages in TranscriptionClient
-- Final documentation pass
+**Focus:** Technical debt cleanup, stability fixes, dead code removal (4,500+ lines)
 
 ## 2026-02-11 — Documentation Scaffold
 - Ran chippy-scaffold-docs to create claude_docs/ structure

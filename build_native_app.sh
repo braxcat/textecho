@@ -1,5 +1,7 @@
 #!/bin/bash
-# Build TextEcho as a native Swift .app bundle and embed Python daemons.
+# Build TextEcho as a native Swift .app bundle.
+# Default: pure Swift + WhisperKit (no Python needed).
+# With --with-llm: also bundles Python venv with llama-cpp-python for local LLM.
 
 set -e
 
@@ -10,6 +12,26 @@ APP_NAME="TextEcho"
 APP_DIR="dist/${APP_NAME}.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
+WITH_LLM=false
+CLEAN=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --with-llm) WITH_LLM=true ;;
+        --clean) CLEAN=true ;;
+    esac
+done
+
+if [ "$CLEAN" = true ]; then
+    echo "==> Clean build: removing all caches..."
+    rm -rf mac_app/.build .swiftpm-cache .clang-cache .last_binary_hash dist/
+fi
+
+if [ "$WITH_LLM" = true ]; then
+    echo "==> Building with LLM support (requires Python 3.12)..."
+else
+    echo "==> Building pure Swift app (no Python needed)..."
+fi
 
 # SwiftPM and Clang cache dirs (avoid permission issues under sandboxed runs)
 mkdir -p "$SCRIPT_DIR/.swiftpm-cache/config" \
@@ -36,7 +58,6 @@ fi
 echo "==> Creating .app bundle..."
 
 # Check if binary changed - avoid re-signing if unchanged (preserves macOS permissions)
-# Compare unsigned build output hash against saved hash from last build
 BINARY_CHANGED=true
 BIN_HASH_FILE="$SCRIPT_DIR/.last_binary_hash"
 NEW_HASH=$(shasum -a 256 "$BIN_PATH" | cut -d' ' -f1)
@@ -59,56 +80,60 @@ if [ "$BINARY_CHANGED" = true ]; then
     echo "$NEW_HASH" > "$BIN_HASH_FILE"
 fi
 
-# Bundle a self-contained Python venv with required deps (cached for faster builds)
-if [ -n "$PYTHON_BUNDLE_BIN" ]; then
-    PYTHON_BIN="$PYTHON_BUNDLE_BIN"
-else
-    PYTHON_BIN="$(command -v python3.12 || true)"
-    if [ -z "$PYTHON_BIN" ]; then
-        PYTHON_BIN="$(command -v python3.11 || true)"
+# Optional: Bundle Python venv with LLM support
+if [ "$WITH_LLM" = true ]; then
+    if [ -n "$PYTHON_BUNDLE_BIN" ]; then
+        PYTHON_BIN="$PYTHON_BUNDLE_BIN"
+    else
+        PYTHON_BIN="$(command -v python3.12 || true)"
+        if [ -z "$PYTHON_BIN" ]; then
+            PYTHON_BIN="$(command -v python3.11 || true)"
+        fi
+        if [ -z "$PYTHON_BIN" ]; then
+            PYTHON_BIN="$(command -v python3 || true)"
+        fi
     fi
+
     if [ -z "$PYTHON_BIN" ]; then
-        PYTHON_BIN="$(command -v python3 || true)"
+        echo "ERROR: python3 not found. Set PYTHON_BUNDLE_BIN to a Python 3 interpreter."
+        exit 1
     fi
-fi
 
-if [ -z "$PYTHON_BIN" ]; then
-    echo "ERROR: python3 not found. Set PYTHON_BUNDLE_BIN to a Python 3 interpreter."
-    exit 1
-fi
+    PY_MINOR="$("$PYTHON_BIN" -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo "")"
+    if [ -n "$PY_MINOR" ] && [ "$PY_MINOR" -ge 13 ]; then
+        echo "ERROR: Python 3.$PY_MINOR detected. tiktoken crashes on 3.13+."
+        echo "Install Python 3.12: brew install python@3.12"
+        echo "Or set: PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12"
+        exit 1
+    fi
 
-PY_MINOR="$("$PYTHON_BIN" -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo "")"
-if [ -n "$PY_MINOR" ] && [ "$PY_MINOR" -ge 13 ]; then
-    echo "ERROR: Python 3.$PY_MINOR detected. tiktoken crashes on 3.13+."
-    echo "Install Python 3.12: brew install python@3.12"
-    echo "Or set: PYTHON_BUNDLE_BIN=/opt/homebrew/bin/python3.12"
-    exit 1
-fi
+    VENV_CACHE_DIR="$SCRIPT_DIR/.venv-bundle-cache"
 
-VENV_CACHE_DIR="$SCRIPT_DIR/.venv-bundle-cache"
+    if [ ! -x "$VENV_CACHE_DIR/bin/python3" ]; then
+        echo "==> Creating cached Python venv for LLM..."
+        rm -rf "$VENV_CACHE_DIR"
+        "$PYTHON_BIN" -m venv "$VENV_CACHE_DIR"
+        "$VENV_CACHE_DIR/bin/python3" -m pip install --upgrade pip
+        "$VENV_CACHE_DIR/bin/python3" -m pip install llama-cpp-python
+    else
+        echo "==> Reusing cached Python venv..."
+    fi
 
-if [ ! -x "$VENV_CACHE_DIR/bin/python3" ]; then
-    echo "==> Creating cached Python venv..."
-    rm -rf "$VENV_CACHE_DIR"
-    "$PYTHON_BIN" -m venv "$VENV_CACHE_DIR"
-    "$VENV_CACHE_DIR/bin/python3" -m pip install --upgrade pip
-    "$VENV_CACHE_DIR/bin/python3" -m pip install numpy soundfile mlx-whisper
+    if [ "$BINARY_CHANGED" = true ] || [ ! -d "$RESOURCES_DIR/venv" ]; then
+        echo "==> Copying bundled Python venv..."
+        rm -rf "$RESOURCES_DIR/venv"
+        mkdir -p "$RESOURCES_DIR"
+        ditto "$VENV_CACHE_DIR" "$RESOURCES_DIR/venv"
+    else
+        echo "==> Reusing existing bundled venv (unchanged)"
+    fi
+
+    # Bundle LLM daemon script
+    cp llm_daemon.py "$RESOURCES_DIR/" 2>/dev/null || true
+    echo "==> LLM module bundled"
 else
-    echo "==> Reusing cached Python venv..."
+    echo "==> Skipping Python/LLM bundling (pure Swift build)"
 fi
-
-if [ "$BINARY_CHANGED" = true ] || [ ! -d "$RESOURCES_DIR/venv" ]; then
-    echo "==> Copying bundled Python venv..."
-    rm -rf "$RESOURCES_DIR/venv"
-    mkdir -p "$RESOURCES_DIR"
-    ditto "$VENV_CACHE_DIR" "$RESOURCES_DIR/venv"
-else
-    echo "==> Reusing existing bundled venv (unchanged)"
-fi
-
-# Embed Python daemon scripts for native app to launch
-cp transcription_daemon_mlx.py "$RESOURCES_DIR/" 2>/dev/null || true
-cp llm_daemon.py "$RESOURCES_DIR/" 2>/dev/null || true
 
 # Bundle app icon
 cp "$SCRIPT_DIR/assets/TextEcho.icns" "$RESOURCES_DIR/"
@@ -132,9 +157,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>2.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>2.0</string>
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
     <key>CFBundleIconFile</key>
@@ -146,7 +171,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
@@ -175,3 +200,8 @@ else
 fi
 
 echo "==> Build complete: $APP_DIR"
+if [ "$WITH_LLM" = true ]; then
+    echo "    LLM module: included"
+else
+    echo "    LLM module: not included (rebuild with --with-llm to add)"
+fi

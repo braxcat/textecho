@@ -20,6 +20,11 @@ final class StreamDeckPedalMonitor {
     static let productID = 0x0086
     private static let reportBufferSize = 8 // generous for 6-7 byte reports
 
+    /// Per-pedal callbacks: index 0=left, 1=center, 2=right
+    var onPedalDownByPosition: [Int: () -> Void] = [:]
+    var onPedalUpByPosition: [Int: () -> Void] = [:]
+
+    /// Legacy single-pedal callbacks (used if per-pedal not set)
     var onPedalDown: (() -> Void)?
     var onPedalUp: (() -> Void)?
     var onConnectionChanged: ((Bool) -> Void)?
@@ -135,7 +140,11 @@ final class StreamDeckPedalMonitor {
                 pedalStates[i] = pressed
                 let name = ["left", "center", "right"][i]
                 AppLogger.shared.info("Pedal \(name) \(pressed ? "DOWN" : "UP")")
-                if i == activePedal.rawValue {
+                // Per-pedal callbacks take priority
+                if let handler = pressed ? onPedalDownByPosition[i] : onPedalUpByPosition[i] {
+                    handler()
+                } else if i == activePedal.rawValue {
+                    // Fall back to legacy single-pedal callbacks
                     if pressed {
                         onPedalDown?()
                     } else {

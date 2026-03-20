@@ -10,71 +10,32 @@
 | 4 | COMPLETE | Dead Code Removal — 4,500+ lines of legacy Python UI, stale files |
 | 5 | COMPLETE | Code Quality — user-friendly errors, final docs |
 | 6 | COMPLETE | MLX Whisper Upgrade — mlx-whisper + large-v3-turbo |
-| 7 | PLANNED | Distribution — DMG signing, notarization, auto-update |
-| 8 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
-| 9 | PLANNED | LLM Improvements — conversation memory, model switching |
+| 7 | COMPLETE | Native WhisperKit Migration — replace Python daemon with Swift WhisperKit |
+| 8 | PLANNED | Distribution — DMG signing, notarization, auto-update |
+| 9 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
 
-## Phase 1: Documentation Alignment
+## Phase 7: Native WhisperKit Migration
 **Status:** COMPLETE
 
-Aligned TextEcho with chippy documentation methodology:
-- Rewrote CLAUDE.md to match wombat-wise/fbar-bot format
-- Populated all claude_docs/ files (ARCHITECTURE, FEATURES, SECURITY, etc.)
-- Updated README.md to reflect Swift-native architecture
-- Removed generic template boilerplate
+- Replaced Python MLX Whisper daemon with native Swift WhisperKit (Core ML / Neural Engine)
+- Deleted transcription_daemon_mlx.py — zero Python required for transcription
+- Memory: ~1.6GB (down from ~3GB), no GPU contention (Neural Engine offloads)
+- New Transcriber protocol + WhisperKitTranscriber actor
+- Model picker in Setup Wizard and Settings (large-v3-turbo, large-v3, base.en)
+- LLM module made fully optional (--with-llm build flag)
+- In-app Help window with embedded user documentation
+- macOS 14+ minimum (required by WhisperKit)
 
-## Phase 2: Critical Stability Fixes
-**Status:** COMPLETE
-
-- PythonServiceManager: nil out process refs after terminate, close logHandle, stale socket cleanup, deinit
-- InputMonitor: disable CGEventTap before removing run loop source, deinit
-- UnixSocket: 30s SO_RCVTIMEO/SO_SNDTIMEO, 4KB buffered reads
-- Transcription daemon: consolidated lock for model check + transcription
-- LLM daemon: same thread safety pattern
-- Overlay: 5-second auto-hide on errors
-- AudioRecorder: os_unfair_lock for shared state
-
-## Phase 3: Resource Management Hardening
-**Status:** COMPLETE
-
-- TextInjector: serial DispatchQueue for register access
-- LogsWindow: read only last 100KB via FileHandle seek
-- AppLogger: rotate when file exceeds 5MB
-- SetupWizard: removed orphaned PythonServiceManager, polls socket only
-- AppConfig: wrapped model reads in queue.sync
-- Python daemons: signal handlers before socket creation, graceful executor shutdown
-- AppState: stale socket cleanup at startup
-
-## Phase 4: Dead Code Removal
-**Status:** COMPLETE
-
-Removed ~4,500 lines of dead legacy code and stale files.
-
-## Phase 5: Code Quality
-**Status:** COMPLETE
-
-- User-friendly error messages in TranscriptionClient
-- Final documentation pass
-
-## Phase 6: MLX Whisper Upgrade
-**Status:** COMPLETE
-
-- Replaced `lightning-whisper-mlx` (unmaintained since April 2024) with `mlx-whisper` (actively maintained)
-- Default model upgraded from `distil-medium.en` to `whisper-large-v3-turbo` (~8x faster than large-v3, near-identical quality)
-- Accurate mode upgraded from `distil-large-v3` to `whisper-large-v3-mlx` (full model)
-- Config now uses HuggingFace repo IDs for model selection
-
-## Phase 7+: Future Work (TBD)
+## Phase 8+: Future Work (TBD)
 
 - DMG signing and notarization for distribution
 - Auto-update mechanism
 - Multi-language transcription support
-- Speaker diarization (possible via mlx-audio)
+- Speaker diarization
 - LLM conversation memory across sessions
-- Model management UI (download/switch models)
 
 ### Polish / Bug Fixes (Backlog)
 
-- **Setup Wizard download progress bar** — show download progress + ETA when the Whisper model downloads on first launch (currently no visual feedback)
-- **DMG folder icon** — add a custom Applications folder icon to the DMG so the drag-to-install target is clearly visible (currently shows a generic folder)
+- **DMG folder icon** — add a custom Applications folder icon to the DMG so the drag-to-install target is clearly visible
 - **Accessibility permission UX** — ad-hoc code signing invalidates macOS accessibility grants on every rebuild; investigate smoother re-grant flow
+- **Model download progress** — show download percentage in overlay during WhisperKit model download

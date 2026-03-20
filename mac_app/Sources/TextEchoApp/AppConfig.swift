@@ -31,6 +31,18 @@ final class AppConfig {
         var llmSocket: String
         var pedalEnabled: Bool
         var pedalPosition: Int // 0=left, 1=center, 2=right
+        var whisperModel: String
+        var whisperIdleTimeout: Int
+        var inputDeviceUID: String  // empty = system default
+
+        /// Whether the LLM daemon script is bundled in the app.
+        var llmAvailable: Bool {
+            if let resourcePath = Bundle.main.resourcePath {
+                let path = (resourcePath as NSString).appendingPathComponent("llm_daemon.py")
+                if FileManager.default.fileExists(atPath: path) { return true }
+            }
+            return ScriptLocator.locate(name: "llm_daemon.py") != nil
+        }
     }
 
     private(set) var model = Model(
@@ -50,7 +62,10 @@ final class AppConfig {
         transcriptionSocket: "/tmp/textecho_transcription.sock",
         llmSocket: "/tmp/textecho_llm.sock",
         pedalEnabled: false,
-        pedalPosition: 1
+        pedalPosition: 1,
+        whisperModel: "openai_whisper-large-v3_turbo",
+        whisperIdleTimeout: 3600,
+        inputDeviceUID: ""
     )
 
     var triggerButton: Int { queue.sync { model.triggerButton } }
@@ -96,6 +111,9 @@ final class AppConfig {
         if let value = obj["llm_socket"] as? String { updated.llmSocket = value }
         if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
+        if let value = obj["whisper_model"] as? String { updated.whisperModel = value }
+        if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = max(60, min(value, 86400)) }
+        if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
 
         model = updated
     }
@@ -124,6 +142,9 @@ final class AppConfig {
         dict["llm_socket"] = model.llmSocket
         dict["pedal_enabled"] = model.pedalEnabled
         dict["pedal_position"] = model.pedalPosition
+        dict["whisper_model"] = model.whisperModel
+        dict["whisper_idle_timeout"] = model.whisperIdleTimeout
+        dict["input_device_uid"] = model.inputDeviceUID
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL)

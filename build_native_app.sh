@@ -13,9 +13,21 @@ APP_DIR="dist/${APP_NAME}.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 WITH_LLM=false
+CLEAN=false
 
-if [ "$1" = "--with-llm" ]; then
-    WITH_LLM=true
+for arg in "$@"; do
+    case "$arg" in
+        --with-llm) WITH_LLM=true ;;
+        --clean) CLEAN=true ;;
+    esac
+done
+
+if [ "$CLEAN" = true ]; then
+    echo "==> Clean build: removing all caches..."
+    rm -rf mac_app/.build .swiftpm-cache .clang-cache .last_binary_hash dist/
+fi
+
+if [ "$WITH_LLM" = true ]; then
     echo "==> Building with LLM support (requires Python 3.12)..."
 else
     echo "==> Building pure Swift app (no Python needed)..."

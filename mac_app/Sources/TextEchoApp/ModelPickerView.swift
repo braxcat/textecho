@@ -194,9 +194,9 @@ struct ModelPickerView: View {
                                 selectedModel = curatedModels.first?.name ?? selectedModel
                             }
                         }
-                        .font(.system(size: 10))
-                        .foregroundColor(.red)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.red)
                     } else if isValidating {
                         HStack(spacing: 4) {
                             ProgressView().controlSize(.mini)

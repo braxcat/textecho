@@ -23,17 +23,16 @@ actor WhisperKitTranscriber: Transcriber {
     struct ModelInfo {
         let name: String
         let displayName: String
-        let size: String
         let description: String
     }
 
     /// Model names must match exact directory names in argmaxinc/whisperkit-coreml HF repo.
     /// WhisperKit uses these as glob patterns — underscore before "turbo" is critical.
     static let availableModelList: [ModelInfo] = [
-        ModelInfo(name: "openai_whisper-large-v3_turbo", displayName: "Large V3 Turbo", size: "~1.6 GB", description: "Fast, near-best quality (Recommended)"),
-        ModelInfo(name: "openai_whisper-large-v3", displayName: "Large V3", size: "~3 GB", description: "Highest quality, slower"),
-        ModelInfo(name: "large-v3-v20240930", displayName: "Large V3 (Compressed)", size: "~626 MB", description: "Compressed variant of Large V3 — similar quality, lower memory use. Better suited for M1 and older hardware."),
-        ModelInfo(name: "openai_whisper-base.en", displayName: "Base (English)", size: "~140 MB", description: "Very fast, good enough for clear speech"),
+        ModelInfo(name: "openai_whisper-large-v3_turbo", displayName: "Large V3 Turbo", description: "Fast, near-best quality (Recommended)"),
+        ModelInfo(name: "openai_whisper-large-v3", displayName: "Large V3", description: "Highest quality, slower"),
+        ModelInfo(name: "openai_whisper-large-v3-v20240930", displayName: "Large V3 (Compressed)", description: "Compressed variant of Large V3 — similar quality, lower memory use. Better suited for M1 and older hardware."),
+        ModelInfo(name: "openai_whisper-base.en", displayName: "Base (English)", description: "Very fast, good enough for clear speech"),
     ]
 
     /// Migrates old short model names to full HF repo directory names.

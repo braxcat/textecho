@@ -304,7 +304,7 @@ struct SetupWizardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(curatedModels, id: \.name) { model in
                     modelRow(name: model.name, displayName: model.displayName,
-                             size: model.size, detail: model.description)
+                             size: sizeFromName(model.name) ?? "", detail: model.description)
                 }
                 // Show a non-curated model if it was selected via "Other models"
                 if !curatedModels.map(\.name).contains(selectedModel) {

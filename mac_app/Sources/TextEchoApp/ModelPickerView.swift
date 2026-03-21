@@ -51,12 +51,13 @@ struct ModelPickerView: View {
                     sectionHeader("Recommended")
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(curatedModels, id: \.name) { model in
+                            let full = fullModelName(for: model.name)
                             modelRow(
                                 name: model.name,
                                 displayName: model.displayName,
-                                size: model.size,
+                                size: sizeFromName(full) ?? "",
                                 detail: model.description,
-                                wkTag: wkTagFor(model.name)
+                                wkTag: wkTagFor(full)
                             )
                         }
                     }
@@ -266,9 +267,21 @@ struct ModelPickerView: View {
 
     // MARK: - Logic
 
+    /// Resolves a base model name to the full WhisperKit name that includes the size suffix
+    /// (e.g. "openai_whisper-large-v3_turbo" → "openai_whisper-large-v3_turbo_954MB").
+    /// Prefers the size-suffixed variant for accurate display; falls back to exact match or original.
+    private func fullModelName(for name: String) -> String {
+        if let sized = allModels.first(where: { $0.hasPrefix(name + "_") && sizeFromName($0) != nil }) {
+            return sized
+        }
+        return allModels.first(where: { $0 == name }) ?? name
+    }
+
     private func wkTagFor(_ name: String) -> RecommendationTag? {
-        if name == wkDefaultModel { return .recommended }
-        if wkSupportedModels.contains(name) { return nil }
+        // Match if wkDefaultModel is the exact name or any size variant (e.g. name_954MB)
+        if wkDefaultModel == name || wkDefaultModel.hasPrefix(name + "_") { return .recommended }
+        let full = fullModelName(for: name)
+        if wkSupportedModels.contains(full) || wkSupportedModels.contains(name) { return nil }
         return .notRecommended
     }
 

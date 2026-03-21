@@ -98,19 +98,23 @@ final class AppState {
     }
 
     private func handleInputEvent(_ event: InputEvent) {
+        let isToggle = config.model.transcriptionMode == 0
         switch event {
         case .triggerDown:
-            beginRecording(mode: .standard)
+            if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard) }
+            else { beginRecording(mode: .standard) }
         case .triggerUp:
-            endRecording(userInitiated: true)
+            if !isToggle { endRecording(userInitiated: true) }
         case .dictateDown:
-            beginRecording(mode: .standard)
+            if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard) }
+            else { beginRecording(mode: .standard) }
         case .dictateUp:
-            endRecording(userInitiated: true)
+            if !isToggle { endRecording(userInitiated: true) }
         case .dictateLLMDown:
-            beginRecording(mode: .llm)
+            if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .llm) }
+            else { beginRecording(mode: .llm) }
         case .dictateLLMUp:
-            endRecording(userInitiated: true)
+            if !isToggle { endRecording(userInitiated: true) }
         case .settingsHotkey:
             openSettings()
         case .escape:

@@ -297,6 +297,19 @@ actor WhisperKitTranscriber: Transcriber {
         }.value
     }
 
+    /// Returns the current device's Apple Silicon chip generation name (e.g. "M3").
+    /// Used to show device-specific recommendation labels in the UI.
+    nonisolated static func currentChipName() -> String {
+        let device = WhisperKit.deviceName()
+        if device.hasPrefix("Mac16") { return "M4" }
+        if device.hasPrefix("Mac15") { return "M3" }
+        if device.hasPrefix("Mac14") { return "M2" }
+        if device.hasPrefix("Mac13") || device.hasPrefix("MacBookPro17") ||
+           device.hasPrefix("MacBookPro18") || device.hasPrefix("MacBookAir10") ||
+           device.hasPrefix("Macmini9") || device.hasPrefix("iMac21") { return "M1" }
+        return "Apple Silicon"
+    }
+
     /// Fetches the full list of available models from the WhisperKit HuggingFace repo (requires internet).
     nonisolated static func fetchAllAvailableModels() async throws -> [String] {
         try await WhisperKit.fetchAvailableModels()

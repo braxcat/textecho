@@ -53,10 +53,8 @@ struct SettingsView: View {
 
     // WhisperKit model settings
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
-    @State private var cachedModels: [String] = WhisperKitTranscriber.cachedModels()
-    @State private var showManageModels: Bool = false
-    @State private var downloadingModel: String? = nil
-    @State private var downloadError: String? = nil
+    @State private var showModelPicker: Bool = false
+    @State private var transcriptionMode: Int = AppConfig.shared.model.transcriptionMode
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
@@ -151,70 +149,33 @@ struct SettingsView: View {
                 HStack {
                     Text("Active Model")
                     Spacer()
-                    Picker("", selection: $selectedWhisperModel) {
-                        ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
-                            let cached = cachedModels.contains(model.name)
-                            Text("\(model.displayName)\(cached ? "" : " (not downloaded)")")
-                                .tag(model.name)
-                        }
-                    }
-                    .frame(width: 240)
+                    Text(WhisperKitTranscriber.availableModelList.first(where: { $0.name == selectedWhisperModel })?.displayName ?? selectedWhisperModel)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                 }
 
-                DisclosureGroup("Manage Models", isExpanded: $showManageModels) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let error = downloadError {
-                            Text(error)
-                                .font(.system(size: 11))
-                                .foregroundColor(.red)
-                                .padding(8)
-                                .background(Color.red.opacity(0.1))
-                                .cornerRadius(6)
-                        }
-
-                        ForEach(WhisperKitTranscriber.availableModelList, id: \.name) { model in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(model.displayName)
-                                        .font(.system(size: 12, weight: .semibold))
-                                    HStack(spacing: 4) {
-                                        Text(model.size)
-                                        Text("—")
-                                        Text(model.description)
-                                    }
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                }
-
-                                Spacer()
-
-                                if cachedModels.contains(model.name) {
-                                    Text("Downloaded")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.green)
-
-                                    Button("Delete") {
-                                        try? WhisperKitTranscriber.deleteModel(model.name)
-                                        cachedModels = WhisperKitTranscriber.cachedModels()
-                                    }
-                                    .font(.system(size: 11))
-                                } else if downloadingModel == model.name {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text("Downloading...")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.orange)
-                                } else {
-                                    Button("Download") {
-                                        downloadModel(model.name)
-                                    }
-                                    .font(.system(size: 11))
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
+                HStack {
+                    Text("Transcription Mode")
+                    Spacer()
+                    Picker("", selection: $transcriptionMode) {
+                        Text("Toggle").tag(0)
+                        Text("Hold").tag(1)
                     }
-                    .padding(.leading, 4)
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
+                }
+
+                Text(transcriptionMode == 0
+                    ? "Press once to start recording, press again to stop."
+                    : "Hold the key/button to record, release to stop.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+
+                Button("Manage & Download Models") {
+                    showModelPicker = true
+                }
+                .sheet(isPresented: $showModelPicker) {
+                    ModelPickerView(selectedModel: $selectedWhisperModel)
                 }
 
                 Divider()
@@ -391,7 +352,6 @@ struct SettingsView: View {
         .frame(minWidth: 520, minHeight: 520)
         .onAppear {
             refreshPermissions()
-            cachedModels = WhisperKitTranscriber.cachedModels()
             inputDevices = AudioRecorder.availableInputDevices()
         }
     }
@@ -447,6 +407,7 @@ struct SettingsView: View {
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
             model.overlayPositionMode = overlayPositionMode == 1 ? 1 : 0
+            model.transcriptionMode = transcriptionMode == 1 ? 1 : 0
         }
     }
 
@@ -457,32 +418,6 @@ struct SettingsView: View {
         if cmd { mask |= UInt(NSEvent.ModifierFlags.command.rawValue) }
         if shift { mask |= UInt(NSEvent.ModifierFlags.shift.rawValue) }
         return mask
-    }
-
-    private func downloadModel(_ modelName: String) {
-        downloadingModel = modelName
-        downloadError = nil
-        Task {
-            let transcriber = WhisperKitTranscriber(
-                modelName: modelName,
-                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
-            )
-            do {
-                try await transcriber.preload()
-                await MainActor.run {
-                    self.downloadError = nil
-                }
-            } catch {
-                AppLogger.shared.error("Model download failed: \(error)")
-                await MainActor.run {
-                    self.downloadError = "Download failed: \(error.localizedDescription)"
-                }
-            }
-            await MainActor.run {
-                self.downloadingModel = nil
-                self.cachedModels = WhisperKitTranscriber.cachedModels()
-            }
-        }
     }
 
     private func refreshPermissions() {

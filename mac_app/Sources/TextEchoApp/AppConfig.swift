@@ -32,6 +32,7 @@ final class AppConfig {
         var pedalEnabled: Bool
         var pedalPosition: Int // 0=left, 1=center, 2=right
         var overlayPositionMode: Int // 0=static bottom middle, 1=follow cursor
+        var transcriptionMode: Int // 0=toggle (press once start, press again stop), 1=hold (hold to record)
         var whisperModel: String
         var whisperIdleTimeout: Int
         var inputDeviceUID: String  // empty = system default
@@ -65,6 +66,7 @@ final class AppConfig {
         pedalEnabled: false,
         pedalPosition: 1,
         overlayPositionMode: 0,
+        transcriptionMode: 0,
         whisperModel: "openai_whisper-large-v3_turbo",
         whisperIdleTimeout: 3600,
         inputDeviceUID: ""
@@ -114,6 +116,7 @@ final class AppConfig {
         if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
         if let value = obj["overlay_position_mode"] as? Int { updated.overlayPositionMode = value == 1 ? 1 : 0 }
+        if let value = obj["transcription_mode"] as? Int { updated.transcriptionMode = value == 1 ? 1 : 0 }
         if let value = obj["whisper_model"] as? String { updated.whisperModel = WhisperKitTranscriber.migrateModelName(value) }
         if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = max(60, min(value, 86400)) }
         if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
@@ -146,6 +149,7 @@ final class AppConfig {
         dict["pedal_enabled"] = model.pedalEnabled
         dict["pedal_position"] = model.pedalPosition
         dict["overlay_position_mode"] = model.overlayPositionMode
+        dict["transcription_mode"] = model.transcriptionMode
         dict["whisper_model"] = model.whisperModel
         dict["whisper_idle_timeout"] = model.whisperIdleTimeout
         dict["input_device_uid"] = model.inputDeviceUID

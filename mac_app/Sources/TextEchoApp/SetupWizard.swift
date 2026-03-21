@@ -73,6 +73,8 @@ struct SetupWizardView: View {
         let b = AppConfig.shared.model.triggerButton
         return (b == 0 || b == 1 || b == 2) ? b : 2
     }()
+    @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
+    @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
 
     let onClose: () -> Void
 
@@ -110,11 +112,14 @@ struct SetupWizardView: View {
                 .padding(16)
         }
         .frame(minWidth: 500, minHeight: 540)
-        .sheet(isPresented: $showModelPicker) {
+        .sheet(isPresented: $showModelPicker, onDismiss: {
+            // Re-check cache status for all curated models plus any non-curated
+            // model that may have been downloaded inside ModelPickerView.
+            var names = curatedModels.map(\.name)
+            if !names.contains(selectedModel) { names.append(selectedModel) }
+            checkCacheStatus(for: names)
+        }) {
             ModelPickerView(selectedModel: $selectedModel)
-                .onDisappear {
-                    checkCacheStatus(for: curatedModels.map(\.name))
-                }
         }
         .onAppear {
             determineInitialStep()
@@ -291,6 +296,11 @@ struct SetupWizardView: View {
                     .cornerRadius(6)
             }
 
+            Text("Recommended Models")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.bottom, 2)
+
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(curatedModels, id: \.name) { model in
                     modelRow(name: model.name, displayName: model.displayName,
@@ -308,7 +318,7 @@ struct SetupWizardView: View {
 
             Button(action: { showModelPicker = true }) {
                 HStack(spacing: 4) {
-                    Text("Other models")
+                    Text("All models")
                         .font(.system(size: 11))
                     Image(systemName: "arrow.right")
                         .font(.system(size: 9))
@@ -318,9 +328,15 @@ struct SetupWizardView: View {
             .buttonStyle(.plain)
 
             if !modelReady {
-                Text(downloadedModels.isEmpty && validatingModels.isEmpty && downloadingModel == nil
-                     ? "Download a model to get started."
-                     : "Select a model to continue.")
+                Text(downloadingModel != nil
+                     ? "Downloading model…"
+                     : !validatingModels.isEmpty
+                       ? "Validating model…"
+                       : loadingModelName != nil
+                         ? "Loading model into memory…"
+                         : downloadedModels.isEmpty
+                           ? "Download a model to get started."
+                           : "Select a model to continue.")
                     .font(.system(size: 11))
                     .foregroundColor(.orange)
             }
@@ -482,7 +498,34 @@ struct SetupWizardView: View {
                 }
             }
 
-            if !capsLockEnabled && !mouseEnabled && !keyboardEnabled {
+            // Stream Deck Pedal
+            activationOptionCard(
+                icon: "pedal.accelerator",
+                title: "Stream Deck Pedal",
+                detail: "Use an Elgato Stream Deck Pedal to control recording.",
+                enabled: $pedalEnabled
+            ) {
+                if pedalEnabled {
+                    HStack {
+                        Text("Push-to-talk pedal")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Picker("", selection: $pedalPosition) {
+                            Text("Left").tag(0)
+                            Text("Center").tag(1)
+                            Text("Right").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+                    Text("Left = Paste, Center = Push-to-talk, Right = Enter")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if !capsLockEnabled && !mouseEnabled && !keyboardEnabled && !pedalEnabled {
                 Text("Enable at least one activation method to use TextEcho.")
                     .font(.system(size: 11))
                     .foregroundColor(.orange)
@@ -557,6 +600,10 @@ struct SetupWizardView: View {
                 if capsLockEnabled {
                     hotkeyRow(keys: "Caps Lock", action: "Toggle recording with Caps Lock")
                 }
+                if pedalEnabled {
+                    let pedalName = pedalPosition == 0 ? "Left pedal" : pedalPosition == 2 ? "Right pedal" : "Center pedal"
+                    hotkeyRow(keys: pedalName, action: "Stream Deck Pedal (push-to-talk)")
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -564,10 +611,9 @@ struct SetupWizardView: View {
                     .font(.system(size: 12, weight: .semibold))
                 hotkeyRow(keys: "Esc", action: "Cancel recording")
                 hotkeyRow(keys: "Cmd + Opt + Space", action: "Open Settings")
-                hotkeyRow(keys: "Cmd + Opt + 1–9", action: "Save clipboard to register")
             }
 
-            Text("TextEcho lives in your menu bar. Right-click the icon for Settings, Help, and more.")
+            Text("TextEcho lives in your menu bar. Click the icon to access Settings, Help, and more.")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -587,7 +633,7 @@ struct SetupWizardView: View {
 
             switch currentStep {
             case .welcome:
-                Button("Get Started") {
+                Button("Next") {
                     currentStep = .model
                 }
                 .buttonStyle(.borderedProminent)
@@ -608,7 +654,7 @@ struct SetupWizardView: View {
                     currentStep = .ready
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!capsLockEnabled && !mouseEnabled && !keyboardEnabled)
+                .disabled(!capsLockEnabled && !mouseEnabled && !keyboardEnabled && !pedalEnabled)
 
             case .ready:
                 Button("Start Using TextEcho") {
@@ -640,6 +686,8 @@ struct SetupWizardView: View {
             model.keyboardEnabled = keyboardEnabled
             model.keyboardMode = keyboardMode
             model.triggerButton = triggerButtonChoice
+            model.pedalEnabled = pedalEnabled
+            model.pedalPosition = pedalPosition
         }
     }
 

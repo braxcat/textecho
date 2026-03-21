@@ -181,7 +181,7 @@ final class AppState {
         }
 
         recorder.start(
-            silenceDuration: config.silenceDuration,
+            silenceDuration: config.model.silenceEnabled ? config.silenceDuration : 3600.0,
             silenceThreshold: config.silenceThreshold,
             sampleRate: config.sampleRate
         )
@@ -214,6 +214,7 @@ final class AppState {
         guard isRecording else { return }
         logger.info("Recording cancelled")
         isRecording = false
+        NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
         recorder.stop { _ in }
         overlay.hide()
     }
@@ -270,12 +271,18 @@ final class AppState {
         }
     }
 
-    func openSettings() {
+    func openSettings(onOpenSetupWizard: @escaping () -> Void = {}) {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(onUninstall: { [weak self] in
-                guard let self else { return }
-                UninstallManager.shared.requestUninstall(appState: self)
-            })
+            settingsWindow = SettingsWindowController(
+                onUninstall: { [weak self] in
+                    guard let self else { return }
+                    UninstallManager.shared.requestUninstall(appState: self)
+                },
+                onOpenLogs: { [weak self] in
+                    self?.openLogs()
+                },
+                onOpenSetupWizard: onOpenSetupWizard
+            )
         }
         settingsWindow?.show()
     }

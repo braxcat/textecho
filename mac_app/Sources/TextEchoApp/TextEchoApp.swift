@@ -16,25 +16,26 @@ struct TextEchoApp: App {
 
     var body: some Scene {
         MenuBarExtra("TextEcho", systemImage: appModel.isModelLoading ? "hourglass" : (appModel.isRecording ? "record.circle" : "waveform"), isInserted: menuBarInserted) {
-            // Record toggle
+            // Stop Recording — only shown when recording
             if appModel.isRecording {
                 Button("Stop Recording") {
                     appModel.stopRecording()
                 }
-            } else {
-                Button("Start Recording") {
-                    appModel.startRecording(llm: false)
-                }
+                Divider()
             }
+
+            Button("Model: \(appModel.currentModelDisplayName)") {
+                appModel.openModelPicker()
+            }
+            Divider()
 
             if AppConfig.shared.model.llmAvailable {
                 Button("Start LLM Recording") {
                     appModel.startRecording(llm: true)
                 }
                 .disabled(appModel.isRecording)
+                Divider()
             }
-
-            Divider()
 
             // Recent transcriptions (FlyCut-style)
             if AppConfig.shared.model.historyEnabled && AppConfig.shared.model.menuBarHistoryEnabled {
@@ -65,10 +66,6 @@ struct TextEchoApp: App {
                 appModel.openSettings()
             }
 
-            Button("Open Logs") {
-                appModel.openLogs()
-            }
-
             Button("Help") {
                 appModel.openHelp()
             }
@@ -95,6 +92,7 @@ final class AppModel: ObservableObject {
     private var setupWizard: SetupWizardController?
     private var helpWindow: HelpWindowController?
     private var historyWindow: HistoryWindowController?
+    private var modelPickerWindow: ModelPickerWindowController?
 
     init() {
         menuBarVisible = AppConfig.shared.model.showMenuBarIcon
@@ -167,6 +165,19 @@ final class AppModel: ObservableObject {
         historyWindow?.show()
     }
 
+    func openModelPicker() {
+        if modelPickerWindow == nil {
+            modelPickerWindow = ModelPickerWindowController()
+        }
+        modelPickerWindow?.show()
+    }
+
+    var currentModelDisplayName: String {
+        let name = AppConfig.shared.model.whisperModel
+        return WhisperKitTranscriber.availableModelList
+            .first(where: { $0.name == name })?.displayName ?? name
+    }
+
     private func refreshHistory() {
         guard AppConfig.shared.model.historyEnabled && AppConfig.shared.model.menuBarHistoryEnabled else {
             recentHistory = []
@@ -176,7 +187,9 @@ final class AppModel: ObservableObject {
     }
 
     func openSettings() {
-        appState.openSettings()
+        appState.openSettings(onOpenSetupWizard: { [weak self] in
+            self?.openSetupWizard()
+        })
     }
 
     func openLogs() {

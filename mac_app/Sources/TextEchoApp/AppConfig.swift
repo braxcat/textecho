@@ -24,6 +24,7 @@ final class AppConfig {
         var silenceDuration: Double
         var silenceThreshold: Double
         var sampleRate: Double
+        var silenceEnabled: Bool      // Auto-stop on silence
         // LLM
         var llmEnabled: Bool
         var llmModelPath: String
@@ -75,6 +76,7 @@ final class AppConfig {
         silenceDuration: 2.5,
         silenceThreshold: 0.015,
         sampleRate: 16000,
+        silenceEnabled: true,
         llmEnabled: false,
         llmModelPath: "",
         showMenuBarIcon: true,
@@ -133,6 +135,7 @@ final class AppConfig {
         if let value = obj["silence_duration"] as? Double { updated.silenceDuration = value }
         if let value = obj["silence_threshold"] as? Double { updated.silenceThreshold = value }
         if let value = obj["sample_rate"] as? Double { updated.sampleRate = value }
+        if let v = obj["silence_enabled"] as? Bool { updated.silenceEnabled = v }
         if let value = obj["llm_enabled"] as? Bool { updated.llmEnabled = value }
         if let value = obj["llm_model_path"] as? String { updated.llmModelPath = value }
         if let value = obj["show_menu_bar_icon"] as? Bool { updated.showMenuBarIcon = value }
@@ -187,6 +190,7 @@ final class AppConfig {
         dict["silence_duration"] = model.silenceDuration
         dict["silence_threshold"] = model.silenceThreshold
         dict["sample_rate"] = model.sampleRate
+        dict["silence_enabled"] = model.silenceEnabled
         dict["llm_enabled"] = model.llmEnabled
         dict["llm_model_path"] = model.llmModelPath
         dict["show_menu_bar_icon"] = model.showMenuBarIcon

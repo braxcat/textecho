@@ -2,35 +2,93 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-final class SettingsWindowController {
+// MARK: - SettingsSaveCallbacks (bridges save callbacks from SwiftUI struct to NSWindowDelegate)
+
+final class SettingsSaveCallbacks {
+    var onSave: (() -> Void)?
+    var onResetDirty: (() -> Void)?
+}
+
+// MARK: - SettingsWindowController
+
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let onUninstall: () -> Void
+    private let onOpenLogs: () -> Void
+    private let onOpenSetupWizard: () -> Void
+    private var isDirty = false
+    private let saveCallbacks = SettingsSaveCallbacks()
 
-    init(onUninstall: @escaping () -> Void = {}) {
+    init(onUninstall: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}, onOpenSetupWizard: @escaping () -> Void = {}) {
         self.onUninstall = onUninstall
+        self.onOpenLogs = onOpenLogs
+        self.onOpenSetupWizard = onOpenSetupWizard
+        super.init()
     }
 
     func show() {
         if window == nil {
-            let view = SettingsView(onUninstall: onUninstall)
+            let view = SettingsView(
+                onUninstall: onUninstall,
+                onOpenLogs: onOpenLogs,
+                onOpenSetupWizard: onOpenSetupWizard,
+                onClose: { [weak self] in
+                    self?.isDirty = false
+                    self?.window?.isDocumentEdited = false
+                    self?.window?.close()
+                },
+                onDirtyChanged: { [weak self] dirty in
+                    self?.isDirty = dirty
+                    self?.window?.isDocumentEdited = dirty
+                },
+                saveCallbacks: saveCallbacks
+            )
             let hosting = NSHostingView(rootView: view)
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 560, height: 700),
+            let w = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 740),
                 styleMask: [.titled, .closable, .resizable],
                 backing: .buffered,
                 defer: false
             )
-            window.minSize = NSSize(width: 520, height: 520)
-            window.center()
-            window.title = "TextEcho Settings"
-            window.contentView = hosting
-            window.isReleasedWhenClosed = false
-            self.window = window
+            w.minSize = NSSize(width: 520, height: 560)
+            w.center()
+            w.title = "TextEcho Settings"
+            w.contentView = hosting
+            w.isReleasedWhenClosed = false
+            w.delegate = self
+            self.window = w
         }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard isDirty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Unsaved Changes"
+        alert.informativeText = "You have settings changes that haven't been applied yet."
+        alert.addButton(withTitle: "Apply & Close")
+        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            saveCallbacks.onSave?()
+            isDirty = false
+            sender.isDocumentEdited = false
+            return true
+        case .alertSecondButtonReturn:
+            isDirty = false
+            saveCallbacks.onResetDirty?()
+            return true
+        default:
+            return false
+        }
+    }
 }
+
+// MARK: - SettingsView
 
 struct SettingsView: View {
     // Activation modes
@@ -54,13 +112,14 @@ struct SettingsView: View {
     @State private var llmModCmd: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.command.rawValue) != 0
 
     // Audio
+    @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: String = String(AppConfig.shared.model.silenceDuration)
     @State private var silenceThreshold: String = String(AppConfig.shared.model.silenceThreshold)
     @State private var sampleRate: String = String(Int(AppConfig.shared.model.sampleRate))
-
     // WhisperKit model
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
     @State private var showModelPicker: Bool = false
+    @State private var downloadedModelNames: [String] = []
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
@@ -74,7 +133,7 @@ struct SettingsView: View {
     // History
     @State private var historyEnabled: Bool = AppConfig.shared.model.historyEnabled
     @State private var menuBarHistoryEnabled: Bool = AppConfig.shared.model.menuBarHistoryEnabled
-    @State private var maxHistoryCount: Int = AppConfig.shared.model.maxHistoryCount
+    @State private var maxHistoryCountText: String = String(AppConfig.shared.model.maxHistoryCount)
 
     // Pedal
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
@@ -90,11 +149,32 @@ struct SettingsView: View {
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
 
+    // Dirty tracking
+    @State private var isDirty = false
+
     private let llmAvailable = AppConfig.shared.model.llmAvailable
     let onUninstall: () -> Void
+    let onOpenLogs: () -> Void
+    let onOpenSetupWizard: () -> Void
+    let onClose: () -> Void
+    let onDirtyChanged: (Bool) -> Void
+    let saveCallbacks: SettingsSaveCallbacks
 
-    init(onUninstall: @escaping () -> Void = {}) {
+    init(
+        onUninstall: @escaping () -> Void = {},
+        onOpenLogs: @escaping () -> Void = {},
+        onOpenSetupWizard: @escaping () -> Void = {},
+        onClose: @escaping () -> Void = {},
+        onDirtyChanged: @escaping (Bool) -> Void = { _ in },
+        saveCallbacks: SettingsSaveCallbacks = SettingsSaveCallbacks()
+    ) {
         self.onUninstall = onUninstall
+        self.onOpenLogs = onOpenLogs
+        self.onOpenSetupWizard = onOpenSetupWizard
+        self.onClose = onClose
+        self.onDirtyChanged = onDirtyChanged
+        self.saveCallbacks = saveCallbacks
+
         let trigger = AppConfig.shared.model.triggerButton
         _triggerButton = State(initialValue: String(trigger))
         if trigger == 0 || trigger == 1 || trigger == 2 {
@@ -104,6 +184,24 @@ struct SettingsView: View {
         }
         _dictationKey = State(initialValue: SettingsView.keyName(for: AppConfig.shared.model.dictationKeyCode))
     }
+
+    // MARK: - Dirty tracking helper
+
+    private func dirty<T: Equatable>(_ binding: Binding<T>) -> Binding<T> {
+        Binding(
+            get: { binding.wrappedValue },
+            set: { newVal in
+                guard binding.wrappedValue != newVal else { return }
+                binding.wrappedValue = newVal
+                if !isDirty {
+                    isDirty = true
+                    onDirtyChanged(true)
+                }
+            }
+        )
+    }
+
+    // MARK: - Body
 
     var body: some View {
         ScrollView {
@@ -126,7 +224,7 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
-                        Toggle("", isOn: $capsLockEnabled).labelsHidden()
+                        Toggle("", isOn: dirty($capsLockEnabled)).labelsHidden()
                     }
                 }
 
@@ -145,14 +243,14 @@ struct SettingsView: View {
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            Toggle("", isOn: $mouseEnabled).labelsHidden()
+                            Toggle("", isOn: dirty($mouseEnabled)).labelsHidden()
                         }
                         if mouseEnabled {
                             HStack {
                                 Text("Button")
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
-                                Picker("", selection: $triggerButtonChoice) {
+                                Picker("", selection: dirty($triggerButtonChoice)) {
                                     Text("Left").tag(0)
                                     Text("Right").tag(1)
                                     Text("Middle").tag(2)
@@ -167,7 +265,7 @@ struct SettingsView: View {
                                     Text("Button Number")
                                         .font(.system(size: 12)).foregroundColor(.secondary)
                                     Spacer()
-                                    TextField("2", text: $triggerButton).frame(width: 60)
+                                    TextField("2", text: dirty($triggerButton)).frame(width: 60)
                                 }
                                 .padding(.leading, 30)
                             }
@@ -175,7 +273,7 @@ struct SettingsView: View {
                                 Text("Mode")
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
-                                Picker("", selection: $mouseMode) {
+                                Picker("", selection: dirty($mouseMode)) {
                                     Text("Toggle").tag(0)
                                     Text("Hold").tag(1)
                                 }
@@ -202,14 +300,14 @@ struct SettingsView: View {
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            Toggle("", isOn: $keyboardEnabled).labelsHidden()
+                            Toggle("", isOn: dirty($keyboardEnabled)).labelsHidden()
                         }
                         if keyboardEnabled {
                             HStack {
                                 Text("Key")
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
-                                TextField("Z", text: $dictationKey)
+                                TextField("Z", text: dirty($dictationKey))
                                     .frame(width: 44)
                                     .multilineTextAlignment(.center)
                             }
@@ -219,10 +317,10 @@ struct SettingsView: View {
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
                                 HStack(spacing: 8) {
-                                    Toggle("⌃", isOn: $dictationModCtrl)
-                                    Toggle("⌥", isOn: $dictationModOpt)
-                                    Toggle("⌘", isOn: $dictationModCmd)
-                                    Toggle("⇧", isOn: $dictationModShift)
+                                    Toggle("⌃", isOn: dirty($dictationModCtrl))
+                                    Toggle("⌥", isOn: dirty($dictationModOpt))
+                                    Toggle("⌘", isOn: dirty($dictationModCmd))
+                                    Toggle("⇧", isOn: dirty($dictationModShift))
                                 }
                             }
                             .padding(.leading, 30)
@@ -230,7 +328,7 @@ struct SettingsView: View {
                                 Text("Mode")
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
-                                Picker("", selection: $keyboardMode) {
+                                Picker("", selection: dirty($keyboardMode)) {
                                     Text("Toggle").tag(0)
                                     Text("Hold").tag(1)
                                 }
@@ -243,14 +341,53 @@ struct SettingsView: View {
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
                                 HStack(spacing: 8) {
-                                    Toggle("⌃", isOn: $llmModCtrl)
-                                    Toggle("⌥", isOn: $llmModOpt)
-                                    Toggle("⌘", isOn: $llmModCmd)
-                                    Toggle("⇧", isOn: $llmModShift)
+                                    Toggle("⌃", isOn: dirty($llmModCtrl))
+                                    Toggle("⌥", isOn: dirty($llmModOpt))
+                                    Toggle("⌘", isOn: dirty($llmModCmd))
+                                    Toggle("⇧", isOn: dirty($llmModShift))
                                 }
                             }
                             .padding(.leading, 30)
                             Text("LLM modifier is added on top of the main shortcut to trigger LLM mode.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 30)
+                        }
+                    }
+                }
+
+                activationCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "pedal.accelerator")
+                                .font(.system(size: 15))
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Stream Deck Pedal")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Use an Elgato Stream Deck Pedal to control recording.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: dirty($pedalEnabled)).labelsHidden()
+                        }
+                        if pedalEnabled {
+                            HStack {
+                                Text("Push-to-talk pedal")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: dirty($pedalPosition)) {
+                                    Text("Left").tag(0)
+                                    Text("Center").tag(1)
+                                    Text("Right").tag(2)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 200)
+                            }
+                            .padding(.leading, 30)
+                            Text("Left pedal = Paste, Center = Push-to-talk, Right = Enter. Quit Elgato Stream Deck app if not detected.")
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                                 .padding(.leading, 30)
@@ -266,17 +403,33 @@ struct SettingsView: View {
                 HStack {
                     Text("Active Model")
                     Spacer()
-                    Text(WhisperKitTranscriber.availableModelList.first(where: { $0.name == selectedWhisperModel })?.displayName ?? selectedWhisperModel)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                    if downloadedModelNames.isEmpty {
+                        Text("No models downloaded")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Picker("", selection: dirty($selectedWhisperModel)) {
+                            ForEach(downloadedModelNames, id: \.self) { name in
+                                let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == name })
+                                Text(info?.displayName ?? name).tag(name)
+                            }
+                        }
+                        .frame(maxWidth: 220)
+                    }
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, 4)
 
-                Button("Manage & Download Models") {
+                Text("Select from your downloaded models. The selected model is loaded on your next recording.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
+                    .padding(.bottom, 4)
+
+                Button("Manage & Download Models…") {
                     showModelPicker = true
                 }
                 .sheet(isPresented: $showModelPicker) {
-                    ModelPickerView(selectedModel: $selectedWhisperModel)
+                    ModelPickerView(selectedModel: dirty($selectedWhisperModel))
                 }
 
                 sectionDivider()
@@ -287,7 +440,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Input Device")
                     Spacer()
-                    Picker("", selection: $selectedDeviceUID) {
+                    Picker("", selection: dirty($selectedDeviceUID)) {
                         Text("System Default").tag("")
                         ForEach(inputDevices, id: \.uid) { device in
                             Text(device.name).tag(device.uid)
@@ -300,22 +453,30 @@ struct SettingsView: View {
                     .font(.system(size: 11))
                 }
 
-                HStack {
-                    Text("Silence Duration (sec)")
-                    Spacer()
-                    TextField("2.5", text: $silenceDuration).frame(width: 80)
+                Toggle("Stop on silence", isOn: dirty($silenceEnabled))
+                Text("Automatically stop recording after a period of silence.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 4)
+
+                if silenceEnabled {
+                    HStack {
+                        Text("Silence duration (sec)")
+                        Spacer()
+                        TextField("2.5", text: dirty($silenceDuration)).frame(width: 80)
+                    }
                 }
 
                 HStack {
-                    Text("Silence Threshold")
+                    Text("Silence threshold")
                     Spacer()
-                    TextField("0.015", text: $silenceThreshold).frame(width: 80)
+                    TextField("0.015", text: dirty($silenceThreshold)).frame(width: 80)
                 }
 
                 HStack {
-                    Text("Sample Rate")
+                    Text("Sample rate")
                     Spacer()
-                    TextField("16000", text: $sampleRate).frame(width: 80)
+                    TextField("16000", text: dirty($sampleRate)).frame(width: 80)
                 }
 
                 sectionDivider()
@@ -323,24 +484,29 @@ struct SettingsView: View {
                 // MARK: - Behavior
                 sectionHeader("Behavior")
 
-                Toggle("Auto-paste transcription", isOn: $autoCopyToClipboard)
+                Toggle("Auto-paste transcription", isOn: dirty($autoCopyToClipboard))
                 Text("Automatically pastes transcribed text at your cursor after recording.")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .padding(.bottom, 6)
 
+                sectionDivider()
+
+                // MARK: - Interface
+                sectionHeader("Interface")
+
                 HStack {
-                    Text("Overlay Position")
+                    Text("Overlay position")
                     Spacer()
-                    Picker("", selection: $overlayPositionMode) {
-                        Text("Static").tag(0)
-                        Text("Follow Cursor").tag(1)
+                    Picker("", selection: dirty($overlayPositionMode)) {
+                        Text("Fixed position").tag(0)
+                        Text("Follow cursor").tag(1)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 200)
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 180)
                 }
 
-                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+                Toggle("Show Menu Bar Icon", isOn: dirty($showMenuBarIcon))
                     .padding(.top, 4)
 
                 sectionDivider()
@@ -348,14 +514,14 @@ struct SettingsView: View {
                 // MARK: - Transcription History
                 sectionHeader("Transcription History")
 
-                Toggle("Enable History", isOn: $historyEnabled)
+                Toggle("Enable History", isOn: dirty($historyEnabled))
                 Text("Saves transcriptions so you can review and re-copy them later.")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .padding(.bottom, 4)
 
                 if historyEnabled {
-                    Toggle("Show in Menu Bar", isOn: $menuBarHistoryEnabled)
+                    Toggle("Show in Menu Bar", isOn: dirty($menuBarHistoryEnabled))
                     Text("Shows your 5 most recent transcriptions in the menu bar for quick re-copy.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
@@ -364,34 +530,17 @@ struct SettingsView: View {
                     HStack {
                         Text("Max history entries")
                         Spacer()
-                        Stepper("\(maxHistoryCount)", value: $maxHistoryCount, in: 10...500, step: 10)
-                            .frame(width: 160)
+                        TextField("50", text: dirty($maxHistoryCountText))
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: maxHistoryCountText) { newValue in
+                                let filtered = newValue.filter { $0.isNumber }
+                                if filtered != newValue {
+                                    maxHistoryCountText = filtered
+                                }
+                            }
                     }
-                }
-
-                sectionDivider()
-
-                // MARK: - Stream Deck Pedal
-                sectionHeader("Stream Deck Pedal")
-
-                Toggle("Enable Stream Deck Pedal", isOn: $pedalEnabled)
-
-                if pedalEnabled {
-                    HStack {
-                        Text("Push-to-talk pedal")
-                        Spacer()
-                        Picker("", selection: $pedalPosition) {
-                            Text("Left").tag(0)
-                            Text("Center").tag(1)
-                            Text("Right").tag(2)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 200)
-                    }
-                    Text("Left = Paste, Center = Push-to-talk, Right = Enter")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    Text("Quit Elgato Stream Deck app if pedal is not detected.")
+                    Text("Between 10 and 1000 entries.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -401,11 +550,11 @@ struct SettingsView: View {
                 // MARK: - LLM (only if available)
                 if llmAvailable {
                     sectionHeader("LLM")
-                    Toggle("Enable LLM", isOn: $llmEnabled)
+                    Toggle("Enable LLM", isOn: dirty($llmEnabled))
                     HStack {
                         Text("LLM Model Path")
                         Spacer()
-                        TextField("/path/to/model.gguf", text: $llmModelPath).frame(width: 260)
+                        TextField("/path/to/model.gguf", text: dirty($llmModelPath)).frame(width: 260)
                     }
 
                     sectionDivider()
@@ -414,72 +563,105 @@ struct SettingsView: View {
                     HStack {
                         Text("Python Path")
                         Spacer()
-                        TextField("/opt/homebrew/bin/python3", text: $pythonPath).frame(width: 260)
+                        TextField("/opt/homebrew/bin/python3", text: dirty($pythonPath)).frame(width: 260)
                     }
                     HStack {
                         Text("Daemons Dir")
                         Spacer()
-                        TextField("/path/to/scripts", text: $scriptsDir).frame(width: 260)
+                        TextField("/path/to/scripts", text: dirty($scriptsDir)).frame(width: 260)
                     }
 
                     sectionDivider()
                 }
 
-                // MARK: - Permissions (moved to bottom)
+                // MARK: - Permissions
                 sectionHeader("Permissions")
 
-                HStack {
-                    Text("Microphone")
-                    Spacer()
-                    statusBadge(micStatus == .authorized)
+                VStack(spacing: 0) {
+                    permissionRow(
+                        name: "Microphone",
+                        description: "Required to record your voice.",
+                        granted: micStatus == .authorized,
+                        openAnchor: "Privacy_Microphone"
+                    )
+                    Divider().padding(.leading, 16)
+                    permissionRow(
+                        name: "Accessibility",
+                        description: "Required to detect hotkeys and inject text.",
+                        granted: accessibilityTrusted,
+                        openAnchor: "Privacy_Accessibility"
+                    )
                 }
-                Button("Open Microphone Settings") {
-                    openSystemPreferences(anchor: "Privacy_Microphone")
-                }
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
 
-                HStack {
-                    Text("Accessibility")
-                    Spacer()
-                    statusBadge(accessibilityTrusted)
+                Button("Revoke All Permissions…") {
+                    revokePermissions()
                 }
-                .padding(.top, 4)
-                Button("Open Accessibility Settings") {
-                    openSystemPreferences(anchor: "Privacy_Accessibility")
-                }
-
-                Button("Refresh Permissions Status") {
-                    refreshPermissions()
-                }
-
-                sectionDivider()
-
-                // MARK: - Danger Zone
-                Button("Uninstall TextEcho…") {
-                    onUninstall()
-                }
-                .foregroundColor(.red)
+                .foregroundColor(.secondary)
+                .font(.system(size: 11))
+                .padding(.top, 6)
 
                 sectionDivider()
 
-                // MARK: - Actions
-                HStack {
+                // MARK: - Debug / maintenance row
+                HStack(spacing: 12) {
+                    Button("Open Logs") {
+                        onOpenLogs()
+                    }
+                    Button("Setup Wizard…") {
+                        onOpenSetupWizard()
+                    }
                     Button("Restart TextEcho") {
                         save()
                         restartApp()
                     }
                     Spacer()
-                    Button("Save") {
+                    Button("Uninstall TextEcho…") {
+                        onUninstall()
+                    }
+                    .foregroundColor(.red)
+                }
+                .font(.system(size: 12))
+
+                sectionDivider()
+
+                // MARK: - Unsaved changes indicator + Done button
+                HStack {
+                    if isDirty {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 6, height: 6)
+                            Text("Unsaved changes")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button("Done") {
                         save()
+                        onClose()
                     }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return, modifiers: [])
                 }
             }
             .padding(20)
         }
-        .frame(minWidth: 520, minHeight: 520)
+        .frame(minWidth: 520, minHeight: 560)
         .onAppear {
             refreshPermissions()
             inputDevices = AudioRecorder.availableInputDevices()
+            downloadedModelNames = WhisperKitTranscriber.availableModelList
+                .map(\.name)
+                .filter { WhisperKitTranscriber.isModelCached($0) }
+            if !downloadedModelNames.isEmpty && !downloadedModelNames.contains(selectedWhisperModel) {
+                downloadedModelNames.insert(selectedWhisperModel, at: 0)
+            }
+            saveCallbacks.onSave = { save() }
+            saveCallbacks.onResetDirty = { isDirty = false; onDirtyChanged(false) }
         }
     }
 
@@ -505,6 +687,29 @@ struct SettingsView: View {
             .cornerRadius(8)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
             .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func permissionRow(name: String, description: String, granted: Bool, openAnchor: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundColor(granted ? .green : .orange)
+                .font(.system(size: 20))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 13, weight: .medium))
+                Text(granted ? "Granted" : description)
+                    .font(.system(size: 11))
+                    .foregroundColor(granted ? .secondary : .red)
+            }
+            Spacer()
+            Button("Open Settings") {
+                openSystemPreferences(anchor: openAnchor)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(12)
     }
 
     // MARK: - Logic
@@ -544,6 +749,7 @@ struct SettingsView: View {
             }
             model.dictationModifiers = dictationMods
             model.dictationLLMModifier = llmMods
+            model.silenceEnabled = silenceEnabled
             model.silenceDuration = Double(silenceDuration) ?? model.silenceDuration
             model.silenceThreshold = Double(silenceThreshold) ?? model.silenceThreshold
             model.sampleRate = Double(sampleRate) ?? model.sampleRate
@@ -565,8 +771,11 @@ struct SettingsView: View {
             model.autoCopyToClipboard = autoCopyToClipboard
             model.historyEnabled = historyEnabled
             model.menuBarHistoryEnabled = menuBarHistoryEnabled
-            model.maxHistoryCount = max(10, min(maxHistoryCount, 500))
+            model.maxHistoryCount = max(10, min(Int(maxHistoryCountText) ?? 50, 1000))
         }
+
+        isDirty = false
+        onDirtyChanged(false)
     }
 
     private func buildModifierMask(ctrl: Bool, opt: Bool, cmd: Bool, shift: Bool) -> UInt {
@@ -583,13 +792,15 @@ struct SettingsView: View {
         micStatus = MicrophoneHelper.authorizationStatus()
     }
 
-    private func statusBadge(_ ok: Bool) -> some View {
-        Text(ok ? "Granted" : "Missing")
-            .font(.system(size: 11, weight: .semibold))
-            .padding(.vertical, 4)
-            .padding(.horizontal, 8)
-            .background(ok ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-            .cornerRadius(6)
+    private func revokePermissions() {
+        let alert = NSAlert()
+        alert.messageText = "Revoke Permissions"
+        alert.informativeText = "This will open Terminal commands to remove TextEcho's microphone and accessibility permissions. You'll need to re-grant them the next time TextEcho starts."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            openSystemPreferences(anchor: "Privacy_Microphone")
+        }
     }
 
     private func openSystemPreferences(anchor: String) {

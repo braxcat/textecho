@@ -20,7 +20,6 @@ struct ModelPickerView: View {
     @State private var wkSupportedModels: Set<String> = []
 
     private let curatedModels = WhisperKitTranscriber.availableModelList
-    private let chipName = WhisperKitTranscriber.currentChipName()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,8 +28,6 @@ struct ModelPickerView: View {
                 Text("Transcription Models")
                     .font(.system(size: 17, weight: .semibold))
                 Spacer()
-                Button("Done") { dismiss() }
-                    .buttonStyle(.borderedProminent)
             }
             .padding([.horizontal, .top], 20)
             .padding(.bottom, 12)
@@ -109,6 +106,15 @@ struct ModelPickerView: View {
                     }
                 }
             }
+
+            // Footer
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(16)
         }
         .frame(width: 560, height: 620)
         .onAppear {
@@ -129,7 +135,37 @@ struct ModelPickerView: View {
             .padding(.bottom, 4)
     }
 
-    private func modelRow(name: String, displayName: String, size: String, detail: String?, wkTag: String?) -> some View {
+    private enum RecommendationTag {
+        case recommended
+        case supported
+        case notRecommended
+
+        var text: String {
+            switch self {
+            case .recommended: return "Recommended for \(WhisperKitTranscriber.currentChipName())"
+            case .supported: return "Supported on \(WhisperKitTranscriber.currentChipName())"
+            case .notRecommended: return "Not recommended for \(WhisperKitTranscriber.currentChipName())"
+            }
+        }
+
+        var background: Color {
+            switch self {
+            case .recommended: return Color.orange.opacity(0.18)
+            case .supported: return Color.accentColor.opacity(0.12)
+            case .notRecommended: return Color.red.opacity(0.14)
+            }
+        }
+
+        var foreground: Color {
+            switch self {
+            case .recommended: return .orange
+            case .supported: return .accentColor
+            case .notRecommended: return .red
+            }
+        }
+    }
+
+    private func modelRow(name: String, displayName: String, size: String, detail: String?, wkTag: RecommendationTag?) -> some View {
         let isSelected = selectedModel == name
         let isDownloading = downloadingModel == name
         let isValidating = validatingModels.contains(name)
@@ -137,12 +173,6 @@ struct ModelPickerView: View {
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
-                // Selection radio
-                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
-                    .font(.system(size: 16))
-                    .padding(.top, 1)
-
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Text(displayName)
@@ -153,11 +183,11 @@ struct ModelPickerView: View {
                                 .foregroundColor(.secondary)
                         }
                         if let tag = wkTag {
-                            Text(tag)
+                            Text(tag.text)
                                 .font(.system(size: 8, weight: .bold))
                                 .padding(.horizontal, 4).padding(.vertical, 1)
-                                .background(tag.contains("Top pick") ? Color.orange.opacity(0.18) : Color.accentColor.opacity(0.12))
-                                .foregroundColor(tag.contains("Top pick") ? .orange : .accentColor)
+                                .background(tag.background)
+                                .foregroundColor(tag.foreground)
                                 .cornerRadius(3)
                         }
                     }
@@ -181,12 +211,24 @@ struct ModelPickerView: View {
                 // Status / action column
                 VStack(alignment: .trailing, spacing: 4) {
                     if isDownloaded {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
-                            Text("Downloaded").font(.system(size: 10, weight: .semibold))
+                        if isSelected {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
+                                Text("Active").font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(.accentColor)
+                        } else {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
+                                Text("Downloaded").font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(.green)
+                            Button("Select") {
+                                selectedModel = name
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .foregroundColor(.green)
-
                         Button("Delete") {
                             try? WhisperKitTranscriber.deleteModel(name)
                             downloadedModels.remove(name)
@@ -204,7 +246,6 @@ struct ModelPickerView: View {
                         }
                     } else if !isDownloading {
                         Button("Download") {
-                            selectedModel = name
                             startDownload(modelName: name)
                         }
                         .buttonStyle(.borderedProminent)
@@ -221,16 +262,18 @@ struct ModelPickerView: View {
             .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.15), lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture {
-            selectedModel = name
+            if isDownloaded {
+                selectedModel = name
+            }
         }
     }
 
     // MARK: - Logic
 
-    private func wkTagFor(_ name: String) -> String? {
-        if name == wkDefaultModel { return "Top pick for \(chipName)" }
-        if wkSupportedModels.contains(name) { return "Recommended for \(chipName)" }
-        return nil
+    private func wkTagFor(_ name: String) -> RecommendationTag? {
+        if name == wkDefaultModel { return .recommended }
+        if wkSupportedModels.contains(name) { return .supported }
+        return .notRecommended
     }
 
     private func checkCacheStatus(for modelNames: [String]) {
@@ -321,5 +364,40 @@ struct ModelPickerView: View {
         guard let last = name.components(separatedBy: "_").last,
               last.hasSuffix("MB") || last.hasSuffix("GB") else { return nil }
         return last
+    }
+}
+
+// MARK: - Standalone window controller
+
+final class ModelPickerWindowController {
+    private var window: NSWindow?
+
+    func show() {
+        if window == nil {
+            let binding = Binding<String>(
+                get: { AppConfig.shared.model.whisperModel },
+                set: { newValue in
+                    AppConfig.shared.update { model in
+                        model.whisperModel = newValue
+                    }
+                }
+            )
+            let view = ModelPickerView(selectedModel: binding)
+            let hosting = NSHostingView(rootView: view)
+            let w = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            w.minSize = NSSize(width: 480, height: 500)
+            w.center()
+            w.title = "Transcription Models"
+            w.contentView = hosting
+            w.isReleasedWhenClosed = false
+            self.window = w
+        }
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

@@ -5,6 +5,7 @@ enum OverlayState: Equatable {
     case hidden
     case recording
     case processing
+    case loadingModel
     case downloading
     case result(isLLM: Bool)
     case error
@@ -12,7 +13,7 @@ enum OverlayState: Equatable {
     static func == (lhs: OverlayState, rhs: OverlayState) -> Bool {
         switch (lhs, rhs) {
         case (.hidden, .hidden), (.recording, .recording), (.processing, .processing),
-             (.downloading, .downloading), (.error, .error):
+             (.loadingModel, .loadingModel), (.downloading, .downloading), (.error, .error):
             return true
         case (.result(let a), .result(let b)):
             return a == b
@@ -44,6 +45,12 @@ final class OverlayViewModel: ObservableObject {
         state = .result(isLLM: isLLM)
         statusText = isLLM ? "LLM RESPONSE" : "TRANSCRIBED"
         resultText = text
+    }
+
+    func showLoadingModel() {
+        state = .loadingModel
+        statusText = "LOADING MODEL"
+        resultText = ""
     }
 
     func showDownloading() {
@@ -140,8 +147,14 @@ struct OverlayView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
-                // Scanner bar (processing state)
+                // Scanner bar (processing or loading model state)
                 if case .processing = viewModel.state {
+                    ScannerBarView()
+                        .frame(height: 4)
+                        .padding(.vertical, 6)
+                        .transition(.opacity)
+                }
+                if case .loadingModel = viewModel.state {
                     ScannerBarView()
                         .frame(height: 4)
                         .padding(.vertical, 6)
@@ -197,6 +210,12 @@ struct OverlayView: View {
                 .frame(width: 8, height: 8)
                 .opacity(glowIntensity)
                 .shadow(color: CyberColors.purple.opacity(0.5), radius: 4)
+        case .loadingModel:
+            Circle()
+                .fill(CyberColors.amber)
+                .frame(width: 8, height: 8)
+                .opacity(glowIntensity)
+                .shadow(color: CyberColors.amber.opacity(0.6), radius: 4)
         case .downloading:
             Circle()
                 .fill(CyberColors.amber)
@@ -265,6 +284,7 @@ struct OverlayView: View {
         switch viewModel.state {
         case .recording: return CyberColors.magenta
         case .processing: return CyberColors.purple
+        case .loadingModel: return CyberColors.amber
         case .downloading: return CyberColors.amber
         case .result(let isLLM): return isLLM ? CyberColors.purple : CyberColors.green
         case .error: return CyberColors.red
@@ -424,6 +444,27 @@ final class OverlayWindowController {
         }
     }
 
+    // Show at top-center of screen (startup) — stays until hideLoadingModel() is called
+    func showLoadingModel() {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.stopFollow()
+            self.viewModel.showLoadingModel()
+            self.positionAtTopCenter()
+            self.window?.orderFrontRegardless()
+        }
+    }
+
+    // Show near cursor briefly when user triggers while model is still loading
+    func showLoadingModelBlocked() {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLoadingModel()
+            self.show()
+            self.autoHide(after: 2.0)
+        }
+    }
+
     func showDownloading() {
         DispatchQueue.main.async {
             self.cancelAutoHide()
@@ -534,6 +575,16 @@ final class OverlayWindowController {
         if x + width > screen.maxX - padding { x = screen.maxX - width - padding }
         if y < screen.minY + padding { y = screen.minY + padding }
 
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func positionAtTopCenter() {
+        guard let window, let screen = NSScreen.main else { return }
+        let width = window.frame.width
+        let height = window.frame.height
+        let padding: CGFloat = 8
+        let x = screen.frame.midX - width / 2
+        let y = screen.visibleFrame.maxY - height - padding
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }

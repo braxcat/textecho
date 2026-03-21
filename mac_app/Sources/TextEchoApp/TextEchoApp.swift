@@ -15,7 +15,7 @@ struct TextEchoApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("TextEcho", systemImage: "waveform", isInserted: menuBarInserted) {
+        MenuBarExtra("TextEcho", systemImage: appModel.isModelLoading ? "hourglass" : "waveform", isInserted: menuBarInserted) {
             Button("Start Recording") {
                 appModel.startRecording(llm: false)
             }
@@ -81,6 +81,7 @@ struct TextEchoApp: App {
 final class AppModel: ObservableObject {
     @Published var menuBarVisible: Bool
     @Published var autostartEnabled: Bool
+    @Published var isModelLoading: Bool = false
 
     private let appState = AppState()
     private var restoreWindow: RestoreWindowController?
@@ -101,6 +102,14 @@ final class AppModel: ObservableObject {
             if shouldShowRestore {
                 self.showRestoreWindow()
             }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: AppState.modelLoadingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.isModelLoading = notification.object as? Bool ?? false
         }
 
         NotificationCenter.default.addObserver(

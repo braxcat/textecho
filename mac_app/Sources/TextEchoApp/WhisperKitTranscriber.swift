@@ -32,6 +32,7 @@ actor WhisperKitTranscriber: Transcriber {
     static let availableModelList: [ModelInfo] = [
         ModelInfo(name: "openai_whisper-large-v3_turbo", displayName: "Large V3 Turbo", size: "~1.6 GB", description: "Fast, near-best quality (Recommended)"),
         ModelInfo(name: "openai_whisper-large-v3", displayName: "Large V3", size: "~3 GB", description: "Highest quality, slower"),
+        ModelInfo(name: "openai_whisper-large-v3-v20240930", displayName: "Large V3 (Compressed)", size: "~1.5 GB", description: "Compressed variant of Large V3 — similar quality, lower memory use. Better suited for M1 and older hardware."),
         ModelInfo(name: "openai_whisper-base.en", displayName: "Base (English)", size: "~140 MB", description: "Very fast, good enough for clear speech"),
     ]
 

@@ -137,13 +137,11 @@ struct ModelPickerView: View {
 
     private enum RecommendationTag {
         case recommended
-        case supported
         case notRecommended
 
         var text: String {
             switch self {
             case .recommended: return "Recommended for \(WhisperKitTranscriber.currentChipName())"
-            case .supported: return "Supported on \(WhisperKitTranscriber.currentChipName())"
             case .notRecommended: return "Not recommended for \(WhisperKitTranscriber.currentChipName())"
             }
         }
@@ -151,7 +149,6 @@ struct ModelPickerView: View {
         var background: Color {
             switch self {
             case .recommended: return Color.orange.opacity(0.18)
-            case .supported: return Color.accentColor.opacity(0.12)
             case .notRecommended: return Color.red.opacity(0.14)
             }
         }
@@ -159,7 +156,6 @@ struct ModelPickerView: View {
         var foreground: Color {
             switch self {
             case .recommended: return .orange
-            case .supported: return .accentColor
             case .notRecommended: return .red
             }
         }
@@ -272,7 +268,7 @@ struct ModelPickerView: View {
 
     private func wkTagFor(_ name: String) -> RecommendationTag? {
         if name == wkDefaultModel { return .recommended }
-        if wkSupportedModels.contains(name) { return .supported }
+        if wkSupportedModels.contains(name) { return nil }
         return .notRecommended
     }
 

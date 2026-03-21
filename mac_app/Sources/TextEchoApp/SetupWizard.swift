@@ -60,6 +60,8 @@ struct SetupWizardView: View {
     @State private var downloadedModels: Set<String> = []
     @State private var downloadError: String? = nil
     @State private var showModelPicker: Bool = false
+    @State private var loadingModelName: String? = nil   // being loaded into memory
+    @State private var modelReady: Bool = false           // selected model is loaded & ready
 
     let onClose: () -> Void
 
@@ -111,7 +113,13 @@ struct SetupWizardView: View {
         .onChange(of: currentStep) { step in
             if step == .model {
                 checkCacheStatus(for: curatedModels.map(\.name))
+                maybeStartPreload(for: selectedModel)
             }
+        }
+        .onChange(of: selectedModel) { newModel in
+            // Reset ready state when user switches selection
+            modelReady = false
+            maybeStartPreload(for: newModel)
         }
         .onDisappear {
             timer?.invalidate()
@@ -173,19 +181,19 @@ struct SetupWizardView: View {
                     .font(.system(size: 14, weight: .semibold))
 
                 permissionRow(
-                    icon: "hand.raised",
-                    title: "Accessibility",
-                    detail: "Required to detect keyboard shortcuts and paste transcribed text.",
-                    granted: accessibilityTrusted,
-                    settingsAnchor: "Privacy_Accessibility"
-                )
-
-                permissionRow(
                     icon: "mic",
                     title: "Microphone",
                     detail: "Required to capture audio for transcription.",
                     granted: micStatus == .authorized,
                     settingsAnchor: "Privacy_Microphone"
+                )
+
+                permissionRow(
+                    icon: "hand.raised",
+                    title: "Accessibility",
+                    detail: "Required to detect keyboard shortcuts and paste transcribed text.",
+                    granted: accessibilityTrusted,
+                    settingsAnchor: "Privacy_Accessibility"
                 )
 
                 if !accessibilityTrusted || micStatus != .authorized {
@@ -324,11 +332,26 @@ struct SetupWizardView: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 if isDownloaded {
-                    HStack(spacing: 3) {
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
-                        Text("Downloaded").font(.system(size: 10, weight: .semibold))
+                    let isLoadingThis = loadingModelName == model.name
+                    let isReadyThis = modelReady && selectedModel == model.name
+                    if isReadyThis {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bolt.circle.fill").font(.system(size: 10))
+                            Text("Ready").font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.accentColor)
+                    } else if isLoadingThis {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text("Loading...").font(.system(size: 10)).foregroundColor(.secondary)
+                        }
+                    } else {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
+                            Text("Downloaded").font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.green)
                     }
-                    .foregroundColor(.green)
                 } else if isValidating {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.mini)
@@ -411,6 +434,14 @@ struct SetupWizardView: View {
                 .buttonStyle(.borderedProminent)
 
             case .model:
+                if loadingModelName != nil {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading model into memory…")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
                 Button("Next") {
                     AppConfig.shared.update { model in
                         model.whisperModel = selectedModel
@@ -418,7 +449,7 @@ struct SetupWizardView: View {
                     currentStep = .ready
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(downloadedModels.isEmpty && validatingModels.isEmpty)
+                .disabled(!modelReady)
 
             case .ready:
                 Button("Start Using TextEcho") {
@@ -491,8 +522,43 @@ struct SetupWizardView: View {
                 let isValid = await WhisperKitTranscriber.validateModel(name)
                 await MainActor.run {
                     validatingModels.remove(name)
-                    if isValid { downloadedModels.insert(name) }
+                    if isValid {
+                        downloadedModels.insert(name)
+                        // Auto-preload if this is the selected model and not loading yet
+                        if name == selectedModel { maybeStartPreload(for: name) }
+                    }
                 }
+            }
+        }
+    }
+
+    /// Start preloading into memory if the model is downloaded and not already loading/ready.
+    private func maybeStartPreload(for modelName: String) {
+        guard downloadedModels.contains(modelName) else { return }
+        guard !modelReady || selectedModel != modelName else { return }
+        guard loadingModelName == nil else { return }
+        startModelPreload(modelName: modelName)
+    }
+
+    private func startModelPreload(modelName: String) {
+        loadingModelName = modelName
+        Task {
+            let transcriber = WhisperKitTranscriber(
+                modelName: modelName,
+                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+            )
+            do {
+                try await transcriber.preload()
+                await MainActor.run {
+                    loadingModelName = nil
+                    if selectedModel == modelName { modelReady = true }
+                }
+            } catch {
+                await MainActor.run {
+                    loadingModelName = nil
+                    downloadError = "Model failed to load: \(error.localizedDescription)"
+                }
+                AppLogger.shared.error("Wizard model preload failed: \(error)")
             }
         }
     }
@@ -527,6 +593,8 @@ struct SetupWizardView: View {
                 self.validatingModels.remove(modelName)
                 if isValid {
                     self.downloadedModels.insert(modelName)
+                    // Auto-preload after download completes if this is still the selection
+                    if modelName == self.selectedModel { self.maybeStartPreload(for: modelName) }
                 } else {
                     self.downloadError = "Download completed but validation failed. Try again."
                 }

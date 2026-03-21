@@ -182,18 +182,15 @@ final class AppModel: ObservableObject {
     }
 
     private func showSetupWizardIfNeeded() {
-        let isFirstLaunch = AppConfig.shared.model.firstLaunch
-        let needsAccessibility = !AccessibilityHelper.isTrusted()
-        let needsMic = MicrophoneHelper.authorizationStatus() != .authorized
-        guard isFirstLaunch || needsAccessibility || needsMic else { return }
+        guard AppConfig.shared.model.firstLaunch else { return }
 
         if setupWizard == nil {
             setupWizard = SetupWizardController(onClose: { [weak self] in
                 self?.setupWizard?.close()
                 self?.setupWizard = nil
-                AppConfig.shared.update { model in
-                    model.firstLaunch = false
-                }
+                // Wizard sets firstLaunch=false and whisperModel before calling onClose.
+                // Now preload AppState's transcriber (model is on disk, CoreML cache is warm).
+                self?.appState.preloadCurrentModel()
                 self?.appState.restartInputMonitor()
             })
         }

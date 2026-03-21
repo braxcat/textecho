@@ -20,6 +20,7 @@ final class AppState {
     private var isRecording = false
     private var isLLMMode = false
     private var isModelLoading = false
+    private var hasPreloaded = false
 
     static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
 
@@ -57,27 +58,12 @@ final class AppState {
             startPedalMonitor()
         }
 
-        // Pre-warm only if model is already downloaded — never auto-download on start
-        if WhisperKitTranscriber.isModelCached(config.model.whisperModel) {
-            Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                await MainActor.run {
-                    self.isModelLoading = true
-                    NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
-                }
-                self.overlay.showLoadingModel()
-                do {
-                    try await self.transcriber.preload()
-                    self.logger.info("WhisperKit model preloaded")
-                } catch {
-                    self.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
-                }
-                await MainActor.run {
-                    self.isModelLoading = false
-                    NotificationCenter.default.post(name: Self.modelLoadingNotification, object: false)
-                }
-                self.overlay.hide()
-            }
+        // Pre-warm only on non-first-launch when model is already downloaded.
+        // On first launch the setup wizard handles loading inline.
+        if config.model.firstLaunch {
+            logger.info("First launch — setup wizard will handle model loading")
+        } else if WhisperKitTranscriber.isModelCached(config.model.whisperModel) {
+            startPreloadTask()
         } else {
             logger.info("WhisperKit model not downloaded yet, skipping auto-preload")
         }
@@ -97,24 +83,68 @@ final class AppState {
         pythonServices.stopAll()
     }
 
+    /// Called by the setup wizard after first-time model selection/loading is done.
+    /// Triggers AppState's own transcriber to preload so it's ready for first recording.
+    func preloadCurrentModel() {
+        guard !hasPreloaded && WhisperKitTranscriber.isModelCached(config.model.whisperModel) else { return }
+        startPreloadTask()
+    }
+
+    private func startPreloadTask() {
+        guard !hasPreloaded else { return }
+        hasPreloaded = true
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await MainActor.run {
+                self.isModelLoading = true
+                NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
+            }
+            self.overlay.showLoadingModel()
+            do {
+                try await self.transcriber.preload()
+                self.logger.info("WhisperKit model preloaded")
+            } catch {
+                self.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
+            }
+            await MainActor.run {
+                self.isModelLoading = false
+                NotificationCenter.default.post(name: Self.modelLoadingNotification, object: false)
+            }
+            self.overlay.hide()
+        }
+    }
+
     private func handleInputEvent(_ event: InputEvent) {
-        let isToggle = config.model.transcriptionMode == 0
+        let mode = config.model.transcriptionMode
+        let isToggle = mode == 0
+        let isHold = mode == 1
+        let isCapsLockMode = mode == 2
         switch event {
         case .triggerDown:
+            if isCapsLockMode { return }
             if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard) }
             else { beginRecording(mode: .standard) }
         case .triggerUp:
-            if !isToggle { endRecording(userInitiated: true) }
+            if isHold { endRecording(userInitiated: true) }
         case .dictateDown:
+            if isCapsLockMode { return }
             if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard) }
             else { beginRecording(mode: .standard) }
         case .dictateUp:
-            if !isToggle { endRecording(userInitiated: true) }
+            if isHold { endRecording(userInitiated: true) }
         case .dictateLLMDown:
+            if isCapsLockMode { return }
             if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .llm) }
             else { beginRecording(mode: .llm) }
         case .dictateLLMUp:
-            if !isToggle { endRecording(userInitiated: true) }
+            if isHold { endRecording(userInitiated: true) }
+        case .capsLockChanged(let isOn):
+            guard isCapsLockMode else { return }
+            if isOn {
+                beginRecording(mode: .standard)
+            } else {
+                endRecording(userInitiated: true)
+            }
         case .settingsHotkey:
             openSettings()
         case .escape:

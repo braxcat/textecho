@@ -30,6 +30,18 @@ cp -R "dist/${APP_NAME}.app" "$APP_PATH"
 echo ""
 bash "$SCRIPT_DIR/reset_accessibility.sh"
 
+# Reset first_launch so the setup wizard always runs on dev builds
+echo "==> Resetting first_launch for wizard testing..."
+python3 - <<'PYEOF'
+import json, os
+p = os.path.expanduser("~/.textecho_config")
+d = json.load(open(p)) if os.path.exists(p) else {}
+d["first_launch"] = True
+with open(p, "w") as f:
+    json.dump(d, f, indent=2)
+print("    first_launch reset to true")
+PYEOF
+
 # Launch
 echo "==> Launching TextEcho..."
 open "$APP_PATH"

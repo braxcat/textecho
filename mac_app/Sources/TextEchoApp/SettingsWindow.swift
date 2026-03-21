@@ -117,16 +117,6 @@ struct SettingsView: View {
                     .font(.system(size: 14, weight: .semibold))
 
                 HStack {
-                    Text("Accessibility")
-                    Spacer()
-                    statusBadge(accessibilityTrusted)
-                }
-
-                Button("Open Accessibility Settings") {
-                    openSystemPreferences(anchor: "Privacy_Accessibility")
-                }
-
-                HStack {
                     Text("Microphone")
                     Spacer()
                     statusBadge(micStatus == .authorized)
@@ -134,6 +124,16 @@ struct SettingsView: View {
 
                 Button("Open Microphone Settings") {
                     openSystemPreferences(anchor: "Privacy_Microphone")
+                }
+
+                HStack {
+                    Text("Accessibility")
+                    Spacer()
+                    statusBadge(accessibilityTrusted)
+                }
+
+                Button("Open Accessibility Settings") {
+                    openSystemPreferences(anchor: "Privacy_Accessibility")
                 }
 
                 Button("Refresh Permissions Status") {
@@ -160,14 +160,19 @@ struct SettingsView: View {
                     Picker("", selection: $transcriptionMode) {
                         Text("Toggle").tag(0)
                         Text("Hold").tag(1)
+                        Text("Caps Lock").tag(2)
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 160)
+                    .frame(width: 240)
                 }
 
-                Text(transcriptionMode == 0
+                Text(
+                    transcriptionMode == 0
                     ? "Press once to start recording, press again to stop."
-                    : "Hold the key/button to record, release to stop.")
+                    : transcriptionMode == 1
+                        ? "Hold the key/button to record, release to stop."
+                        : "Caps Lock ON starts recording. Caps Lock OFF stops recording."
+                )
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
 
@@ -407,7 +412,7 @@ struct SettingsView: View {
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
             model.overlayPositionMode = overlayPositionMode == 1 ? 1 : 0
-            model.transcriptionMode = transcriptionMode == 1 ? 1 : 0
+            model.transcriptionMode = max(0, min(transcriptionMode, 2))
         }
     }
 

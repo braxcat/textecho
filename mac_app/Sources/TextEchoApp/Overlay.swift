@@ -408,13 +408,14 @@ struct ScannerBarView: View {
 
 // MARK: - Window controller
 
-final class OverlayWindowController {
+final class OverlayWindowController: NSObject, NSWindowDelegate {
     private let viewModel = OverlayViewModel()
     private var window: NSWindow?
     private var followTimer: Timer?
     private var hideWorkItem: DispatchWorkItem?
 
-    init() {
+    override init() {
+        super.init()
         setupWindow()
     }
 
@@ -444,14 +445,12 @@ final class OverlayWindowController {
         }
     }
 
-    // Show at top-center of screen (startup) — stays until hideLoadingModel() is called
+    // Show at the same bottom-middle position as recording/processing overlays.
     func showLoadingModel() {
         DispatchQueue.main.async {
             self.cancelAutoHide()
-            self.stopFollow()
             self.viewModel.showLoadingModel()
-            self.positionAtTopCenter()
-            self.window?.orderFrontRegardless()
+            self.show()
         }
     }
 
@@ -535,7 +534,15 @@ final class OverlayWindowController {
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.delegate = self
         self.window = window
+    }
+
+    // Reposition whenever SwiftUI expands/shrinks the window (e.g. waveform → result text)
+    // so the top edge stays pinned and content grows downward.
+    func windowDidResize(_ notification: Notification) {
+        guard !shouldFollowCursor else { return }
+        positionBottomMiddle()
     }
 
     private func show() {
@@ -602,11 +609,11 @@ final class OverlayWindowController {
         let padding: CGFloat = 16
         let x = screen.midX - width / 2
 
-        // Keep static mode in a comfortable lower-half area (not hugging the dock).
-        // Using a fixed center anchor keeps the overlay visually stable across
-        // recording/processing/result states even when the height changes.
-        let targetCenterY = screen.minY + (screen.height * 0.22)
-        var y = targetCenterY - (height / 2)
+        // Anchor the TOP edge at a fixed position so the overlay only grows downward.
+        // This prevents the top from jumping when content changes height
+        // (waveform → scanner bar → result text).
+        let anchorTopY = screen.minY + (screen.height * 0.26)
+        var y = anchorTopY - height
         y = max(screen.minY + padding, min(y, screen.maxY - height - padding))
 
         window.setFrameOrigin(NSPoint(x: x, y: y))

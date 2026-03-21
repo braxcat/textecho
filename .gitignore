@@ -47,3 +47,4 @@ models/
 .swiftpm-cache/
 mac_app/.build/
 .last_binary_hash
+mac_app/Package.resolved

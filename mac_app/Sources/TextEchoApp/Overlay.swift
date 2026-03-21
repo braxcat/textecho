@@ -28,6 +28,7 @@ final class OverlayViewModel: ObservableObject {
     @Published var statusText: String = ""
     @Published var resultText: String = ""
     @Published var waveform: [Double] = Array(repeating: 0.0, count: 40)
+    @Published var appearTrigger: Bool = false
 
     func showRecording(isLLM: Bool) {
         state = .recording
@@ -89,8 +90,9 @@ private struct CyberColors {
 struct OverlayView: View {
     @ObservedObject var viewModel: OverlayViewModel
     @State private var pulseScale: CGFloat = 1.0
-    @State private var scanOffset: CGFloat = 0.0
     @State private var glowIntensity: Double = 0.4
+    @State private var popScale: CGFloat = 0.92
+    @State private var popOpacity: Double = 0.0
 
     private let width: CGFloat = 420
 
@@ -144,6 +146,7 @@ struct OverlayView: View {
                 if case .recording = viewModel.state {
                     CyberWaveformView(levels: viewModel.waveform)
                         .frame(height: 64)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
                 // Scanner bar (processing or loading model state)
@@ -151,11 +154,13 @@ struct OverlayView: View {
                     ScannerBarView()
                         .frame(height: 4)
                         .padding(.vertical, 6)
+                        .transition(.opacity)
                 }
                 if case .loadingModel = viewModel.state {
                     ScannerBarView()
                         .frame(height: 4)
                         .padding(.vertical, 6)
+                        .transition(.opacity)
                 }
 
                 // Result text — expands to show full transcription
@@ -164,6 +169,7 @@ struct OverlayView: View {
                         .font(.system(size: 12, weight: .regular, design: .monospaced))
                         .foregroundColor(resultTextColor)
                         .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
                 // Bottom bar: model badge
@@ -177,6 +183,7 @@ struct OverlayView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.state)
         }
         .frame(width: width, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
@@ -185,7 +192,17 @@ struct OverlayView: View {
         .overlay(borderOverlay)
         .shadow(color: accentColor.opacity(0.15), radius: 20, x: 0, y: 8)
         .shadow(color: .black.opacity(0.5), radius: 12, x: 0, y: 4)
+        .scaleEffect(popScale)
+        .opacity(popOpacity)
         .onAppear { startAnimations() }
+        .onChange(of: viewModel.appearTrigger) { _ in
+            popScale = 0.92
+            popOpacity = 0.0
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
+                popScale = 1.0
+                popOpacity = 1.0
+            }
+        }
     }
 
     // MARK: - Status indicator
@@ -580,6 +597,7 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
     private func show() {
         positionOverlay()
         window?.orderFrontRegardless()
+        viewModel.appearTrigger.toggle()
         if shouldFollowCursor {
             startFollow()
         } else {

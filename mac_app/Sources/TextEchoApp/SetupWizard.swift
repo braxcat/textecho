@@ -105,14 +105,18 @@ struct SetupWizardView: View {
         }
         .onAppear {
             determineInitialStep()
-            checkCacheStatus(for: curatedModels.map(\.name))
+            var names = curatedModels.map(\.name)
+            if !names.contains(selectedModel) { names.append(selectedModel) }
+            checkCacheStatus(for: names)
             timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 refreshStatus()
             }
         }
         .onChange(of: currentStep) { step in
             if step == .model {
-                checkCacheStatus(for: curatedModels.map(\.name))
+                var names = curatedModels.map(\.name)
+                if !names.contains(selectedModel) { names.append(selectedModel) }
+                checkCacheStatus(for: names)
                 maybeStartPreload(for: selectedModel)
             }
         }
@@ -331,31 +335,30 @@ struct SetupWizardView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                if isDownloaded {
-                    let isLoadingThis = loadingModelName == model.name
-                    let isReadyThis = modelReady && selectedModel == model.name
-                    if isReadyThis {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bolt.circle.fill").font(.system(size: 10))
-                            Text("Ready").font(.system(size: 10, weight: .semibold))
-                        }
-                        .foregroundColor(.accentColor)
-                    } else if isLoadingThis {
-                        HStack(spacing: 4) {
-                            ProgressView().controlSize(.mini)
-                            Text("Loading...").font(.system(size: 10)).foregroundColor(.secondary)
-                        }
-                    } else {
-                        HStack(spacing: 3) {
-                            Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
-                            Text("Downloaded").font(.system(size: 10, weight: .semibold))
-                        }
-                        .foregroundColor(.green)
+                let isLoadingThis = loadingModelName == model.name
+                let isReadyThis = modelReady && selectedModel == model.name
+
+                if isReadyThis {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
+                        Text("Loaded into memory").font(.system(size: 10, weight: .semibold))
                     }
+                    .foregroundColor(.green)
+                } else if isLoadingThis {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.mini)
+                        Text("Loading into memory…").font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                } else if isDownloaded {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.down.circle.fill").font(.system(size: 10))
+                        Text("Downloaded").font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.secondary)
                 } else if isValidating {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.mini)
-                        Text("Validating...").font(.system(size: 10)).foregroundColor(.secondary)
+                        Text("Validating…").font(.system(size: 10)).foregroundColor(.secondary)
                     }
                 } else if !isDownloading {
                     Button("Download") {
@@ -434,14 +437,6 @@ struct SetupWizardView: View {
                 .buttonStyle(.borderedProminent)
 
             case .model:
-                if loadingModelName != nil {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading model into memory…")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-                }
                 Button("Next") {
                     AppConfig.shared.update { model in
                         model.whisperModel = selectedModel
@@ -593,8 +588,11 @@ struct SetupWizardView: View {
                 self.validatingModels.remove(modelName)
                 if isValid {
                     self.downloadedModels.insert(modelName)
-                    // Auto-preload after download completes if this is still the selection
-                    if modelName == self.selectedModel { self.maybeStartPreload(for: modelName) }
+                    // The download's preload() already loaded the model into memory,
+                    // so mark it ready directly — no second preload needed.
+                    if modelName == self.selectedModel {
+                        self.modelReady = true
+                    }
                 } else {
                     self.downloadError = "Download completed but validation failed. Try again."
                 }

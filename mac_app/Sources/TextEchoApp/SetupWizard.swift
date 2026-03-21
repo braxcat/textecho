@@ -60,10 +60,12 @@ struct SetupWizardView: View {
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var timer: Timer?
-    @State private var modelStatus: String = ""
-    @State private var modelLoaded: Bool = false
-    @State private var downloadStarted: Bool = false
     @State private var selectedModel: String = AppConfig.shared.model.whisperModel
+    @State private var downloadingModel: String? = nil
+    @State private var downloadProgress: Double = 0.0
+    @State private var validatingModels: Set<String> = []
+    @State private var downloadedModels: Set<String> = []
+    @State private var downloadError: String? = nil
     @State private var pedalDetected: Bool = false
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalScanning: Bool = false
@@ -114,8 +116,14 @@ struct SetupWizardView: View {
         .onAppear {
             // Skip to first incomplete step
             determineInitialStep()
+            checkInitialModelStatus()
             timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 refreshStatus()
+            }
+        }
+        .onChange(of: currentStep) { step in
+            if step == .model {
+                checkInitialModelStatus()
             }
         }
         .onDisappear {
@@ -269,52 +277,36 @@ struct SetupWizardView: View {
         VStack(alignment: .leading, spacing: 16) {
             stepHeader(title: "Transcription Model", icon: "brain")
 
-            Text("Choose a model to download. This only happens once — the model is cached locally for future use.")
+            Text("Download a model to enable transcription. This only happens once — models are stored locally for offline use.")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(models, id: \.name) { model in
-                    modelCard(model: model, isSelected: selectedModel == model.name)
-                        .onTapGesture {
-                            if !downloadStarted {
-                                selectedModel = model.name
-                            }
-                        }
+                    modelCard(model: model)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: WhisperKitTranscriber.downloadProgressNotification)) { notification in
+                if let progress = notification.object as? Double {
+                    downloadProgress = progress
                 }
             }
 
-            if !downloadStarted && !modelLoaded {
-                Button("Download & Continue") {
-                    startModelDownload()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-
-            if downloadStarted && !modelLoaded {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(modelStatus)
-                        .font(.system(size: 12))
-                        .foregroundColor(.orange)
-                }
-            }
-
-            if !modelStatus.isEmpty && !downloadStarted && !modelLoaded {
-                Text(modelStatus)
+            if let error = downloadError {
+                Text(error)
                     .font(.system(size: 12))
                     .foregroundColor(.red)
+                    .padding(.top, 4)
             }
 
-            if modelLoaded {
-                Text("Model downloaded and ready.")
-                    .font(.system(size: 13))
-                    .foregroundColor(.green)
+            if downloadedModels.isEmpty && validatingModels.isEmpty && downloadingModel == nil {
+                Text("Download at least one model to continue.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
             }
 
-            Text("You can change this later in Settings.")
+            Text("You can download additional models later in Settings.")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
@@ -482,7 +474,7 @@ struct SetupWizardView: View {
                     checkPedalConnection()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!modelLoaded)
+                .disabled(downloadedModels.isEmpty)
 
             case .pedal:
                 Button(pedalDetected ? "Next" : "Skip") {
@@ -527,46 +519,81 @@ struct SetupWizardView: View {
         }
     }
 
-    private func modelCard(model: WhisperKitTranscriber.ModelInfo, isSelected: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(model.displayName)
-                        .font(.system(size: 12, weight: .semibold))
-                    if model.name == WhisperKitTranscriber.availableModelList.first?.name {
-                        Text("Recommended")
-                            .font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.accentColor.opacity(0.2))
-                            .cornerRadius(3)
+    private func modelCard(model: WhisperKitTranscriber.ModelInfo) -> some View {
+        let isDownloading = downloadingModel == model.name
+        let isValidating = validatingModels.contains(model.name)
+        let isDownloaded = downloadedModels.contains(model.name)
+        let isFirst = model.name == WhisperKitTranscriber.availableModelList.first?.name
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Text(model.displayName)
+                            .font(.system(size: 12, weight: .semibold))
+                        if isFirst {
+                            Text("Recommended")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.2))
+                                .cornerRadius(3)
+                        }
                     }
-                    if WhisperKitTranscriber.isModelCached(model.name) {
-                        Text("Cached")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.green.opacity(0.15))
-                            .cornerRadius(3)
-                    }
+                    Text("\(model.size) — \(model.description)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                 }
-                Text("\(model.size) — \(model.description)")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if isDownloaded {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.green)
+                        Text("Downloaded")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.green)
+                    }
+                } else if isValidating {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Validating...")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                } else if !isDownloading {
+                    Button("Download") {
+                        startModelDownload(modelName: model.name)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(downloadingModel != nil)
+                }
             }
 
-            Spacer()
-
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isSelected ? .accentColor : .secondary)
+            if isDownloading {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .padding(.top, 2)
+                    Text("Downloading \(model.size)...")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                }
+            }
         }
-        .padding(8)
-        .background(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+        .padding(10)
+        .background(isDownloaded ? Color.green.opacity(0.05) : Color.clear)
         .cornerRadius(6)
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.2), lineWidth: 1)
+                .stroke(
+                    isDownloaded ? Color.green.opacity(0.3) : Color.gray.opacity(0.2),
+                    lineWidth: 1
+                )
         )
     }
 
@@ -606,10 +633,9 @@ struct SetupWizardView: View {
             currentStep = .accessibility
         } else if micStatus != .authorized {
             currentStep = .microphone
-        } else if !WhisperKitTranscriber.isModelCached(selectedModel) {
+        } else if !WhisperKitTranscriber.availableModelList.contains(where: { WhisperKitTranscriber.isModelCached($0.name) }) {
             currentStep = .model
         } else {
-            modelLoaded = true
             currentStep = .ready
         }
     }
@@ -635,31 +661,63 @@ struct SetupWizardView: View {
         }
     }
 
-    private func startModelDownload() {
-        downloadStarted = true
-        modelStatus = "Downloading and loading model..."
+    private func checkInitialModelStatus() {
+        for model in models {
+            guard WhisperKitTranscriber.isModelCached(model.name) else { continue }
+            guard !downloadedModels.contains(model.name) && !validatingModels.contains(model.name) else { continue }
+            validatingModels.insert(model.name)
+            Task {
+                let isValid = await WhisperKitTranscriber.validateModel(model.name)
+                await MainActor.run {
+                    validatingModels.remove(model.name)
+                    if isValid {
+                        downloadedModels.insert(model.name)
+                    }
+                }
+            }
+        }
+    }
+
+    private func startModelDownload(modelName: String) {
+        downloadingModel = modelName
+        downloadProgress = 0.0
+        downloadError = nil
+        selectedModel = modelName
 
         AppConfig.shared.update { model in
-            model.whisperModel = selectedModel
+            model.whisperModel = modelName
         }
 
         Task {
             let transcriber = WhisperKitTranscriber(
-                modelName: selectedModel,
+                modelName: modelName,
                 idleTimeout: AppConfig.shared.model.whisperIdleTimeout
             )
             do {
                 try await transcriber.preload()
-                await MainActor.run {
-                    self.modelLoaded = true
-                    self.modelStatus = "Model downloaded!"
-                }
             } catch {
                 await MainActor.run {
-                    self.downloadStarted = false
-                    self.modelStatus = "Download failed: \(error.localizedDescription)"
+                    self.downloadingModel = nil
+                    self.downloadError = "Download failed: \(error.localizedDescription)"
                 }
-                AppLogger.shared.error("Setup wizard model preload failed: \(error)")
+                AppLogger.shared.error("Setup wizard model download failed: \(error)")
+                return
+            }
+
+            await MainActor.run {
+                self.downloadingModel = nil
+                self.validatingModels.insert(modelName)
+            }
+
+            let isValid = await WhisperKitTranscriber.validateModel(modelName)
+
+            await MainActor.run {
+                self.validatingModels.remove(modelName)
+                if isValid {
+                    self.downloadedModels.insert(modelName)
+                } else {
+                    self.downloadError = "Download completed but validation failed. Try again."
+                }
             }
         }
     }

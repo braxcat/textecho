@@ -237,6 +237,49 @@ actor WhisperKitTranscriber: Transcriber {
         return Array(found)
     }
 
+    /// Deep file validation: checks .mlmodelc dirs are present, non-empty, and no incomplete markers.
+    /// More thorough than isModelCached — verifies the model files are intact and complete.
+    nonisolated static func validateModelFiles(_ modelName: String) -> Bool {
+        for cacheDir in modelCacheDirectories() {
+            guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }
+            for entry in contents where matchesModel(entry, modelName) {
+                let modelDir = cacheDir.appendingPathComponent(entry)
+                guard let files = try? FileManager.default.contentsOfDirectory(atPath: modelDir.path) else { continue }
+
+                // Need AudioEncoder and MelSpectrogram at minimum
+                let mlmodelcDirs = files.filter { $0.hasSuffix(".mlmodelc") }
+                guard mlmodelcDirs.count >= 2 else { continue }
+
+                // Each .mlmodelc dir must be non-empty (incomplete downloads leave empty dirs)
+                var allNonEmpty = true
+                for dir in mlmodelcDirs {
+                    let innerPath = modelDir.appendingPathComponent(dir).path
+                    let innerFiles = (try? FileManager.default.contentsOfDirectory(atPath: innerPath)) ?? []
+                    if innerFiles.isEmpty {
+                        allNonEmpty = false
+                        break
+                    }
+                }
+                guard allNonEmpty else { continue }
+
+                // No partial download markers
+                if files.contains(where: { $0.hasSuffix(".incomplete") || $0 == ".download_in_progress" }) {
+                    continue
+                }
+
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Async wrapper for file validation — runs off main thread.
+    nonisolated static func validateModel(_ modelName: String) async -> Bool {
+        await Task.detached(priority: .utility) {
+            Self.validateModelFiles(modelName)
+        }.value
+    }
+
     nonisolated static func deleteModel(_ modelName: String) throws {
         for cacheDir in modelCacheDirectories() {
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }

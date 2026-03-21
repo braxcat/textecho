@@ -57,25 +57,29 @@ final class AppState {
             startPedalMonitor()
         }
 
-        // Pre-warm the WhisperKit model so first recording is fast
-        Task(priority: .utility) { [weak self] in
-            guard let self else { return }
-            await MainActor.run {
-                self.isModelLoading = true
-                NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
+        // Pre-warm only if model is already downloaded — never auto-download on start
+        if WhisperKitTranscriber.isModelCached(config.model.whisperModel) {
+            Task(priority: .utility) { [weak self] in
+                guard let self else { return }
+                await MainActor.run {
+                    self.isModelLoading = true
+                    NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
+                }
+                self.overlay.showLoadingModel()
+                do {
+                    try await self.transcriber.preload()
+                    self.logger.info("WhisperKit model preloaded")
+                } catch {
+                    self.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
+                }
+                await MainActor.run {
+                    self.isModelLoading = false
+                    NotificationCenter.default.post(name: Self.modelLoadingNotification, object: false)
+                }
+                self.overlay.hide()
             }
-            self.overlay.showLoadingModel()
-            do {
-                try await self.transcriber.preload()
-                self.logger.info("WhisperKit model preloaded")
-            } catch {
-                self.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
-            }
-            await MainActor.run {
-                self.isModelLoading = false
-                NotificationCenter.default.post(name: Self.modelLoadingNotification, object: false)
-            }
-            self.overlay.hide()
+        } else {
+            logger.info("WhisperKit model not downloaded yet, skipping auto-preload")
         }
     }
 

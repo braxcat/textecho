@@ -163,5 +163,6 @@ dictation-mac/
 - LLM is fully optional — guard all LLM code paths with `llmAvailable` check
 - Config backward compatible — new fields have defaults, old fields preserved
 - No temp files for transcription — WhisperKit accepts float arrays directly
-
+- **Break all user requests into tracked tasks** using TodoWrite before starting work, so progress is visible and nothing is missed
+- **After any code change, run `./install_dev.sh`** so the updated app is deployed and ready for the user to test immediately
 - After completing anything that could be considered a self-contained bug fix or feature, prompt the user to ask if a commit should be made for that change.

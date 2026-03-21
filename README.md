@@ -37,7 +37,29 @@ Voice-to-text dictation for macOS with native WhisperKit transcription on Apple 
 - Microphone + Accessibility permissions
 - Internet for first model download (~1.6GB)
 
-## Quick Start
+## Install from DMG (unsigned)
+
+Download `TextEcho.dmg` and follow these steps:
+
+1. **Open the DMG** — double-click `TextEcho.dmg`
+2. **Drag TextEcho to Applications** — standard drag-and-drop install
+3. **First launch — bypass Gatekeeper:**
+   - Open **Finder → Applications**
+   - **Right-click** (or Control-click) `TextEcho.app` → **Open**
+   - Click **Open** on the warning dialog ("macOS cannot verify the developer")
+   - You only need to do this once — after that it opens normally
+4. **Grant permissions** when prompted:
+   - **Accessibility** — System Settings → Privacy & Security → Accessibility → enable TextEcho
+   - **Microphone** — System Settings → Privacy & Security → Microphone → enable TextEcho
+5. **Choose a model** — the Setup Wizard will ask you to pick a transcription model on first launch. "Large V3 Turbo" (default, ~1.6GB download) is recommended.
+
+> **If you get "app is damaged":** Open Terminal and run:
+> ```bash
+> xattr -cr /Applications/TextEcho.app
+> ```
+> Then right-click → Open again.
+
+## Quick Start (build from source)
 
 ```bash
 # Build

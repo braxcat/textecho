@@ -82,11 +82,14 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 
 | Script | What it does |
 |--------|-------------|
-| `./rebuild.sh` | Pull + build + deploy + launch (one command) |
+| `./install_dev.sh` | **Dev workflow**: debug build → kill → deploy → reset Accessibility → relaunch |
+| `./reset_accessibility.sh` | Reset Accessibility permission after a rebuild (run standalone or via install_dev.sh) |
+| `./rebuild.sh` | Pull + release build + deploy + launch (one command) |
 | `./rebuild.sh --clean` | Full clean rebuild |
-| `./rebuild.sh --uninstall` | Wipe everything, then fresh rebuild |
+| `./rebuild.sh --uninstall` | Wipe everything, then rebuild fresh |
 | `./uninstall.sh` | Remove app, config, models, logs, everything |
-| `./build_native_app.sh` | Build only (no deploy) |
+| `./build_native_app.sh` | Release build only (no deploy) |
+| `./build_native_app.sh --debug` | Debug build only (faster, no deploy) |
 | `./build_native_app.sh --with-llm` | Build with optional LLM module |
 
 ## Usage

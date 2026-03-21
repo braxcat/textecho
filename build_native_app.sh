@@ -14,11 +14,13 @@ MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 WITH_LLM=false
 CLEAN=false
+DEBUG=false
 
 for arg in "$@"; do
     case "$arg" in
         --with-llm) WITH_LLM=true ;;
         --clean) CLEAN=true ;;
+        --debug) DEBUG=true ;;
     esac
 done
 
@@ -29,6 +31,8 @@ fi
 
 if [ "$WITH_LLM" = true ]; then
     echo "==> Building with LLM support (requires Python 3.12)..."
+elif [ "$DEBUG" = true ]; then
+    echo "==> Building pure Swift app (debug)..."
 else
     echo "==> Building pure Swift app (no Python needed)..."
 fi
@@ -47,9 +51,13 @@ export CLANG_MODULE_CACHE_PATH="$SCRIPT_DIR/.clang-cache"
 export TMPDIR="$SCRIPT_DIR/.tmp"
 
 echo "==> Building Swift app..."
-swift build -c release --package-path mac_app
-
-BIN_PATH="mac_app/.build/release/TextEchoApp"
+if [ "$DEBUG" = true ]; then
+    swift build --package-path mac_app
+    BIN_PATH="mac_app/.build/debug/TextEchoApp"
+else
+    swift build -c release --package-path mac_app
+    BIN_PATH="mac_app/.build/release/TextEchoApp"
+fi
 if [ ! -f "$BIN_PATH" ]; then
     echo "ERROR: Swift build failed; binary not found at $BIN_PATH"
     exit 1

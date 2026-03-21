@@ -36,7 +36,10 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 
 | Command | Description |
 |---------|-------------|
-| `./build_native_app.sh` | Build pure Swift app (no Python) |
+| `./install_dev.sh` | **Dev workflow**: debug build, kill, deploy to /Applications, reset Accessibility, relaunch |
+| `./reset_accessibility.sh` | Reset Accessibility permission after a rebuild invalidates the signature |
+| `./build_native_app.sh` | Release build — outputs to `dist/TextEcho.app` |
+| `./build_native_app.sh --debug` | Debug build — faster incremental rebuilds, outputs to `dist/TextEcho.app` |
 | `./build_native_app.sh --with-llm` | Build with optional LLM module (requires Python 3.12) |
 | `swift build -c release --package-path mac_app` | Build Swift only (no .app bundle) |
 | `./build_native_dmg.sh` | Create distributable DMG |

@@ -66,6 +66,13 @@ struct SetupWizardView: View {
     @State private var validatingModels: Set<String> = []
     @State private var downloadedModels: Set<String> = []
     @State private var downloadError: String? = nil
+    // "View all models" state
+    @State private var showAllModels: Bool = false
+    @State private var allModels: [String] = []
+    @State private var fetchingAllModels: Bool = false
+    @State private var allModelsFetchError: String? = nil
+    @State private var wkDefaultModel: String = ""
+    @State private var wkSupportedModels: Set<String> = []
     @State private var pedalDetected: Bool = false
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalScanning: Bool = false
@@ -116,14 +123,14 @@ struct SetupWizardView: View {
         .onAppear {
             // Skip to first incomplete step
             determineInitialStep()
-            checkInitialModelStatus()
+            checkCacheStatus(for: models.map(\.name))
             timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
                 refreshStatus()
             }
         }
         .onChange(of: currentStep) { step in
             if step == .model {
-                checkInitialModelStatus()
+                checkCacheStatus(for: models.map(\.name))
             }
         }
         .onDisappear {
@@ -282,6 +289,7 @@ struct SetupWizardView: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            // Curated models
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(models, id: \.name) { model in
                     modelCard(model: model)
@@ -290,6 +298,41 @@ struct SetupWizardView: View {
             .onReceive(NotificationCenter.default.publisher(for: WhisperKitTranscriber.downloadProgressNotification)) { notification in
                 if let progress = notification.object as? Double {
                     downloadProgress = progress
+                }
+            }
+
+            // View all models toggle
+            if !showAllModels {
+                Button(action: { fetchAllModels() }) {
+                    HStack(spacing: 4) {
+                        Text("View all models")
+                            .font(.system(size: 11))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9))
+                    }
+                    .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+            } else if fetchingAllModels {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading available models...")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            } else if let fetchError = allModelsFetchError {
+                Text(fetchError)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+            } else if !allModels.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Divider()
+                    Text("All available models")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    ForEach(allModels, id: \.self) { modelName in
+                        allModelRow(modelName: modelName)
+                    }
                 }
             }
 
@@ -597,6 +640,101 @@ struct SetupWizardView: View {
         )
     }
 
+    private func allModelRow(modelName: String) -> some View {
+        let isDownloading = downloadingModel == modelName
+        let isValidating = validatingModels.contains(modelName)
+        let isDownloaded = downloadedModels.contains(modelName)
+        let isWKDefault = modelName == wkDefaultModel
+        let isWKRecommended = !isWKDefault && wkSupportedModels.contains(modelName)
+        let cleanName = cleanModelDisplayName(modelName)
+        let size = sizeFromModelName(modelName)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Text(cleanName)
+                            .font(.system(size: 11, weight: .semibold))
+                        if isWKDefault {
+                            Text("WhisperKit default")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.orange.opacity(0.2))
+                                .foregroundColor(.orange)
+                                .cornerRadius(3)
+                        } else if isWKRecommended {
+                            Text("WhisperKit recommended")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.green.opacity(0.15))
+                                .foregroundColor(.green)
+                                .cornerRadius(3)
+                        }
+                    }
+                    if let size = size {
+                        Text(size)
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if isDownloaded {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 12))
+                } else if isValidating {
+                    ProgressView().controlSize(.small)
+                } else if !isDownloading {
+                    Button("Download") {
+                        startModelDownload(modelName: modelName)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(downloadingModel != nil)
+                }
+            }
+
+            if isDownloading {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .padding(.top, 2)
+                Text("Downloading...")
+                    .font(.system(size: 9))
+                    .foregroundColor(.orange)
+            }
+        }
+        .padding(8)
+        .background(isDownloaded ? Color.green.opacity(0.04) : Color.clear)
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private func cleanModelDisplayName(_ name: String) -> String {
+        var n = name
+        for prefix in ["openai_whisper-", "distil-whisper_"] {
+            if n.hasPrefix(prefix) { n = String(n.dropFirst(prefix.count)); break }
+        }
+        // Strip size suffix like _626MB
+        if let last = n.components(separatedBy: "_").last,
+           last.hasSuffix("MB") || last.hasSuffix("GB") {
+            n = String(n.dropLast(last.count + 1))
+        }
+        return n
+    }
+
+    private func sizeFromModelName(_ name: String) -> String? {
+        guard let last = name.components(separatedBy: "_").last,
+              last.hasSuffix("MB") || last.hasSuffix("GB") else { return nil }
+        return last
+    }
+
     private func hotkeyRow(keys: String, action: String) -> some View {
         HStack(spacing: 8) {
             Text(keys)
@@ -661,18 +799,45 @@ struct SetupWizardView: View {
         }
     }
 
-    private func checkInitialModelStatus() {
-        for model in models {
-            guard WhisperKitTranscriber.isModelCached(model.name) else { continue }
-            guard !downloadedModels.contains(model.name) && !validatingModels.contains(model.name) else { continue }
-            validatingModels.insert(model.name)
+    private func checkCacheStatus(for modelNames: [String]) {
+        for name in modelNames {
+            guard WhisperKitTranscriber.isModelCached(name) else { continue }
+            guard !downloadedModels.contains(name) && !validatingModels.contains(name) else { continue }
+            validatingModels.insert(name)
             Task {
-                let isValid = await WhisperKitTranscriber.validateModel(model.name)
+                let isValid = await WhisperKitTranscriber.validateModel(name)
                 await MainActor.run {
-                    validatingModels.remove(model.name)
+                    validatingModels.remove(name)
                     if isValid {
-                        downloadedModels.insert(model.name)
+                        downloadedModels.insert(name)
                     }
+                }
+            }
+        }
+    }
+
+    private func fetchAllModels() {
+        showAllModels = true
+        fetchingAllModels = true
+        allModelsFetchError = nil
+
+        // WhisperKit's device recommendations are local — no network needed
+        let recommended = WhisperKitTranscriber.deviceRecommendedModels()
+        wkDefaultModel = recommended.defaultModel
+        wkSupportedModels = Set(recommended.supportedModels)
+
+        Task {
+            do {
+                let fetched = try await WhisperKitTranscriber.fetchAllAvailableModels()
+                await MainActor.run {
+                    allModels = fetched
+                    fetchingAllModels = false
+                    checkCacheStatus(for: fetched)
+                }
+            } catch {
+                await MainActor.run {
+                    allModelsFetchError = "Could not load model list: \(error.localizedDescription)"
+                    fetchingAllModels = false
                 }
             }
         }

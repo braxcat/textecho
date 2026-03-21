@@ -297,6 +297,19 @@ actor WhisperKitTranscriber: Transcriber {
         }.value
     }
 
+    /// Fetches the full list of available models from the WhisperKit HuggingFace repo (requires internet).
+    nonisolated static func fetchAllAvailableModels() async throws -> [String] {
+        try await WhisperKit.fetchAvailableModels()
+    }
+
+    /// Returns WhisperKit's device-specific model recommendations (local, no network).
+    /// `.defaultModel` is WhisperKit's top pick for this device.
+    /// `.supportedModels` is everything WhisperKit considers compatible.
+    nonisolated static func deviceRecommendedModels() -> (defaultModel: String, supportedModels: [String]) {
+        let support = WhisperKit.recommendedModels()
+        return (defaultModel: support.default, supportedModels: support.supported)
+    }
+
     nonisolated static func deleteModel(_ modelName: String) throws {
         for cacheDir in modelCacheDirectories() {
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }

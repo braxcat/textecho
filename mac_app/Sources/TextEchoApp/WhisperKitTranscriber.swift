@@ -188,15 +188,32 @@ actor WhisperKitTranscriber: Transcriber {
     private nonisolated static func matchesModel(_ dirName: String, _ modelName: String) -> Bool {
         // Direct match (full HF directory name)
         if dirName == modelName { return true }
-        // Prefix match (handles size suffixes like _954MB)
-        if dirName.hasPrefix(modelName) { return true }
+        // Prefix match only for size suffixes like _954MB (suffix must be _<digit>...)
+        // This prevents openai_whisper-large-v3_turbo from matching openai_whisper-large-v3
+        if dirName.hasPrefix(modelName) {
+            let suffix = dirName.dropFirst(modelName.count)
+            if suffix.isEmpty || (suffix.hasPrefix("_") && suffix.dropFirst().first?.isNumber == true) {
+                return true
+            }
+        }
         // Legacy short name support: prepend openai_whisper- prefix
         let migrated = migrateModelName(modelName)
         if dirName == migrated { return true }
-        if dirName.hasPrefix(migrated) { return true }
+        if migrated != modelName && dirName.hasPrefix(migrated) {
+            let suffix = dirName.dropFirst(migrated.count)
+            if suffix.isEmpty || (suffix.hasPrefix("_") && suffix.dropFirst().first?.isNumber == true) {
+                return true
+            }
+        }
         // Also try with openai_whisper- prefix directly
-        if dirName == "openai_whisper-\(modelName)" { return true }
-        if dirName.hasPrefix("openai_whisper-\(modelName)") { return true }
+        let prefixed = "openai_whisper-\(modelName)"
+        if dirName == prefixed { return true }
+        if dirName.hasPrefix(prefixed) {
+            let suffix = dirName.dropFirst(prefixed.count)
+            if suffix.isEmpty || (suffix.hasPrefix("_") && suffix.dropFirst().first?.isNumber == true) {
+                return true
+            }
+        }
         return false
     }
 

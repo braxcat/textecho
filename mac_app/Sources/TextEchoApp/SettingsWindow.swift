@@ -49,6 +49,7 @@ struct SettingsView: View {
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var pythonPath: String = AppConfig.shared.model.pythonPath
     @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
+    @State private var overlayPositionMode: Int = AppConfig.shared.model.overlayPositionMode
 
     // WhisperKit model settings
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
@@ -99,6 +100,17 @@ struct SettingsView: View {
                         TextField("2", text: $triggerButton)
                             .frame(width: 80)
                     }
+                }
+
+                HStack {
+                    Text("Overlay Position")
+                    Spacer()
+                    Picker("", selection: $overlayPositionMode) {
+                        Text("Static").tag(0)
+                        Text("Follow Cursor").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 240)
                 }
 
                 Divider()
@@ -434,6 +446,7 @@ struct SettingsView: View {
             model.inputDeviceUID = selectedDeviceUID
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
+            model.overlayPositionMode = overlayPositionMode == 1 ? 1 : 0
         }
     }
 

@@ -539,9 +539,17 @@ final class OverlayWindowController {
     }
 
     private func show() {
-        positionNearMouse()
+        positionOverlay()
         window?.orderFrontRegardless()
-        startFollow()
+        if shouldFollowCursor {
+            startFollow()
+        } else {
+            stopFollow()
+        }
+    }
+
+    private var shouldFollowCursor: Bool {
+        AppConfig.shared.model.overlayPositionMode == 1
     }
 
     private func startFollow() {
@@ -554,6 +562,14 @@ final class OverlayWindowController {
     private func stopFollow() {
         followTimer?.invalidate()
         followTimer = nil
+    }
+
+    private func positionOverlay() {
+        if shouldFollowCursor {
+            positionNearMouse()
+        } else {
+            positionBottomMiddle()
+        }
     }
 
     private func positionNearMouse() {
@@ -574,6 +590,24 @@ final class OverlayWindowController {
         if x < screen.minX + padding { x = screen.minX + padding }
         if x + width > screen.maxX - padding { x = screen.maxX - width - padding }
         if y < screen.minY + padding { y = screen.minY + padding }
+
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func positionBottomMiddle() {
+        guard let window else { return }
+        let screen = NSScreen.main?.visibleFrame ?? .zero
+        let width = window.frame.width
+        let height = window.frame.height
+        let padding: CGFloat = 16
+        let x = screen.midX - width / 2
+
+        // Keep static mode in a comfortable lower-half area (not hugging the dock).
+        // Using a fixed center anchor keeps the overlay visually stable across
+        // recording/processing/result states even when the height changes.
+        let targetCenterY = screen.minY + (screen.height * 0.22)
+        var y = targetCenterY - (height / 2)
+        y = max(screen.minY + padding, min(y, screen.maxY - height - padding))
 
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }

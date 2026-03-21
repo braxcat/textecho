@@ -120,10 +120,10 @@ struct SetupWizardView: View {
                 maybeStartPreload(for: selectedModel)
             }
         }
-        .onChange(of: selectedModel) { newModel in
-            // Reset ready state when user switches selection
+        .onChange(of: selectedModel) { _ in
+            // Reset ready state when selection changes.
+            // Preload is triggered explicitly by the "Select" button.
             modelReady = false
-            maybeStartPreload(for: newModel)
         }
         .onDisappear {
             timer?.invalidate()
@@ -263,7 +263,7 @@ struct SetupWizardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Transcription Model")
                     .font(.system(size: 20, weight: .bold))
-                Text("Download a model to enable transcription. Stored locally for offline use.")
+                Text("Download a model, then select it to load it into memory.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -280,7 +280,15 @@ struct SetupWizardView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(curatedModels, id: \.name) { model in
-                    modelRow(model: model)
+                    modelRow(name: model.name, displayName: model.displayName,
+                             size: model.size, detail: model.description)
+                }
+                // Show a non-curated model if it was selected via "Other models"
+                if !curatedModels.map(\.name).contains(selectedModel) {
+                    modelRow(name: selectedModel,
+                             displayName: cleanDisplayName(selectedModel),
+                             size: sizeFromName(selectedModel) ?? "",
+                             detail: "Selected from full model list")
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: WhisperKitTranscriber.downloadProgressNotification)) { _ in }
@@ -296,37 +304,40 @@ struct SetupWizardView: View {
             }
             .buttonStyle(.plain)
 
-            if downloadedModels.isEmpty && validatingModels.isEmpty && downloadingModel == nil {
-                Text("Download at least one model to continue.")
+            if !modelReady {
+                Text(downloadedModels.isEmpty && validatingModels.isEmpty && downloadingModel == nil
+                     ? "Download a model to get started."
+                     : "Select a downloaded model to continue.")
                     .font(.system(size: 11))
                     .foregroundColor(.orange)
             }
         }
     }
 
-    private func modelRow(model: WhisperKitTranscriber.ModelInfo) -> some View {
-        let isSelected = selectedModel == model.name
-        let isDownloading = downloadingModel == model.name
-        let isValidating = validatingModels.contains(model.name)
-        let isDownloaded = downloadedModels.contains(model.name)
+    private func modelRow(name: String, displayName: String, size: String, detail: String) -> some View {
+        let isSelected = selectedModel == name
+        let isDownloading = downloadingModel == name
+        let isValidating = validatingModels.contains(name)
+        let isDownloaded = downloadedModels.contains(name)
+        let isLoadingThis = loadingModelName == name
+        let isReadyThis = modelReady && selectedModel == name
 
         return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
-                .foregroundColor(isSelected ? .accentColor : .secondary)
-                .font(.system(size: 16))
-                .padding(.top, 1)
-
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
-                    Text(model.displayName).font(.system(size: 12, weight: .semibold))
-                    Text(model.size).font(.system(size: 10)).foregroundColor(.secondary)
+                    Text(displayName).font(.system(size: 12, weight: .semibold))
+                    if !size.isEmpty {
+                        Text(size).font(.system(size: 10)).foregroundColor(.secondary)
+                    }
                 }
-                Text(model.description).font(.system(size: 10)).foregroundColor(.secondary)
+                if !detail.isEmpty {
+                    Text(detail).font(.system(size: 10)).foregroundColor(.secondary)
+                }
                 if isDownloading {
                     ProgressView()
                         .progressViewStyle(.linear)
                         .padding(.top, 2)
-                    Text("Downloading...")
+                    Text("Downloading…")
                         .font(.system(size: 9))
                         .foregroundColor(.orange)
                 }
@@ -335,26 +346,25 @@ struct SetupWizardView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                let isLoadingThis = loadingModelName == model.name
-                let isReadyThis = modelReady && selectedModel == model.name
-
                 if isReadyThis {
                     HStack(spacing: 3) {
                         Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
-                        Text("Loaded into memory").font(.system(size: 10, weight: .semibold))
+                        Text("Selected").font(.system(size: 10, weight: .semibold))
                     }
-                    .foregroundColor(.green)
+                    .foregroundColor(.accentColor)
                 } else if isLoadingThis {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.mini)
                         Text("Loading into memory…").font(.system(size: 10)).foregroundColor(.secondary)
                     }
                 } else if isDownloaded {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.down.circle.fill").font(.system(size: 10))
-                        Text("Downloaded").font(.system(size: 10, weight: .semibold))
+                    Button("Select") {
+                        selectedModel = name
+                        startModelPreload(modelName: name)
                     }
-                    .foregroundColor(.secondary)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(loadingModelName != nil)
                 } else if isValidating {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.mini)
@@ -362,10 +372,9 @@ struct SetupWizardView: View {
                     }
                 } else if !isDownloading {
                     Button("Download") {
-                        selectedModel = model.name
-                        startModelDownload(modelName: model.name)
+                        startModelDownload(modelName: name)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(downloadingModel != nil)
                 }
@@ -378,8 +387,6 @@ struct SetupWizardView: View {
             RoundedRectangle(cornerRadius: 7)
                 .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.15), lineWidth: 1)
         )
-        .contentShape(Rectangle())
-        .onTapGesture { selectedModel = model.name }
     }
 
     private var readyStep: some View {
@@ -558,12 +565,27 @@ struct SetupWizardView: View {
         }
     }
 
+    private func cleanDisplayName(_ name: String) -> String {
+        var n = name
+        for prefix in ["openai_whisper-", "distil-whisper_"] {
+            if n.hasPrefix(prefix) { n = String(n.dropFirst(prefix.count)); break }
+        }
+        if let last = n.components(separatedBy: "_").last,
+           last.hasSuffix("MB") || last.hasSuffix("GB") {
+            n = String(n.dropLast(last.count + 1))
+        }
+        return n
+    }
+
+    private func sizeFromName(_ name: String) -> String? {
+        guard let last = name.components(separatedBy: "_").last,
+              last.hasSuffix("MB") || last.hasSuffix("GB") else { return nil }
+        return last
+    }
+
     private func startModelDownload(modelName: String) {
         downloadingModel = modelName
         downloadError = nil
-        AppConfig.shared.update { model in
-            model.whisperModel = modelName
-        }
         Task {
             let transcriber = WhisperKitTranscriber(
                 modelName: modelName,

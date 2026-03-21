@@ -23,6 +23,7 @@ final class AppState {
     private var hasPreloaded = false
 
     static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
+    static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
 
     init() {
         let model = AppConfig.shared.model
@@ -115,36 +116,40 @@ final class AppState {
     }
 
     private func handleInputEvent(_ event: InputEvent) {
-        let mode = config.model.transcriptionMode
-        let isToggle = mode == 0
-        let isHold = mode == 1
-        let isCapsLockMode = mode == 2
         switch event {
         case .triggerDown:
-            if isCapsLockMode { return }
-            if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard) }
-            else { beginRecording(mode: .standard) }
-        case .triggerUp:
-            if isHold { endRecording(userInitiated: true) }
-        case .dictateDown:
-            if isCapsLockMode { return }
-            if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard) }
-            else { beginRecording(mode: .standard) }
-        case .dictateUp:
-            if isHold { endRecording(userInitiated: true) }
-        case .dictateLLMDown:
-            if isCapsLockMode { return }
-            if isToggle { isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .llm) }
-            else { beginRecording(mode: .llm) }
-        case .dictateLLMUp:
-            if isHold { endRecording(userInitiated: true) }
-        case .capsLockChanged(let isOn):
-            guard isCapsLockMode else { return }
-            if isOn {
-                beginRecording(mode: .standard)
+            guard config.model.mouseEnabled else { return }
+            if config.model.mouseMode == 0 {
+                isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard)
             } else {
-                endRecording(userInitiated: true)
+                beginRecording(mode: .standard)
             }
+        case .triggerUp:
+            guard config.model.mouseEnabled, config.model.mouseMode == 1 else { return }
+            endRecording(userInitiated: true)
+        case .dictateDown:
+            guard config.model.keyboardEnabled else { return }
+            if config.model.keyboardMode == 0 {
+                isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .standard)
+            } else {
+                beginRecording(mode: .standard)
+            }
+        case .dictateUp:
+            guard config.model.keyboardEnabled, config.model.keyboardMode == 1 else { return }
+            endRecording(userInitiated: true)
+        case .dictateLLMDown:
+            guard config.model.keyboardEnabled else { return }
+            if config.model.keyboardMode == 0 {
+                isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .llm)
+            } else {
+                beginRecording(mode: .llm)
+            }
+        case .dictateLLMUp:
+            guard config.model.keyboardEnabled, config.model.keyboardMode == 1 else { return }
+            endRecording(userInitiated: true)
+        case .capsLockChanged(let isOn):
+            guard config.model.capsLockEnabled else { return }
+            if isOn { beginRecording(mode: .standard) } else { endRecording(userInitiated: true) }
         case .settingsHotkey:
             openSettings()
         case .escape:
@@ -163,6 +168,7 @@ final class AppState {
             return
         }
         isRecording = true
+        NotificationCenter.default.post(name: Self.recordingStateNotification, object: true)
         isLLMMode = (mode == .llm)
 
         logger.info("Recording started (mode: \(mode.rawValue))")
@@ -184,6 +190,7 @@ final class AppState {
     func endRecording(userInitiated: Bool) {
         guard isRecording else { return }
         isRecording = false
+        NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
 
         logger.info("Recording stopped (userInitiated=\(userInitiated))")
         overlay.showProcessing(isLLM: isLLMMode)
@@ -225,6 +232,9 @@ final class AppState {
                 } else if isLLM {
                     self.handleLLM(text: text)
                 } else {
+                    if !text.isEmpty && !isLLM {
+                        TranscriptionHistory.shared.add(text: text)
+                    }
                     self.logger.info("Transcription: \(text)")
                     self.overlay.showResult(text, isLLM: false)
                     self.textInjector.inject(text)
@@ -253,6 +263,7 @@ final class AppState {
             case .success(let response):
                 self.overlay.showResult(response, isLLM: true)
                 self.textInjector.inject(response)
+                TranscriptionHistory.shared.add(text: response, isLLM: true)
             case .failure(let error):
                 self.overlay.showError(error.localizedDescription)
             }
@@ -261,7 +272,10 @@ final class AppState {
 
     func openSettings() {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController()
+            settingsWindow = SettingsWindowController(onUninstall: { [weak self] in
+                guard let self else { return }
+                UninstallManager.shared.requestUninstall(appState: self)
+            })
         }
         settingsWindow?.show()
     }

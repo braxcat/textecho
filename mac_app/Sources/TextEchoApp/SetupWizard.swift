@@ -38,12 +38,14 @@ final class SetupWizardController {
 private enum WizardStep: Int, CaseIterable {
     case welcome = 0
     case model = 1
-    case ready = 2
+    case activation = 2
+    case ready = 3
 
     var title: String {
         switch self {
         case .welcome: return "Welcome"
         case .model: return "Model"
+        case .activation: return "Activation"
         case .ready: return "Ready"
         }
     }
@@ -62,6 +64,15 @@ struct SetupWizardView: View {
     @State private var showModelPicker: Bool = false
     @State private var loadingModelName: String? = nil   // being loaded into memory
     @State private var modelReady: Bool = false           // selected model is loaded & ready
+    @State private var capsLockEnabled: Bool = AppConfig.shared.model.capsLockEnabled
+    @State private var mouseEnabled: Bool = AppConfig.shared.model.mouseEnabled
+    @State private var mouseMode: Int = AppConfig.shared.model.mouseMode
+    @State private var keyboardEnabled: Bool = AppConfig.shared.model.keyboardEnabled
+    @State private var keyboardMode: Int = AppConfig.shared.model.keyboardMode
+    @State private var triggerButtonChoice: Int = {
+        let b = AppConfig.shared.model.triggerButton
+        return (b == 0 || b == 1 || b == 2) ? b : 2
+    }()
 
     let onClose: () -> Void
 
@@ -82,6 +93,8 @@ struct SetupWizardView: View {
                         welcomeStep
                     case .model:
                         modelStep
+                    case .activation:
+                        activationStep
                     case .ready:
                         readyStep
                     }
@@ -307,7 +320,7 @@ struct SetupWizardView: View {
             if !modelReady {
                 Text(downloadedModels.isEmpty && validatingModels.isEmpty && downloadingModel == nil
                      ? "Download a model to get started."
-                     : "Select a downloaded model to continue.")
+                     : "Select a model to continue.")
                     .font(.system(size: 11))
                     .foregroundColor(.orange)
             }
@@ -389,6 +402,133 @@ struct SetupWizardView: View {
         )
     }
 
+    private var activationStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("How to Activate")
+                    .font(.system(size: 20, weight: .bold))
+                Text("Choose how to trigger voice recording. You can enable multiple methods at once.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Caps Lock
+            activationOptionCard(
+                icon: "lock",
+                title: "Caps Lock",
+                detail: "Press Caps Lock to start recording. Press again to stop.",
+                enabled: $capsLockEnabled
+            ) {
+                EmptyView()
+            }
+
+            // Mouse
+            activationOptionCard(
+                icon: "computermouse",
+                title: "Mouse Button",
+                detail: "Click or hold a mouse button to record.",
+                enabled: $mouseEnabled
+            ) {
+                if mouseEnabled {
+                    HStack {
+                        Text("Button")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Picker("", selection: $triggerButtonChoice) {
+                            Text("Left").tag(0)
+                            Text("Right").tag(1)
+                            Text("Middle").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+                    HStack {
+                        Text("Mode")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Picker("", selection: $mouseMode) {
+                            Text("Toggle").tag(0)
+                            Text("Hold").tag(1)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+                }
+            }
+
+            // Keyboard
+            activationOptionCard(
+                icon: "keyboard",
+                title: "Keyboard Shortcut",
+                detail: "Use a keyboard shortcut (configurable in Settings — default ⌃⌥Z).",
+                enabled: $keyboardEnabled
+            ) {
+                if keyboardEnabled {
+                    HStack {
+                        Text("Mode")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Picker("", selection: $keyboardMode) {
+                            Text("Toggle").tag(0)
+                            Text("Hold").tag(1)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+                }
+            }
+
+            if !capsLockEnabled && !mouseEnabled && !keyboardEnabled {
+                Text("Enable at least one activation method to use TextEcho.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func activationOptionCard<Extra: View>(
+        icon: String,
+        title: String,
+        detail: String,
+        enabled: Binding<Bool>,
+        @ViewBuilder extra: () -> Extra
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .frame(width: 22, height: 22)
+                    .foregroundColor(.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Toggle("", isOn: enabled)
+                    .labelsHidden()
+            }
+            if enabled.wrappedValue {
+                extra()
+                    .padding(.leading, 32)
+            }
+        }
+        .padding(12)
+        .background(enabled.wrappedValue ? Color.accentColor.opacity(0.05) : Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(enabled.wrappedValue ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.15), lineWidth: 1)
+        )
+    }
+
     private var readyStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
@@ -406,8 +546,17 @@ struct SetupWizardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Recording")
                     .font(.system(size: 12, weight: .semibold))
-                hotkeyRow(keys: "Ctrl + D", action: "Toggle recording via keyboard")
-                hotkeyRow(keys: "Middle mouse", action: "Toggle recording via mouse")
+                if keyboardEnabled {
+                    hotkeyRow(keys: "⌃⌥Z", action: "Keyboard shortcut (configurable in Settings)")
+                }
+                if mouseEnabled {
+                    let buttonName = triggerButtonChoice == 0 ? "Left click" : triggerButtonChoice == 1 ? "Right click" : "Middle click"
+                    let modeStr = mouseMode == 1 ? " (hold)" : " (toggle)"
+                    hotkeyRow(keys: buttonName, action: "Mouse button" + modeStr)
+                }
+                if capsLockEnabled {
+                    hotkeyRow(keys: "Caps Lock", action: "Toggle recording with Caps Lock")
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -448,10 +597,18 @@ struct SetupWizardView: View {
                     AppConfig.shared.update { model in
                         model.whisperModel = selectedModel
                     }
-                    currentStep = .ready
+                    currentStep = .activation
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!modelReady)
+
+            case .activation:
+                Button("Next") {
+                    saveActivationConfig()
+                    currentStep = .ready
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!capsLockEnabled && !mouseEnabled && !keyboardEnabled)
 
             case .ready:
                 Button("Start Using TextEcho") {
@@ -470,7 +627,19 @@ struct SetupWizardView: View {
         switch currentStep {
         case .welcome: break
         case .model: currentStep = .welcome
-        case .ready: currentStep = .model
+        case .activation: currentStep = .model
+        case .ready: currentStep = .activation
+        }
+    }
+
+    private func saveActivationConfig() {
+        AppConfig.shared.update { model in
+            model.capsLockEnabled = capsLockEnabled
+            model.mouseEnabled = mouseEnabled
+            model.mouseMode = mouseMode
+            model.keyboardEnabled = keyboardEnabled
+            model.keyboardMode = keyboardMode
+            model.triggerButton = triggerButtonChoice
         }
     }
 

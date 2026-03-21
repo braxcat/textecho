@@ -14,28 +14,48 @@ final class AppConfig {
     }
 
     struct Model: Codable {
+        // Mouse button number (0=left, 1=right, 2=middle)
         var triggerButton: Int
+        // Keyboard shortcut
         var dictationKeyCode: Int
         var dictationModifiers: UInt
         var dictationLLMModifier: UInt
+        // Audio
         var silenceDuration: Double
         var silenceThreshold: Double
         var sampleRate: Double
+        // LLM
         var llmEnabled: Bool
         var llmModelPath: String
+        // App
         var showMenuBarIcon: Bool
         var firstLaunch: Bool
         var pythonPath: String
         var daemonScriptsDir: String
         var transcriptionSocket: String
         var llmSocket: String
+        // Stream Deck Pedal
         var pedalEnabled: Bool
         var pedalPosition: Int // 0=left, 1=center, 2=right
+        // Overlay
         var overlayPositionMode: Int // 0=static bottom middle, 1=follow cursor
-        var transcriptionMode: Int // 0=toggle (press once start, press again stop), 1=hold (hold to record)
+        // WhisperKit
         var whisperModel: String
         var whisperIdleTimeout: Int
         var inputDeviceUID: String  // empty = system default
+
+        // --- Transcription Activation Modes ---
+        var capsLockEnabled: Bool       // Caps Lock toggles recording
+        var mouseEnabled: Bool          // Mouse button triggers recording
+        var mouseMode: Int              // 0=toggle, 1=hold
+        var keyboardEnabled: Bool       // Keyboard shortcut triggers recording
+        var keyboardMode: Int           // 0=toggle, 1=hold
+
+        // --- Behavior ---
+        var autoCopyToClipboard: Bool   // Auto-paste transcription after recording
+        var historyEnabled: Bool        // Save transcription history
+        var menuBarHistoryEnabled: Bool // Show recent transcriptions in menu bar
+        var maxHistoryCount: Int        // Max number of history entries to keep
 
         /// Whether the LLM daemon script is bundled in the app.
         var llmAvailable: Bool {
@@ -49,8 +69,8 @@ final class AppConfig {
 
     private(set) var model = Model(
         triggerButton: 2,
-        dictationKeyCode: 2,
-        dictationModifiers: UInt(NSEvent.ModifierFlags.control.rawValue),
+        dictationKeyCode: 6,  // Z key — default Ctrl+Opt+Z
+        dictationModifiers: UInt(NSEvent.ModifierFlags.control.rawValue | NSEvent.ModifierFlags.option.rawValue),
         dictationLLMModifier: UInt(NSEvent.ModifierFlags.shift.rawValue),
         silenceDuration: 2.5,
         silenceThreshold: 0.015,
@@ -66,10 +86,18 @@ final class AppConfig {
         pedalEnabled: false,
         pedalPosition: 1,
         overlayPositionMode: 0,
-        transcriptionMode: 0,
         whisperModel: "openai_whisper-large-v3_turbo",
         whisperIdleTimeout: 3600,
-        inputDeviceUID: ""
+        inputDeviceUID: "",
+        capsLockEnabled: false,
+        mouseEnabled: true,
+        mouseMode: 1,           // hold by default for mouse
+        keyboardEnabled: true,
+        keyboardMode: 0,        // toggle by default for keyboard
+        autoCopyToClipboard: true,
+        historyEnabled: true,
+        menuBarHistoryEnabled: true,
+        maxHistoryCount: 50
     )
 
     var triggerButton: Int { queue.sync { model.triggerButton } }
@@ -116,10 +144,31 @@ final class AppConfig {
         if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
         if let value = obj["overlay_position_mode"] as? Int { updated.overlayPositionMode = value == 1 ? 1 : 0 }
-        if let value = obj["transcription_mode"] as? Int { updated.transcriptionMode = value == 1 ? 1 : 0 }
         if let value = obj["whisper_model"] as? String { updated.whisperModel = WhisperKitTranscriber.migrateModelName(value) }
         if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = max(60, min(value, 86400)) }
         if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
+
+        // New activation mode fields
+        if let v = obj["caps_lock_enabled"] as? Bool { updated.capsLockEnabled = v }
+        if let v = obj["mouse_enabled"] as? Bool { updated.mouseEnabled = v }
+        if let v = obj["mouse_mode"] as? Int { updated.mouseMode = max(0, min(v, 1)) }
+        if let v = obj["keyboard_enabled"] as? Bool { updated.keyboardEnabled = v }
+        if let v = obj["keyboard_mode"] as? Int { updated.keyboardMode = max(0, min(v, 1)) }
+
+        // Behavior fields
+        if let v = obj["auto_copy_to_clipboard"] as? Bool { updated.autoCopyToClipboard = v }
+        if let v = obj["history_enabled"] as? Bool { updated.historyEnabled = v }
+        if let v = obj["menu_bar_history_enabled"] as? Bool { updated.menuBarHistoryEnabled = v }
+        if let v = obj["max_history_count"] as? Int { updated.maxHistoryCount = max(10, min(v, 500)) }
+
+        // Migrate from legacy transcription_mode if new activation fields not yet in config
+        if obj["caps_lock_enabled"] == nil, let v = obj["transcription_mode"] as? Int {
+            updated.capsLockEnabled = v == 2
+            updated.mouseEnabled = v != 2
+            updated.keyboardEnabled = v != 2
+            updated.mouseMode = v == 1 ? 1 : 0
+            updated.keyboardMode = v == 1 ? 1 : 0
+        }
 
         model = updated
     }
@@ -149,10 +198,18 @@ final class AppConfig {
         dict["pedal_enabled"] = model.pedalEnabled
         dict["pedal_position"] = model.pedalPosition
         dict["overlay_position_mode"] = model.overlayPositionMode
-        dict["transcription_mode"] = model.transcriptionMode
         dict["whisper_model"] = model.whisperModel
         dict["whisper_idle_timeout"] = model.whisperIdleTimeout
         dict["input_device_uid"] = model.inputDeviceUID
+        dict["caps_lock_enabled"] = model.capsLockEnabled
+        dict["mouse_enabled"] = model.mouseEnabled
+        dict["mouse_mode"] = model.mouseMode
+        dict["keyboard_enabled"] = model.keyboardEnabled
+        dict["keyboard_mode"] = model.keyboardMode
+        dict["auto_copy_to_clipboard"] = model.autoCopyToClipboard
+        dict["history_enabled"] = model.historyEnabled
+        dict["menu_bar_history_enabled"] = model.menuBarHistoryEnabled
+        dict["max_history_count"] = model.maxHistoryCount
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL)

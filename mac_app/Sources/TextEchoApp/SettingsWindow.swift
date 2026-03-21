@@ -4,10 +4,15 @@ import SwiftUI
 
 final class SettingsWindowController {
     private var window: NSWindow?
+    private let onUninstall: () -> Void
+
+    init(onUninstall: @escaping () -> Void = {}) {
+        self.onUninstall = onUninstall
+    }
 
     func show() {
         if window == nil {
-            let view = SettingsView()
+            let view = SettingsView(onUninstall: onUninstall)
             let hosting = NSHostingView(rootView: view)
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 560, height: 700),
@@ -28,6 +33,14 @@ final class SettingsWindowController {
 }
 
 struct SettingsView: View {
+    // Activation modes
+    @State private var capsLockEnabled: Bool = AppConfig.shared.model.capsLockEnabled
+    @State private var mouseEnabled: Bool = AppConfig.shared.model.mouseEnabled
+    @State private var mouseMode: Int = AppConfig.shared.model.mouseMode
+    @State private var keyboardEnabled: Bool = AppConfig.shared.model.keyboardEnabled
+    @State private var keyboardMode: Int = AppConfig.shared.model.keyboardMode
+
+    // Mouse / keyboard trigger config
     @State private var triggerButton: String
     @State private var triggerButtonChoice: Int
     @State private var dictationKey: String
@@ -39,34 +52,49 @@ struct SettingsView: View {
     @State private var llmModCtrl: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.control.rawValue) != 0
     @State private var llmModOpt: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.option.rawValue) != 0
     @State private var llmModCmd: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.command.rawValue) != 0
+
+    // Audio
     @State private var silenceDuration: String = String(AppConfig.shared.model.silenceDuration)
     @State private var silenceThreshold: String = String(AppConfig.shared.model.silenceThreshold)
     @State private var sampleRate: String = String(Int(AppConfig.shared.model.sampleRate))
-    @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
-    @State private var llmModelPath: String = AppConfig.shared.model.llmModelPath
-    @State private var showMenuBarIcon: Bool = AppConfig.shared.model.showMenuBarIcon
-    @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
-    @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
-    @State private var pythonPath: String = AppConfig.shared.model.pythonPath
-    @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
-    @State private var overlayPositionMode: Int = AppConfig.shared.model.overlayPositionMode
 
-    // WhisperKit model settings
+    // WhisperKit model
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
     @State private var showModelPicker: Bool = false
-    @State private var transcriptionMode: Int = AppConfig.shared.model.transcriptionMode
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
     @State private var inputDevices: [(id: UInt32, uid: String, name: String)] = AudioRecorder.availableInputDevices()
 
+    // Behavior
+    @State private var autoCopyToClipboard: Bool = AppConfig.shared.model.autoCopyToClipboard
+    @State private var overlayPositionMode: Int = AppConfig.shared.model.overlayPositionMode
+    @State private var showMenuBarIcon: Bool = AppConfig.shared.model.showMenuBarIcon
+
+    // History
+    @State private var historyEnabled: Bool = AppConfig.shared.model.historyEnabled
+    @State private var menuBarHistoryEnabled: Bool = AppConfig.shared.model.menuBarHistoryEnabled
+    @State private var maxHistoryCount: Int = AppConfig.shared.model.maxHistoryCount
+
     // Pedal
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
 
-    private let llmAvailable = AppConfig.shared.model.llmAvailable
+    // LLM
+    @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
+    @State private var llmModelPath: String = AppConfig.shared.model.llmModelPath
+    @State private var pythonPath: String = AppConfig.shared.model.pythonPath
+    @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
 
-    init() {
+    // Permissions
+    @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
+    @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
+
+    private let llmAvailable = AppConfig.shared.model.llmAvailable
+    let onUninstall: () -> Void
+
+    init(onUninstall: @escaping () -> Void = {}) {
+        self.onUninstall = onUninstall
         let trigger = AppConfig.shared.model.triggerButton
         _triggerButton = State(initialValue: String(trigger))
         if trigger == 0 || trigger == 1 || trigger == 2 {
@@ -79,72 +107,161 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("General")
-                    .font(.system(size: 14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 0) {
 
-                Picker("Mouse Button", selection: $triggerButtonChoice) {
-                    Text("Left").tag(0)
-                    Text("Right").tag(1)
-                    Text("Middle").tag(2)
-                    Text("Other…").tag(3)
-                }
-                .pickerStyle(.segmented)
+                // MARK: - Transcription Activation
+                sectionHeader("Transcription Activation")
 
-                if triggerButtonChoice == 3 {
-                    HStack {
-                        Text("Mouse Button Number")
+                activationCard {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "lock")
+                            .font(.system(size: 15))
+                            .frame(width: 20, height: 20)
+                            .foregroundColor(.accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Caps Lock")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Press Caps Lock to start recording. Press again to stop.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
                         Spacer()
-                        TextField("2", text: $triggerButton)
-                            .frame(width: 80)
+                        Toggle("", isOn: $capsLockEnabled).labelsHidden()
                     }
                 }
 
-                HStack {
-                    Text("Overlay Position")
-                    Spacer()
-                    Picker("", selection: $overlayPositionMode) {
-                        Text("Static").tag(0)
-                        Text("Follow Cursor").tag(1)
+                activationCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "computermouse")
+                                .font(.system(size: 15))
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Mouse Button")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Click or hold a mouse button to record.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $mouseEnabled).labelsHidden()
+                        }
+                        if mouseEnabled {
+                            HStack {
+                                Text("Button")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: $triggerButtonChoice) {
+                                    Text("Left").tag(0)
+                                    Text("Right").tag(1)
+                                    Text("Middle").tag(2)
+                                    Text("Other…").tag(3)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 240)
+                            }
+                            .padding(.leading, 30)
+                            if triggerButtonChoice == 3 {
+                                HStack {
+                                    Text("Button Number")
+                                        .font(.system(size: 12)).foregroundColor(.secondary)
+                                    Spacer()
+                                    TextField("2", text: $triggerButton).frame(width: 60)
+                                }
+                                .padding(.leading, 30)
+                            }
+                            HStack {
+                                Text("Mode")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: $mouseMode) {
+                                    Text("Toggle").tag(0)
+                                    Text("Hold").tag(1)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 160)
+                            }
+                            .padding(.leading, 30)
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 240)
                 }
 
-                Divider()
-
-                Text("Permissions")
-                    .font(.system(size: 14, weight: .semibold))
-
-                HStack {
-                    Text("Microphone")
-                    Spacer()
-                    statusBadge(micStatus == .authorized)
+                activationCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "keyboard")
+                                .font(.system(size: 15))
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Keyboard Shortcut")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Press a keyboard shortcut to start recording.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $keyboardEnabled).labelsHidden()
+                        }
+                        if keyboardEnabled {
+                            HStack {
+                                Text("Key")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                TextField("Z", text: $dictationKey)
+                                    .frame(width: 44)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(.leading, 30)
+                            HStack {
+                                Text("Modifiers")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                HStack(spacing: 8) {
+                                    Toggle("⌃", isOn: $dictationModCtrl)
+                                    Toggle("⌥", isOn: $dictationModOpt)
+                                    Toggle("⌘", isOn: $dictationModCmd)
+                                    Toggle("⇧", isOn: $dictationModShift)
+                                }
+                            }
+                            .padding(.leading, 30)
+                            HStack {
+                                Text("Mode")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: $keyboardMode) {
+                                    Text("Toggle").tag(0)
+                                    Text("Hold").tag(1)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 160)
+                            }
+                            .padding(.leading, 30)
+                            HStack {
+                                Text("LLM Extra Modifier")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                HStack(spacing: 8) {
+                                    Toggle("⌃", isOn: $llmModCtrl)
+                                    Toggle("⌥", isOn: $llmModOpt)
+                                    Toggle("⌘", isOn: $llmModCmd)
+                                    Toggle("⇧", isOn: $llmModShift)
+                                }
+                            }
+                            .padding(.leading, 30)
+                            Text("LLM modifier is added on top of the main shortcut to trigger LLM mode.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 30)
+                        }
+                    }
                 }
 
-                Button("Open Microphone Settings") {
-                    openSystemPreferences(anchor: "Privacy_Microphone")
-                }
+                sectionDivider()
 
-                HStack {
-                    Text("Accessibility")
-                    Spacer()
-                    statusBadge(accessibilityTrusted)
-                }
-
-                Button("Open Accessibility Settings") {
-                    openSystemPreferences(anchor: "Privacy_Accessibility")
-                }
-
-                Button("Refresh Permissions Status") {
-                    refreshPermissions()
-                }
-
-                Divider()
-
-                // Transcription Model section
-                Text("Transcription Model")
-                    .font(.system(size: 14, weight: .semibold))
+                // MARK: - Transcription Model
+                sectionHeader("Transcription Model")
 
                 HStack {
                     Text("Active Model")
@@ -153,28 +270,7 @@ struct SettingsView: View {
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
-
-                HStack {
-                    Text("Transcription Mode")
-                    Spacer()
-                    Picker("", selection: $transcriptionMode) {
-                        Text("Toggle").tag(0)
-                        Text("Hold").tag(1)
-                        Text("Caps Lock").tag(2)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 240)
-                }
-
-                Text(
-                    transcriptionMode == 0
-                    ? "Press once to start recording, press again to stop."
-                    : transcriptionMode == 1
-                        ? "Hold the key/button to record, release to stop."
-                        : "Caps Lock ON starts recording. Caps Lock OFF stops recording."
-                )
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                .padding(.bottom, 8)
 
                 Button("Manage & Download Models") {
                     showModelPicker = true
@@ -183,44 +279,10 @@ struct SettingsView: View {
                     ModelPickerView(selectedModel: $selectedWhisperModel)
                 }
 
-                Divider()
+                sectionDivider()
 
-                Text("Key Bindings")
-                    .font(.system(size: 14, weight: .semibold))
-
-                HStack {
-                    Text("Dictation Key (letter)")
-                    Spacer()
-                    TextField("D", text: $dictationKey)
-                        .frame(width: 80)
-                }
-
-                Text("Dictation Modifiers")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 12) {
-                    Toggle("Ctrl", isOn: $dictationModCtrl)
-                    Toggle("Opt", isOn: $dictationModOpt)
-                    Toggle("Cmd", isOn: $dictationModCmd)
-                    Toggle("Shift", isOn: $dictationModShift)
-                }
-
-                Text("LLM Extra Modifier (added on top of dictation modifiers)")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 12) {
-                    Toggle("Ctrl", isOn: $llmModCtrl)
-                    Toggle("Opt", isOn: $llmModOpt)
-                    Toggle("Cmd", isOn: $llmModCmd)
-                    Toggle("Shift", isOn: $llmModShift)
-                }
-
-                Divider()
-
-                Text("Audio")
-                    .font(.system(size: 14, weight: .semibold))
+                // MARK: - Audio
+                sectionHeader("Audio")
 
                 HStack {
                     Text("Input Device")
@@ -231,8 +293,7 @@ struct SettingsView: View {
                             Text(device.name).tag(device.uid)
                         }
                     }
-                    .frame(width: 240)
-
+                    .frame(width: 220)
                     Button("Refresh") {
                         inputDevices = AudioRecorder.availableInputDevices()
                     }
@@ -242,28 +303,76 @@ struct SettingsView: View {
                 HStack {
                     Text("Silence Duration (sec)")
                     Spacer()
-                    TextField("2.5", text: $silenceDuration)
-                        .frame(width: 80)
+                    TextField("2.5", text: $silenceDuration).frame(width: 80)
                 }
 
                 HStack {
                     Text("Silence Threshold")
                     Spacer()
-                    TextField("0.015", text: $silenceThreshold)
-                        .frame(width: 80)
+                    TextField("0.015", text: $silenceThreshold).frame(width: 80)
                 }
 
                 HStack {
                     Text("Sample Rate")
                     Spacer()
-                    TextField("16000", text: $sampleRate)
-                        .frame(width: 80)
+                    TextField("16000", text: $sampleRate).frame(width: 80)
                 }
 
-                Divider()
+                sectionDivider()
 
-                Text("Stream Deck Pedal")
-                    .font(.system(size: 14, weight: .semibold))
+                // MARK: - Behavior
+                sectionHeader("Behavior")
+
+                Toggle("Auto-paste transcription", isOn: $autoCopyToClipboard)
+                Text("Automatically pastes transcribed text at your cursor after recording.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 6)
+
+                HStack {
+                    Text("Overlay Position")
+                    Spacer()
+                    Picker("", selection: $overlayPositionMode) {
+                        Text("Static").tag(0)
+                        Text("Follow Cursor").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 200)
+                }
+
+                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+                    .padding(.top, 4)
+
+                sectionDivider()
+
+                // MARK: - Transcription History
+                sectionHeader("Transcription History")
+
+                Toggle("Enable History", isOn: $historyEnabled)
+                Text("Saves transcriptions so you can review and re-copy them later.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 4)
+
+                if historyEnabled {
+                    Toggle("Show in Menu Bar", isOn: $menuBarHistoryEnabled)
+                    Text("Shows your 5 most recent transcriptions in the menu bar for quick re-copy.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 4)
+
+                    HStack {
+                        Text("Max history entries")
+                        Spacer()
+                        Stepper("\(maxHistoryCount)", value: $maxHistoryCount, in: 10...500, step: 10)
+                            .frame(width: 160)
+                    }
+                }
+
+                sectionDivider()
+
+                // MARK: - Stream Deck Pedal
+                sectionHeader("Stream Deck Pedal")
 
                 Toggle("Enable Stream Deck Pedal", isOn: $pedalEnabled)
 
@@ -279,73 +388,86 @@ struct SettingsView: View {
                         .pickerStyle(.segmented)
                         .frame(width: 200)
                     }
-
                     Text("Left = Paste, Center = Push-to-talk, Right = Enter")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
-
                     Text("Quit Elgato Stream Deck app if pedal is not detected.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
 
-                Divider()
+                sectionDivider()
 
-                // LLM section — only show if module is installed
+                // MARK: - LLM (only if available)
                 if llmAvailable {
-                    Text("LLM")
-                        .font(.system(size: 14, weight: .semibold))
-
+                    sectionHeader("LLM")
                     Toggle("Enable LLM", isOn: $llmEnabled)
-
                     HStack {
                         Text("LLM Model Path")
                         Spacer()
-                        TextField("/path/to/model.gguf", text: $llmModelPath)
-                            .frame(width: 260)
+                        TextField("/path/to/model.gguf", text: $llmModelPath).frame(width: 260)
                     }
 
-                    Divider()
+                    sectionDivider()
 
-                    Text("Python (LLM)")
-                        .font(.system(size: 14, weight: .semibold))
-
+                    sectionHeader("Python (LLM)")
                     HStack {
                         Text("Python Path")
                         Spacer()
-                        TextField("/opt/homebrew/bin/python3", text: $pythonPath)
-                            .frame(width: 260)
+                        TextField("/opt/homebrew/bin/python3", text: $pythonPath).frame(width: 260)
                     }
-
                     HStack {
                         Text("Daemons Dir")
                         Spacer()
-                        TextField("/path/to/scripts", text: $scriptsDir)
-                            .frame(width: 260)
+                        TextField("/path/to/scripts", text: $scriptsDir).frame(width: 260)
                     }
-                } else {
-                    Text("LLM")
-                        .font(.system(size: 14, weight: .semibold))
 
-                    Text("LLM module not installed. Rebuild with: ./build_native_app.sh --with-llm")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                    sectionDivider()
                 }
 
-                Divider()
+                // MARK: - Permissions (moved to bottom)
+                sectionHeader("Permissions")
 
-                Toggle("Show Menu Bar Icon", isOn: $showMenuBarIcon)
+                HStack {
+                    Text("Microphone")
+                    Spacer()
+                    statusBadge(micStatus == .authorized)
+                }
+                Button("Open Microphone Settings") {
+                    openSystemPreferences(anchor: "Privacy_Microphone")
+                }
 
-                Divider()
+                HStack {
+                    Text("Accessibility")
+                    Spacer()
+                    statusBadge(accessibilityTrusted)
+                }
+                .padding(.top, 4)
+                Button("Open Accessibility Settings") {
+                    openSystemPreferences(anchor: "Privacy_Accessibility")
+                }
 
+                Button("Refresh Permissions Status") {
+                    refreshPermissions()
+                }
+
+                sectionDivider()
+
+                // MARK: - Danger Zone
+                Button("Uninstall TextEcho…") {
+                    onUninstall()
+                }
+                .foregroundColor(.red)
+
+                sectionDivider()
+
+                // MARK: - Actions
                 HStack {
                     Button("Restart TextEcho") {
                         save()
                         restartApp()
                     }
-
                     Spacer()
-
                     Button("Save") {
                         save()
                     }
@@ -361,12 +483,35 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - View helpers
+
+    @ViewBuilder
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 14, weight: .semibold))
+            .padding(.bottom, 10)
+    }
+
+    @ViewBuilder
+    private func sectionDivider() -> some View {
+        Divider().padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func activationCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(12)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(8)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+            .padding(.bottom, 8)
+    }
+
+    // MARK: - Logic
+
     private func restartApp() {
         let appPath = Bundle.main.bundleURL.path
-        let script = """
-            sleep 1
-            open "\(appPath)"
-            """
+        let script = "sleep 1\nopen \"\(appPath)\""
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", script]
@@ -412,7 +557,15 @@ struct SettingsView: View {
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
             model.overlayPositionMode = overlayPositionMode == 1 ? 1 : 0
-            model.transcriptionMode = max(0, min(transcriptionMode, 2))
+            model.capsLockEnabled = capsLockEnabled
+            model.mouseEnabled = mouseEnabled
+            model.mouseMode = mouseMode
+            model.keyboardEnabled = keyboardEnabled
+            model.keyboardMode = keyboardMode
+            model.autoCopyToClipboard = autoCopyToClipboard
+            model.historyEnabled = historyEnabled
+            model.menuBarHistoryEnabled = menuBarHistoryEnabled
+            model.maxHistoryCount = max(10, min(maxHistoryCount, 500))
         }
     }
 

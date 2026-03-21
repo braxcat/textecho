@@ -12,6 +12,7 @@ enum InputEvent {
     case escape
     case register(Int)
     case clearRegisters
+    case capsLockChanged(Bool)
 }
 
 final class InputMonitor {
@@ -19,6 +20,7 @@ final class InputMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var configObserver: NSObjectProtocol?
 
     private var triggerButton: Int { AppConfig.shared.triggerButton }
     private var dictationKeyCode: Int { AppConfig.shared.dictationKeyCode }
@@ -34,14 +36,16 @@ final class InputMonitor {
     func start() {
         guard eventTap == nil else { return }
 
-        let mask: CGEventMask = (1 << CGEventType.leftMouseDown.rawValue)
-            | (1 << CGEventType.leftMouseUp.rawValue)
-            | (1 << CGEventType.rightMouseDown.rawValue)
-            | (1 << CGEventType.rightMouseUp.rawValue)
-            | (1 << CGEventType.otherMouseDown.rawValue)
-            | (1 << CGEventType.otherMouseUp.rawValue)
-            | (1 << CGEventType.keyDown.rawValue)
-            | (1 << CGEventType.keyUp.rawValue)
+        var mask: CGEventMask = 0
+        mask |= (1 << CGEventType.leftMouseDown.rawValue)
+        mask |= (1 << CGEventType.leftMouseUp.rawValue)
+        mask |= (1 << CGEventType.rightMouseDown.rawValue)
+        mask |= (1 << CGEventType.rightMouseUp.rawValue)
+        mask |= (1 << CGEventType.otherMouseDown.rawValue)
+        mask |= (1 << CGEventType.otherMouseUp.rawValue)
+        mask |= (1 << CGEventType.keyDown.rawValue)
+        mask |= (1 << CGEventType.keyUp.rawValue)
+        mask |= (1 << CGEventType.flagsChanged.rawValue)
 
         eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -67,6 +71,9 @@ final class InputMonitor {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: eventTap, enable: true)
+
+        setupConfigObserverIfNeeded()
+        syncCapsLockStateIfNeeded()
     }
 
     func stop() {
@@ -78,6 +85,10 @@ final class InputMonitor {
         }
         runLoopSource = nil
         eventTap = nil
+        if let observer = configObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configObserver = nil
+        }
     }
 
     deinit {
@@ -94,6 +105,11 @@ final class InputMonitor {
             return Unmanaged.passUnretained(event)
         }
 
+        // Neutralize Caps Lock side effect on regular typing when caps lock mode is active
+        if AppConfig.shared.model.capsLockEnabled {
+            neutralizeCapsLockForTyping(type: type, event: event)
+        }
+
         switch type {
         case .otherMouseDown, .otherMouseUp:
             handleOtherMouse(event: event, down: type == .otherMouseDown)
@@ -105,10 +121,24 @@ final class InputMonitor {
             handleKeyDown(event: event)
         case .keyUp:
             handleKeyUp(event: event)
+        case .flagsChanged:
+            handleFlagsChanged(event: event)
         default:
             break
         }
         return Unmanaged.passUnretained(event)
+    }
+
+    private func neutralizeCapsLockForTyping(type: CGEventType, event: CGEvent) {
+        guard type == .keyDown || type == .keyUp else { return }
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard keyCode != 57 else { return } // keep Caps Lock event itself untouched
+
+        var flags = event.flags
+        if flags.contains(.maskAlphaShift) {
+            flags.remove(.maskAlphaShift)
+            event.flags = flags
+        }
     }
 
     private func handleOtherMouse(event: CGEvent, down: Bool) {
@@ -117,6 +147,7 @@ final class InputMonitor {
     }
 
     private func handleMouseButton(button: Int, down: Bool) {
+        guard AppConfig.shared.model.mouseEnabled else { return }
         if button == triggerButton {
             AppLogger.shared.info("Mouse trigger \(down ? "down" : "up") (button=\(button))")
             if down {
@@ -156,6 +187,8 @@ final class InputMonitor {
             }
         }
 
+        guard AppConfig.shared.model.keyboardEnabled else { return }
+
         if keyCode == dictationKeyCode {
             let required = dictationModifiers
             let requiredSet = flags.contains(required)
@@ -175,6 +208,7 @@ final class InputMonitor {
     }
 
     private func handleKeyUp(event: CGEvent) {
+        guard AppConfig.shared.model.keyboardEnabled else { return }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         if dictationActive && keyCode == dictationKeyCode {
             dictationActive = false
@@ -184,6 +218,31 @@ final class InputMonitor {
                 onEvent?(.dictateUp)
             }
         }
+    }
+
+    private func handleFlagsChanged(event: CGEvent) {
+        guard AppConfig.shared.model.capsLockEnabled else { return }
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard keyCode == 57 else { return } // Caps Lock
+        let isOn = event.flags.contains(.maskAlphaShift)
+        AppLogger.shared.info("Caps Lock changed: \(isOn ? "ON" : "OFF")")
+        onEvent?(.capsLockChanged(isOn))
+    }
+
+    private func setupConfigObserverIfNeeded() {
+        guard configObserver == nil else { return }
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .textechoConfigChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.syncCapsLockStateIfNeeded()
+        }
+    }
+
+    private func syncCapsLockStateIfNeeded() {
+        guard AppConfig.shared.model.capsLockEnabled else { return }
+        onEvent?(.capsLockChanged(NSEvent.modifierFlags.contains(.capsLock)))
     }
 
     private func modifierFlags(from stored: UInt) -> CGEventFlags {

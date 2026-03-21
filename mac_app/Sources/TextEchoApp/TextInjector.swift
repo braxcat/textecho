@@ -15,6 +15,7 @@ final class TextInjector {
 
     func inject(_ text: String) {
         guard !text.isEmpty else { return }
+        guard AppConfig.shared.model.autoCopyToClipboard else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)

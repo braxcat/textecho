@@ -15,20 +15,51 @@ struct TextEchoApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("TextEcho", systemImage: appModel.isModelLoading ? "hourglass" : "waveform", isInserted: menuBarInserted) {
-            Button("Start Recording") {
-                appModel.startRecording(llm: false)
+        MenuBarExtra("TextEcho", systemImage: appModel.isModelLoading ? "hourglass" : (appModel.isRecording ? "record.circle" : "waveform"), isInserted: menuBarInserted) {
+            // Record toggle
+            if appModel.isRecording {
+                Button("Stop Recording") {
+                    appModel.stopRecording()
+                }
+            } else {
+                Button("Start Recording") {
+                    appModel.startRecording(llm: false)
+                }
             }
 
-            Button("Start LLM Recording") {
-                appModel.startRecording(llm: true)
-            }
-
-            Button("Stop Recording") {
-                appModel.stopRecording()
+            if AppConfig.shared.model.llmAvailable {
+                Button("Start LLM Recording") {
+                    appModel.startRecording(llm: true)
+                }
+                .disabled(appModel.isRecording)
             }
 
             Divider()
+
+            // Recent transcriptions (FlyCut-style)
+            if AppConfig.shared.model.historyEnabled && AppConfig.shared.model.menuBarHistoryEnabled {
+                if !appModel.recentHistory.isEmpty {
+                    Text("Recent Transcriptions")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    ForEach(appModel.recentHistory) { entry in
+                        Button(action: {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(entry.text, forType: .string)
+                        }) {
+                            let preview = entry.text.count > 40
+                                ? String(entry.text.prefix(40)) + "…"
+                                : entry.text
+                            Text(preview)
+                        }
+                    }
+                    Divider()
+                }
+                Button("Transcription History…") {
+                    appModel.openHistory()
+                }
+                Divider()
+            }
 
             Button("Settings…") {
                 appModel.openSettings()
@@ -42,33 +73,7 @@ struct TextEchoApp: App {
                 appModel.openHelp()
             }
 
-            Button("Setup Wizard…") {
-                appModel.openSetupWizard()
-            }
-
             Divider()
-
-            Toggle(
-                "Launch on Login",
-                isOn: Binding(
-                    get: { appModel.autostartEnabled },
-                    set: { appModel.setAutostartEnabled($0) }
-                )
-            )
-
-            Toggle(
-                "Show Menu Bar Icon",
-                isOn: Binding(
-                    get: { appModel.menuBarVisible },
-                    set: { appModel.setMenuBarVisible($0) }
-                )
-            )
-
-            Divider()
-
-            Button("Uninstall…") {
-                appModel.uninstall()
-            }
 
             Button("Quit TextEcho") {
                 appModel.quit()
@@ -82,11 +87,14 @@ final class AppModel: ObservableObject {
     @Published var menuBarVisible: Bool
     @Published var autostartEnabled: Bool
     @Published var isModelLoading: Bool = false
+    @Published var isRecording: Bool = false
+    @Published var recentHistory: [HistoryEntry] = []
 
     private let appState = AppState()
     private var restoreWindow: RestoreWindowController?
     private var setupWizard: SetupWizardController?
     private var helpWindow: HelpWindowController?
+    private var historyWindow: HistoryWindowController?
 
     init() {
         menuBarVisible = AppConfig.shared.model.showMenuBarIcon
@@ -113,6 +121,22 @@ final class AppModel: ObservableObject {
         }
 
         NotificationCenter.default.addObserver(
+            forName: AppState.recordingStateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.isRecording = notification.object as? Bool ?? false
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: TranscriptionHistory.changedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshHistory()
+        }
+
+        NotificationCenter.default.addObserver(
             forName: .textechoConfigChanged,
             object: nil,
             queue: .main
@@ -122,7 +146,10 @@ final class AppModel: ObservableObject {
             if self.menuBarVisible != desired {
                 self.applyMenuBarVisibility(desired)
             }
+            self.refreshHistory()
         }
+
+        refreshHistory()
     }
 
     func startRecording(llm: Bool) {
@@ -131,6 +158,21 @@ final class AppModel: ObservableObject {
 
     func stopRecording() {
         appState.endRecording(userInitiated: true)
+    }
+
+    func openHistory() {
+        if historyWindow == nil {
+            historyWindow = HistoryWindowController()
+        }
+        historyWindow?.show()
+    }
+
+    private func refreshHistory() {
+        guard AppConfig.shared.model.historyEnabled && AppConfig.shared.model.menuBarHistoryEnabled else {
+            recentHistory = []
+            return
+        }
+        recentHistory = Array(TranscriptionHistory.shared.getEntries().prefix(5))
     }
 
     func openSettings() {
@@ -188,9 +230,9 @@ final class AppModel: ObservableObject {
             setupWizard = SetupWizardController(onClose: { [weak self] in
                 self?.setupWizard?.close()
                 self?.setupWizard = nil
-                // Wizard sets firstLaunch=false and whisperModel before calling onClose.
-                // Now preload AppState's transcriber (model is on disk, CoreML cache is warm).
-                self?.appState.preloadCurrentModel()
+                // Wizard already loaded the model into memory inline.
+                // Do NOT call preloadCurrentModel() here — it would trigger a redundant
+                // second load (showing a confusing "loading model" overlay after wizard).
                 self?.appState.restartInputMonitor()
             })
         }

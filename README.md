@@ -3,6 +3,7 @@
 Voice-to-text dictation for macOS with native WhisperKit transcription on Apple Silicon. Hold a button, speak, release — your words appear as text. No cloud, no Python, fully offline after first model download.
 
 **Author:** Braxton Bragg
+**Contributor:** [Lochie](https://github.com/MachinationsContinued) — UI rework, settings redesign, model management, activation modes, transcription history
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -52,7 +53,7 @@ Download `TextEcho.dmg` and follow these steps:
 4. **Grant permissions** when prompted:
    - **Accessibility** — System Settings → Privacy & Security → Accessibility → enable TextEcho
    - **Microphone** — System Settings → Privacy & Security → Microphone → enable TextEcho
-5. **Choose a model** — the Setup Wizard will ask you to pick a transcription model on first launch. "Large V3 Turbo" (default, ~1.6GB download) is recommended.
+5. **Setup Wizard** — on first launch, the wizard walks you through model download, activation method, theme, and silence timeout.
 
 > **If you get "app is damaged":** Open Terminal and run:
 > ```bash

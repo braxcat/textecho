@@ -58,6 +58,17 @@ final class AppConfig {
         var menuBarHistoryEnabled: Bool // Show recent transcriptions in menu bar
         var maxHistoryCount: Int        // Max number of history entries to keep
 
+        // --- Theme ---
+        var themePreset: String         // "textecho", "cyber", "classic", "ocean", "sunset", "custom", or user preset name
+        var colorRecording: String      // Hex color for recording state
+        var colorProcessing: String     // Hex color for processing state
+        var colorSuccess: String        // Hex color for success state
+        var colorError: String          // Hex color for error state
+        var colorLoading: String        // Hex color for loading state
+        var colorWaveform: String       // Hex color for waveform
+        var colorBgDark: String         // Hex color for dark background
+        var colorBgLight: String        // Hex color for light background
+
         /// Whether the LLM daemon script is bundled in the app.
         var llmAvailable: Bool {
             if let resourcePath = Bundle.main.resourcePath {
@@ -99,7 +110,16 @@ final class AppConfig {
         autoCopyToClipboard: true,
         historyEnabled: true,
         menuBarHistoryEnabled: true,
-        maxHistoryCount: 50
+        maxHistoryCount: 50,
+        themePreset: "textecho",
+        colorRecording: "#00E6FF",
+        colorProcessing: "#8A5CF6",
+        colorSuccess: "#4DD9A6",
+        colorError: "#FF3333",
+        colorLoading: "#FFC200",
+        colorWaveform: "#00E6FF",
+        colorBgDark: "#0A0A1A",
+        colorBgLight: "#0F0F24"
     )
 
     var triggerButton: Int { queue.sync { model.triggerButton } }
@@ -164,6 +184,17 @@ final class AppConfig {
         if let v = obj["menu_bar_history_enabled"] as? Bool { updated.menuBarHistoryEnabled = v }
         if let v = obj["max_history_count"] as? Int { updated.maxHistoryCount = max(10, min(v, 500)) }
 
+        // Theme fields
+        if let v = obj["theme_preset"] as? String { updated.themePreset = v }
+        if let v = obj["color_recording"] as? String { updated.colorRecording = v }
+        if let v = obj["color_processing"] as? String { updated.colorProcessing = v }
+        if let v = obj["color_success"] as? String { updated.colorSuccess = v }
+        if let v = obj["color_error"] as? String { updated.colorError = v }
+        if let v = obj["color_loading"] as? String { updated.colorLoading = v }
+        if let v = obj["color_waveform"] as? String { updated.colorWaveform = v }
+        if let v = obj["color_bg_dark"] as? String { updated.colorBgDark = v }
+        if let v = obj["color_bg_light"] as? String { updated.colorBgLight = v }
+
         // Migrate from legacy transcription_mode if new activation fields not yet in config
         if obj["caps_lock_enabled"] == nil, let v = obj["transcription_mode"] as? Int {
             updated.capsLockEnabled = v == 2
@@ -214,6 +245,15 @@ final class AppConfig {
         dict["history_enabled"] = model.historyEnabled
         dict["menu_bar_history_enabled"] = model.menuBarHistoryEnabled
         dict["max_history_count"] = model.maxHistoryCount
+        dict["theme_preset"] = model.themePreset
+        dict["color_recording"] = model.colorRecording
+        dict["color_processing"] = model.colorProcessing
+        dict["color_success"] = model.colorSuccess
+        dict["color_error"] = model.colorError
+        dict["color_loading"] = model.colorLoading
+        dict["color_waveform"] = model.colorWaveform
+        dict["color_bg_dark"] = model.colorBgDark
+        dict["color_bg_light"] = model.colorBgLight
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL, options: .atomic)

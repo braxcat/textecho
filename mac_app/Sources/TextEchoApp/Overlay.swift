@@ -303,28 +303,28 @@ struct OverlayView: View {
                             .foregroundColor(Color(white: 0.7))
                         Text("ECHO")
                             .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundColor(CyberColors.green.opacity(0.8))
-                            .shadow(color: CyberColors.green.opacity(0.3), radius: 4)
+                            .foregroundColor(theme.success.opacity(0.8))
+                            .shadow(color: theme.success.opacity(0.3), radius: 4)
                     }
                     .tracking(1.5)
                 }
 
                 // Waveform (recording state)
                 if case .recording = viewModel.state {
-                    CyberWaveformView(levels: viewModel.waveform)
+                    CyberWaveformView(levels: viewModel.waveform, waveformColor: theme.waveform, recordingColor: theme.recording)
                         .frame(height: 64)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
                 // Scanner bar (processing or loading model state)
                 if case .processing = viewModel.state {
-                    ScannerBarView()
+                    ScannerBarView(barColor: theme.processing)
                         .frame(height: 4)
                         .padding(.vertical, 6)
                         .transition(.opacity)
                 }
                 if case .loadingModel = viewModel.state {
-                    ScannerBarView()
+                    ScannerBarView(barColor: theme.loading)
                         .frame(height: 4)
                         .padding(.vertical, 6)
                         .transition(.opacity)
@@ -344,7 +344,7 @@ struct OverlayView: View {
                     Spacer()
                     Text("WHISPER // \(Self.modelBadge)")
                         .font(.system(size: 7, weight: .medium, design: .monospaced))
-                        .foregroundColor(CyberColors.green.opacity(0.3))
+                        .foregroundColor(theme.success.opacity(0.3))
                         .tracking(1)
                 }
             }
@@ -421,7 +421,7 @@ struct OverlayView: View {
         ZStack {
             // Base dark gradient
             LinearGradient(
-                colors: [CyberColors.bgDark, CyberColors.bgMid],
+                colors: [theme.bgDark, theme.bgLight],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -447,7 +447,7 @@ struct OverlayView: View {
                     colors: [
                         accentColor.opacity(0.3),
                         accentColor.opacity(0.08),
-                        CyberColors.purple.opacity(0.15),
+                        theme.processing.opacity(0.15),
                         accentColor.opacity(0.2)
                     ],
                     startPoint: .topLeading,
@@ -459,15 +459,17 @@ struct OverlayView: View {
 
     // MARK: - Colors
 
+    private var theme: OverlayTheme { OverlayTheme.current }
+
     private var accentColor: Color {
         switch viewModel.state {
-        case .recording: return Color(red: 0.0, green: 0.9, blue: 1.0)
-        case .processing: return CyberColors.purple
-        case .loadingModel: return CyberColors.amber
-        case .downloading: return CyberColors.amber
-        case .result(let isLLM): return isLLM ? CyberColors.purple : Color(red: 0.3, green: 0.85, blue: 0.65)
-        case .error: return CyberColors.red
-        case .hidden: return Color(red: 0.3, green: 0.85, blue: 0.65)
+        case .recording: return theme.recording
+        case .processing: return theme.processing
+        case .loadingModel: return theme.loading
+        case .downloading: return theme.loading
+        case .result(let isLLM): return isLLM ? theme.processing : theme.success
+        case .error: return theme.error
+        case .hidden: return theme.success
         }
     }
 
@@ -481,9 +483,9 @@ struct OverlayView: View {
 
     private var resultTextColor: Color {
         switch viewModel.state {
-        case .result(let isLLM): return isLLM ? CyberColors.purple.opacity(0.9) : Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.9)
-        case .error: return CyberColors.red.opacity(0.9)
-        default: return Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.9)
+        case .result(let isLLM): return isLLM ? theme.processing.opacity(0.9) : theme.success.opacity(0.9)
+        case .error: return theme.error.opacity(0.9)
+        default: return theme.success.opacity(0.9)
         }
     }
 
@@ -505,6 +507,8 @@ struct OverlayView: View {
 
 struct CyberWaveformView: View {
     let levels: [Double]
+    var waveformColor: Color = Color(red: 0.3, green: 0.6, blue: 0.9)
+    var recordingColor: Color = Color(red: 0.0, green: 0.9, blue: 1.0)
     private let silenceThreshold: Double = 0.05
     @State private var pulseOpacity: Double = 0.4
 
@@ -519,7 +523,7 @@ struct CyberWaveformView: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(barColor)
                         .frame(width: 6, height: barHeight(level: level, active: isActive))
-                        .shadow(color: isActive ? Color(red: 0.2, green: 0.5, blue: 1.0).opacity(0.5) : .clear, radius: 4)
+                        .shadow(color: isActive ? waveformColor.opacity(0.5) : .clear, radius: 4)
                         .animation(.easeOut(duration: 0.06), value: level)
                 }
             }
@@ -531,18 +535,18 @@ struct CyberWaveformView: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0),
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(pulseOpacity),
-                                Color(red: 0.2, green: 1.0, blue: 1.0),
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(pulseOpacity),
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0),
+                                recordingColor.opacity(0),
+                                recordingColor.opacity(pulseOpacity),
+                                recordingColor,
+                                recordingColor.opacity(pulseOpacity),
+                                recordingColor.opacity(0),
                             ],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                     .frame(width: 2)
-                    .shadow(color: Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0.8), radius: 6)
+                    .shadow(color: recordingColor.opacity(0.8), radius: 6)
                     .position(x: lineX, y: geo.size.height / 2)
             }
             .allowsHitTesting(false)
@@ -556,13 +560,12 @@ struct CyberWaveformView: View {
 
     private func barGradient(index: Int, active: Bool) -> LinearGradient {
         let progress = Double(index) / Double(max(levels.count - 1, 1))
-        // Muted blue (left) → Bright blue (right)
         let startColor = active
-            ? Color(red: 0.3, green: 0.6, blue: 0.9)
-            : Color(red: 0.3, green: 0.6, blue: 0.9).opacity(0.12)
+            ? waveformColor
+            : waveformColor.opacity(0.12)
         let endColor = active
-            ? Color(red: 0.1, green: 0.4, blue: 0.95)
-            : Color(red: 0.1, green: 0.4, blue: 0.95).opacity(0.12)
+            ? waveformColor.opacity(0.8)
+            : waveformColor.opacity(0.08)
 
         return LinearGradient(
             colors: [
@@ -593,6 +596,7 @@ struct CyberWaveformView: View {
 // MARK: - Scanner bar (processing animation)
 
 struct ScannerBarView: View {
+    var barColor: Color = Color(red: 0.54, green: 0.36, blue: 0.96)
     @State private var offset: CGFloat = -1.0
 
     var body: some View {
@@ -603,13 +607,13 @@ struct ScannerBarView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(
                     LinearGradient(
-                        colors: [.clear, CyberColors.purple.opacity(0.8), CyberColors.purple, CyberColors.purple.opacity(0.8), .clear],
+                        colors: [.clear, barColor.opacity(0.8), barColor, barColor.opacity(0.8), .clear],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
                 )
                 .frame(width: barWidth)
-                .shadow(color: CyberColors.purple.opacity(0.6), radius: 8)
+                .shadow(color: barColor.opacity(0.6), radius: 8)
                 .offset(x: -barWidth + travel * offset)
                 .onAppear {
                     withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {

@@ -619,7 +619,7 @@ struct SettingsView: View {
                     .font(.system(size: 11))
 
                     if !UserThemePresets.shared.isReserved(themePreset) && themePreset != "custom" && userPresetNames.contains(themePreset) {
-                        Button("Delete "\(themePreset.capitalized)"") {
+                        Button("Delete \"\(themePreset.capitalized)\"") {
                             UserThemePresets.shared.delete(name: themePreset)
                             refreshUserPresets()
                             themePreset = "cyber"
@@ -1037,6 +1037,17 @@ struct SettingsView: View {
             model.historyEnabled = historyEnabled
             model.menuBarHistoryEnabled = menuBarHistoryEnabled
             model.maxHistoryCount = max(10, min(Int(maxHistoryCountText) ?? 50, 1000))
+
+            // Theme
+            model.themePreset = themePreset
+            model.colorRecording = colorRecording.toHex()
+            model.colorProcessing = colorProcessing.toHex()
+            model.colorSuccess = colorSuccess.toHex()
+            model.colorError = colorError.toHex()
+            model.colorLoading = colorLoading.toHex()
+            model.colorWaveform = colorWaveform.toHex()
+            model.colorBgDark = colorBgDark.toHex()
+            model.colorBgLight = colorBgLight.toHex()
 
             // Idle timeout
             if idleTimeoutPreset == -1 {

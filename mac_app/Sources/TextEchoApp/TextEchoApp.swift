@@ -44,27 +44,13 @@ struct TextEchoApp: App {
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     ForEach(appModel.recentHistory) { entry in
-                        let preview = entry.text.count > 80
-                            ? String(entry.text.prefix(80)) + "…"
-                            : entry.text
-                        if entry.text.count > 80 {
-                            Menu(preview) {
-                                // Full text shown as label, tap to copy
-                                Text(entry.text)
-                                    .font(.system(size: 11))
-                                Divider()
-                                Button("Copy to Clipboard") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(entry.text, forType: .string)
-                                }
-                            }
-                        } else {
-                            Button(action: {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(entry.text, forType: .string)
-                            }) {
-                                Text(preview)
-                            }
+                        Button(action: {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(entry.text, forType: .string)
+                        }) {
+                            Text(entry.text.count > 120
+                                ? String(entry.text.prefix(120)) + "…"
+                                : entry.text)
                         }
                     }
                     Divider()

@@ -113,7 +113,7 @@ struct SettingsView: View {
 
     // Audio
     @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
-    @State private var silenceDuration: String = String(AppConfig.shared.model.silenceDuration)
+    @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
     @State private var silenceThreshold: String = String(AppConfig.shared.model.silenceThreshold)
     @State private var sampleRate: String = String(Int(AppConfig.shared.model.sampleRate))
     // WhisperKit model
@@ -526,11 +526,20 @@ struct SettingsView: View {
                     .padding(.bottom, 4)
 
                 if silenceEnabled {
-                    HStack {
-                        Text("Silence duration (sec)")
-                        Spacer()
-                        TextField("2.5", text: dirty($silenceDuration)).frame(width: 80)
+                    HStack(spacing: 12) {
+                        Text("Silence timeout")
+                        Slider(value: dirty($silenceDuration), in: 0.5...10.0, step: 0.5)
+                        Text(String(format: "%.1fs", silenceDuration))
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .frame(width: 40)
                     }
+                    Text(silenceDuration <= 1.5
+                        ? "Short — good for quick commands and single sentences."
+                        : silenceDuration <= 3.0
+                            ? "Default — works well for most dictation."
+                            : "Long — good for pausing to think mid-sentence.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                 }
 
                 HStack {
@@ -1015,7 +1024,7 @@ struct SettingsView: View {
             model.dictationModifiers = dictationMods
             model.dictationLLMModifier = llmMods
             model.silenceEnabled = silenceEnabled
-            model.silenceDuration = Double(silenceDuration) ?? model.silenceDuration
+            model.silenceDuration = silenceDuration
             model.silenceThreshold = Double(silenceThreshold) ?? model.silenceThreshold
             model.sampleRate = Double(sampleRate) ?? model.sampleRate
             model.llmEnabled = llmEnabled

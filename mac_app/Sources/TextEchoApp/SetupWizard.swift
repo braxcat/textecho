@@ -78,6 +78,7 @@ struct SetupWizardView: View {
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
     @State private var themePreset: String = AppConfig.shared.model.themePreset
+    @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
     @State private var idleTimeoutPreset: Int = {
         let t = AppConfig.shared.model.whisperIdleTimeout
         return [0, 3600, 14400, 28800].contains(t) ? t : -1
@@ -551,7 +552,7 @@ struct SetupWizardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Customize")
                     .font(.system(size: 20, weight: .bold))
-                Text("Set your preferred theme and model memory behavior. You can always change these later in Settings.")
+                Text("Set your preferred theme, silence timeout, and model memory. You can always change these later in Settings.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -575,11 +576,39 @@ struct SetupWizardView: View {
 
             Divider()
 
+            // Silence Duration
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Silence Timeout")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("How long to wait after you stop speaking before recording auto-stops and transcription begins.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 12) {
+                    Slider(value: $silenceDuration, in: 0.5...10.0, step: 0.5)
+                    Text(String(format: "%.1fs", silenceDuration))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .frame(width: 40)
+                }
+
+                Text(silenceDuration <= 1.5
+                    ? "Short — good for quick commands and single sentences."
+                    : silenceDuration <= 3.0
+                        ? "Default — works well for most dictation."
+                        : "Long — good for pausing to think mid-sentence.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
             // Idle Timeout
             VStack(alignment: .leading, spacing: 8) {
                 Text("Model Memory")
                     .font(.system(size: 14, weight: .semibold))
-                Text("The transcription model uses ~1.6GB RAM when loaded. Choose how long it stays in memory after your last transcription. \"Never\" keeps it loaded for instant response.")
+                Text("The transcription model uses ~1.6GB RAM when loaded. Choose how long it stays in memory after your last transcription.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -621,11 +650,19 @@ struct SetupWizardView: View {
             "ocean": "Deep blue",
             "sunset": "Warm orange-red"
         ]
+        let colors = OverlayTheme.presets[name] ?? [:]
         return Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: selected ? "circle.inset.filled" : "circle")
                     .font(.system(size: 14))
                     .foregroundColor(selected ? .accentColor : .secondary)
+                // Color swatches
+                HStack(spacing: 3) {
+                    themeColorDot(hex: colors["colorBgDark"])
+                    themeColorDot(hex: colors["colorRecording"])
+                    themeColorDot(hex: colors["colorSuccess"])
+                    themeColorDot(hex: colors["colorWaveform"])
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(name.capitalized)
                         .font(.system(size: 12, weight: .semibold))
@@ -644,6 +681,13 @@ struct SetupWizardView: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func themeColorDot(hex: String?) -> some View {
+        Circle()
+            .fill(hex.flatMap { Color(hex: $0) } ?? Color.gray)
+            .frame(width: 12, height: 12)
+            .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -821,6 +865,7 @@ struct SetupWizardView: View {
         }
         AppConfig.shared.update { model in
             model.themePreset = themePreset
+            model.silenceDuration = silenceDuration
             model.whisperIdleTimeout = timeout
         }
     }

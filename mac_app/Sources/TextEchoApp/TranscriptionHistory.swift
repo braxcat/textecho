@@ -67,7 +67,9 @@ final class TranscriptionHistory {
 
     private func save() {
         if let data = try? JSONEncoder().encode(entries) {
-            try? data.write(to: fileURL)
+            try? data.write(to: fileURL, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         }
     }
 }

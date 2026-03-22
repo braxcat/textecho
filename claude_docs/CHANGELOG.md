@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-03-22 — PR #2 Merge + Security/Memory Fixes
+
+### PR #2 Merge (by Lochie / MachinationsContinued)
+- **Model management** — download, switch, delete models from Settings + Setup Wizard
+- **Settings rework** — activation cards for Caps Lock, mouse, keyboard, pedal with toggle/hold modes
+- **Transcription history** — save, review, re-copy transcriptions; menu bar quick access
+- **Overlay redesign** — improved layout and state display
+- **New files:** HistoryWindow.swift, ModelPickerView.swift, TranscriptionHistory.swift
+- **+2427/-725 lines across 20 files, 23 commits**
+
+### Security Fixes (post-merge review)
+- **HIGH — Shell injection:** Replaced bash `-c` with direct `Process` call in `restartApp()`
+- **HIGH — Thread safety:** Added `@MainActor` to `AppState`, `Task.detached` for background work
+- **MEDIUM — File permissions:** Transcription history now 0600 + atomic writes
+- **MEDIUM — Config writes:** `AppConfig.save()` now uses atomic writes
+- **MEDIUM — Memory leak:** WhisperKitTranscriber instances explicitly nilled after use in SetupWizard
+- **MEDIUM — Observer leak:** NotificationCenter observers stored and removed in `AppModel.deinit`
+- **MEDIUM — Path traversal:** `deleteModel()` rejects model names containing `..` or `/`
+
+### New Features
+- **Idle timeout GUI** in Settings — presets: Never / 1hr / 4hr / 8hr / Custom
+- **Default idle timeout changed to 0** (never unload) — instant transcription, uses ~1.6GB RAM
+
+### CI/Security
+- **CodeQL** weekly SAST scan for Swift (`.github/workflows/codeql.yml`)
+- **Dependabot** weekly dependency checks (`.github/dependabot.yml`)
+
+### Tests
+- Security unit tests: path traversal rejection, model name sanitization, file permissions
+
+### Documentation
+- README updated with activation modes, history, security section, idle timeout
+- In-app help updated with toggle/hold modes, history, model management, idle timeout
+- claude_docs updated (CHANGELOG, FEATURES, ARCHITECTURE, SECURITY)
+
 ## 2026-03-20 — UX Polish & Cyberpunk Overlay
 
 ### Stream Deck Pedal

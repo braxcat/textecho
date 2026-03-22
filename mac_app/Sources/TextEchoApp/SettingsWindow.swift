@@ -120,6 +120,8 @@ struct SettingsView: View {
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
     @State private var showModelPicker: Bool = false
     @State private var downloadedModelNames: [String] = []
+    @State private var idleTimeoutPreset: Int = AppConfig.shared.model.whisperIdleTimeout
+    @State private var customIdleTimeoutText: String = String(AppConfig.shared.model.whisperIdleTimeout / 60)
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
@@ -432,6 +434,56 @@ struct SettingsView: View {
                     ModelPickerView(selectedModel: dirty($selectedWhisperModel))
                 }
 
+                // MARK: - Model Memory (Idle Timeout)
+                Text("Model Memory")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
+
+                HStack {
+                    Text("Unload model after idle")
+                    Spacer()
+                    Picker("", selection: dirty($idleTimeoutPreset)) {
+                        Text("Never").tag(0)
+                        Text("1 hour").tag(3600)
+                        Text("4 hours").tag(14400)
+                        Text("8 hours").tag(28800)
+                        Text("Custom").tag(-1)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 140)
+                    .onChange(of: idleTimeoutPreset) { newValue in
+                        if newValue >= 0 {
+                            customIdleTimeoutText = newValue > 0 ? String(newValue / 60) : "0"
+                        }
+                    }
+                }
+
+                if idleTimeoutPreset == -1 {
+                    HStack {
+                        Text("Minutes")
+                            .font(.system(size: 12)).foregroundColor(.secondary)
+                        Spacer()
+                        TextField("60", text: dirty($customIdleTimeoutText))
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                            .onChange(of: customIdleTimeoutText) { newValue in
+                                let filtered = newValue.filter { $0.isNumber }
+                                if filtered != newValue {
+                                    customIdleTimeoutText = filtered
+                                }
+                            }
+                    }
+                    .padding(.leading, 16)
+                }
+
+                Text(idleTimeoutPreset == 0
+                     ? "Model stays in RAM for instant transcription (~1.6GB)."
+                     : "Model unloads from RAM after idle to free memory. Next recording re-loads it (1-3s).")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 4)
+
                 sectionDivider()
 
                 // MARK: - Audio
@@ -660,6 +712,14 @@ struct SettingsView: View {
             if !downloadedModelNames.isEmpty && !downloadedModelNames.contains(selectedWhisperModel) {
                 downloadedModelNames.insert(selectedWhisperModel, at: 0)
             }
+            // Map stored idle timeout to nearest preset or custom
+            let storedTimeout = AppConfig.shared.model.whisperIdleTimeout
+            if [0, 3600, 14400, 28800].contains(storedTimeout) {
+                idleTimeoutPreset = storedTimeout
+            } else {
+                idleTimeoutPreset = -1
+                customIdleTimeoutText = String(storedTimeout / 60)
+            }
             saveCallbacks.onSave = { save() }
             saveCallbacks.onResetDirty = { isDirty = false; onDirtyChanged(false) }
         }
@@ -715,12 +775,13 @@ struct SettingsView: View {
     // MARK: - Logic
 
     private func restartApp() {
-        let appPath = Bundle.main.bundleURL.path
-        let script = "sleep 1\nopen \"\(appPath)\""
+        let appURL = Bundle.main.bundleURL
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", script]
-        try? process.run()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-g", appURL.path]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            try? process.run()
+        }
         NSApplication.shared.terminate(nil)
     }
 
@@ -772,6 +833,14 @@ struct SettingsView: View {
             model.historyEnabled = historyEnabled
             model.menuBarHistoryEnabled = menuBarHistoryEnabled
             model.maxHistoryCount = max(10, min(Int(maxHistoryCountText) ?? 50, 1000))
+
+            // Idle timeout
+            if idleTimeoutPreset == -1 {
+                let minutes = Int(customIdleTimeoutText) ?? 60
+                model.whisperIdleTimeout = minutes == 0 ? 0 : max(1, minutes) * 60
+            } else {
+                model.whisperIdleTimeout = idleTimeoutPreset
+            }
         }
 
         isDirty = false

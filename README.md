@@ -94,18 +94,32 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 
 ## Usage
 
+### Activation Methods
+
+Enable one or more in Settings or Setup Wizard:
+
+| Method | Modes | How |
+|--------|-------|-----|
+| **Caps Lock** | Toggle | Press to start, press again to stop |
+| **Mouse button** | Toggle / Hold | Click to toggle or hold to record (configurable button) |
+| **Keyboard shortcut** | Toggle / Hold | Default: Ctrl+Opt+Z (configurable key + modifiers) |
+| **Stream Deck Pedal** | Hold | Center pedal = push-to-talk |
+
+### Other Controls
+
 | Action | How |
 |--------|-----|
-| **Dictate (mouse)** | Middle-click hold → speak → release |
-| **Dictate (keyboard)** | Ctrl+D hold → speak → release |
-| **Dictate (pedal)** | Center pedal hold → speak → release |
+| **LLM prompt** | Add LLM modifier to keyboard shortcut (requires `--with-llm` build) |
 | **Paste (pedal)** | Left pedal |
 | **Enter (pedal)** | Right pedal |
-| **LLM prompt** | Ctrl+Shift+D (requires `--with-llm` build) |
 | **Save to register** | Cmd+Option+1-9 |
 | **Clear registers** | Cmd+Option+0 |
 | **Settings** | Cmd+Option+Space |
 | **Cancel** | ESC |
+
+### Transcription History
+
+Transcriptions are saved automatically (enable in Settings). Access recent transcriptions from the menu bar for quick re-copy, or open the History window for the full list. Configure max entries (10-1000) in Settings.
 
 ## Architecture
 
@@ -185,7 +199,11 @@ Models download from HuggingFace on first use and cache at `~/Documents/huggingf
 | `silence_duration` | `2.5` | Seconds of silence before auto-stop |
 | `silence_threshold` | `0.015` | Audio level for silence detection |
 | `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
-| `whisper_idle_timeout` | `3600` | Seconds before model unloads from RAM |
+| `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
+| `caps_lock_enabled` | `false` | Enable Caps Lock activation |
+| `mouse_mode` | `1` | Mouse mode: 0=toggle, 1=hold |
+| `keyboard_mode` | `0` | Keyboard mode: 0=toggle, 1=hold |
+| `history_enabled` | `true` | Save transcription history |
 | `pedal_enabled` | `false` | Enable Stream Deck Pedal |
 | `pedal_position` | `1` | Push-to-talk pedal (0=left, 1=center, 2=right) |
 
@@ -200,6 +218,15 @@ Elgato Stream Deck Pedal works out of the box via IOKit HID — no Elgato softwa
 | Right | Enter |
 
 Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-reconnects on unplug/replug.
+
+## Security
+
+- **Fully local** — no network calls after model download, no telemetry, no cloud
+- **CodeQL scanning** — automated SAST on PRs (Swift injection, path traversal, data races)
+- **Dependabot** — weekly dependency vulnerability checks (SwiftPM + GitHub Actions)
+- **File permissions** — transcription history written with 0600 (owner-only) permissions
+- **Atomic writes** — config and history files use atomic writes to prevent corruption
+- **Input sanitization** — model names validated against path traversal before filesystem operations
 
 ## Troubleshooting
 

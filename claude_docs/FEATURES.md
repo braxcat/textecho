@@ -1,10 +1,18 @@
 # Features
 
 ## Voice-to-Text Dictation
-- Hold-to-record with automatic silence detection (configurable threshold + duration)
-- Mouse trigger (middle-click) and keyboard trigger (Ctrl+D)
+- Multiple activation methods: Caps Lock, mouse button, keyboard shortcut, Stream Deck Pedal
+- Toggle mode (press to start/stop) and Hold mode (hold to record, release to stop)
+- Automatic silence detection (configurable threshold + duration)
 - Automatic text paste into active window via clipboard + Cmd+V
 - Cancel recording with ESC
+
+## Transcription History
+- Automatic save of all transcriptions (configurable)
+- History window for review and re-copy
+- Menu bar quick access to 5 most recent transcriptions
+- Configurable max entries (10-1000)
+- Stored locally with 0600 file permissions
 
 ## Native WhisperKit Transcription
 - Apple Silicon native via WhisperKit (Core ML / Apple Neural Engine)
@@ -14,7 +22,7 @@
 - Model selection in Setup Wizard and Settings
 - Models cached locally after first download — fully offline after that
 - Lazy model loading — first use downloads/loads, subsequent uses instant
-- Auto-unload after configurable idle timeout (default 1 hour) to free RAM
+- Configurable idle timeout: Never / 1hr / 4hr / 8hr / Custom (default: Never — stays loaded)
 - Hallucination filtering (17 known phrases + repeated segment detection)
 - RMS silence detection (skip transcription if audio too quiet)
 - 30-second timeout on inference to prevent indefinite hangs
@@ -58,13 +66,16 @@
 - Re-openable from menu bar
 
 ## Settings Panel
-- Trigger button configuration (mouse button selection)
-- Keyboard shortcut customization (key code + modifiers)
-- Audio settings (silence duration, silence threshold, sample rate)
-- Transcription model picker (active model, manage models with download/delete)
+- Activation method cards: Caps Lock, mouse, keyboard, pedal — each with toggle/hold mode
+- Audio settings (silence duration, silence threshold, sample rate, input device)
+- Transcription model picker (active model, manage/download/delete models)
+- Model memory (idle timeout): Never / 1hr / 4hr / 8hr / Custom presets
+- Transcription history: enable/disable, menu bar display, max entries
+- Overlay position: fixed or follow cursor
 - Stream Deck Pedal toggle + position picker
 - LLM configuration (enable, model path) — only visible when LLM module installed
-- Python path and daemon scripts directory — only visible when LLM module installed
+- Dirty tracking with unsaved changes indicator
+- Confirm dialog on close with unsaved changes
 
 ## In-App Help
 - Accessible from menu bar → Help

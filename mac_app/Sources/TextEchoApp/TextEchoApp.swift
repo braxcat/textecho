@@ -93,6 +93,7 @@ final class AppModel: ObservableObject {
     private var helpWindow: HelpWindowController?
     private var historyWindow: HistoryWindowController?
     private var modelPickerWindow: ModelPickerWindowController?
+    private var notificationObservers: [NSObjectProtocol] = []
 
     init() {
         menuBarVisible = AppConfig.shared.model.showMenuBarIcon
@@ -110,31 +111,31 @@ final class AppModel: ObservableObject {
             }
         }
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: AppState.modelLoadingNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
             self?.isModelLoading = notification.object as? Bool ?? false
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: AppState.recordingStateNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
             self?.isRecording = notification.object as? Bool ?? false
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: TranscriptionHistory.changedNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.refreshHistory()
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: .textechoConfigChanged,
             object: nil,
             queue: .main
@@ -145,7 +146,7 @@ final class AppModel: ObservableObject {
                 self.applyMenuBarVisibility(desired)
             }
             self.refreshHistory()
-        }
+        })
 
         refreshHistory()
     }
@@ -286,6 +287,10 @@ final class AppModel: ObservableObject {
     }
 
     deinit {
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        notificationObservers.removeAll()
         appState.stop()
     }
 

@@ -1,0 +1,14 @@
+name: Swift CI
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run tests
+        run: swift test --package-path mac_app
+      - name: Build (release)
+        run: swift build -c release --package-path mac_app

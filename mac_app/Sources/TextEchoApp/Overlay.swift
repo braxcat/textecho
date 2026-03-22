@@ -73,6 +73,173 @@ final class OverlayViewModel: ObservableObject {
 
 // MARK: - Color palette (Artificer Cyber)
 
+struct OverlayTheme {
+    static var current: OverlayTheme { OverlayTheme() }
+
+    let recording: Color
+    let processing: Color
+    let success: Color
+    let error: Color
+    let loading: Color
+    let waveform: Color
+    let bgDark: Color
+    let bgLight: Color
+
+    /// Matrix green for logo — derived from success color brightened
+    var logoGreen: Color { success }
+
+    init() {
+        let cfg = AppConfig.shared.model
+        recording = Color(hex: cfg.colorRecording) ?? Color(red: 0.0, green: 1.0, blue: 0.88)
+        processing = Color(hex: cfg.colorProcessing) ?? Color(red: 0.54, green: 0.36, blue: 0.96)
+        success = Color(hex: cfg.colorSuccess) ?? Color(red: 0.3, green: 0.85, blue: 0.65)
+        error = Color(hex: cfg.colorError) ?? Color(red: 1.0, green: 0.2, blue: 0.2)
+        loading = Color(hex: cfg.colorLoading) ?? Color(red: 1.0, green: 0.76, blue: 0.0)
+        waveform = Color(hex: cfg.colorWaveform) ?? Color(red: 0.3, green: 0.6, blue: 0.9)
+        bgDark = Color(hex: cfg.colorBgDark) ?? Color(red: 0.04, green: 0.04, blue: 0.1)
+        bgLight = Color(hex: cfg.colorBgLight) ?? Color(red: 0.06, green: 0.06, blue: 0.14)
+    }
+
+    /// Named presets
+    static let presets: [String: [String: String]] = [
+        "textecho": [
+            "colorRecording": "#00E6FF",
+            "colorProcessing": "#8A5CF6",
+            "colorSuccess": "#4DD9A6",
+            "colorError": "#FF3333",
+            "colorLoading": "#FFC200",
+            "colorWaveform": "#00E6FF",
+            "colorBgDark": "#0A0A1A",
+            "colorBgLight": "#0F0F24",
+        ],
+        "cyber": [
+            "colorRecording": "#00FFE0",
+            "colorProcessing": "#8A5CF6",
+            "colorSuccess": "#4DD9A6",
+            "colorError": "#FF3333",
+            "colorLoading": "#FFC200",
+            "colorWaveform": "#4D99E6",
+            "colorBgDark": "#0A0A1A",
+            "colorBgLight": "#0F0F24",
+        ],
+        "classic": [
+            "colorRecording": "#4A90D9",
+            "colorProcessing": "#7B68EE",
+            "colorSuccess": "#50C878",
+            "colorError": "#DC3545",
+            "colorLoading": "#FFB347",
+            "colorWaveform": "#6495ED",
+            "colorBgDark": "#1A1A2E",
+            "colorBgLight": "#16213E",
+        ],
+        "ocean": [
+            "colorRecording": "#00CED1",
+            "colorProcessing": "#4169E1",
+            "colorSuccess": "#20B2AA",
+            "colorError": "#FF6B6B",
+            "colorLoading": "#48D1CC",
+            "colorWaveform": "#5F9EA0",
+            "colorBgDark": "#0B132B",
+            "colorBgLight": "#1C2541",
+        ],
+        "sunset": [
+            "colorRecording": "#FF6B35",
+            "colorProcessing": "#D63384",
+            "colorSuccess": "#FFC107",
+            "colorError": "#DC3545",
+            "colorLoading": "#FF8C42",
+            "colorWaveform": "#E85D75",
+            "colorBgDark": "#1A0A0A",
+            "colorBgLight": "#2D1B1B",
+        ],
+    ]
+}
+
+// MARK: - User theme presets (persisted to ~/.textecho_themes.json)
+
+final class UserThemePresets {
+    static let shared = UserThemePresets()
+
+    private let fileURL: URL
+    private(set) var presets: [String: [String: String]] = [:]
+
+    private static let reservedNames: Set<String> = ["textecho", "cyber", "classic", "ocean", "sunset", "custom"]
+
+    private init() {
+        fileURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".textecho_themes.json")
+        load()
+    }
+
+    func save(name: String, colors: [String: String]) {
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty, !Self.reservedNames.contains(key) else { return }
+        presets[key] = colors
+        persist()
+    }
+
+    func delete(name: String) {
+        let key = name.lowercased()
+        guard !Self.reservedNames.contains(key) else { return }
+        presets.removeValue(forKey: key)
+        persist()
+    }
+
+    func load() {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            presets = [:]
+            return
+        }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            if let decoded = try JSONSerialization.jsonObject(with: data) as? [String: [String: String]] {
+                presets = decoded
+            }
+        } catch {
+            presets = [:]
+        }
+    }
+
+    func isReserved(_ name: String) -> Bool {
+        Self.reservedNames.contains(name.lowercased())
+    }
+
+    private func persist() {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: presets, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: fileURL, options: [.atomic])
+            // Set file permissions to 0600 (owner read/write only)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        } catch {
+            // Silent failure — non-critical
+        }
+    }
+}
+
+// MARK: - Color hex parsing
+
+extension Color {
+    init?(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard cleaned.count == 6,
+              let rgb = UInt64(cleaned, radix: 16) else { return nil }
+        let r = Double((rgb >> 16) & 0xFF) / 255.0
+        let g = Double((rgb >> 8) & 0xFF) / 255.0
+        let b = Double(rgb & 0xFF) / 255.0
+        self.init(red: r, green: g, blue: b)
+    }
+
+    func toHex() -> String {
+        guard let components = NSColor(self).usingColorSpace(.sRGB) else { return "#000000" }
+        let r = Int(round(components.redComponent * 255))
+        let g = Int(round(components.greenComponent * 255))
+        let b = Int(round(components.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+}
+
+// MARK: - Legacy alias for compatibility
 private struct CyberColors {
     static let cyan = Color(red: 0.0, green: 1.0, blue: 0.88)       // #00FFE0
     static let magenta = Color(red: 1.0, green: 0.0, blue: 0.4)     // #FF0066

@@ -27,6 +27,7 @@ final class UninstallManager {
         }
     }
 
+    @MainActor
     private func performUninstall(appState: AppState, moveToTrash: Bool) {
         appState.stop()
         LaunchdManager.shared.disable()
@@ -44,6 +45,9 @@ final class UninstallManager {
 
         let configFile = home.appendingPathComponent(".textecho_config")
         try? fm.removeItem(at: configFile)
+
+        let themesFile = home.appendingPathComponent(".textecho_themes.json")
+        try? fm.removeItem(at: themesFile)
 
         let logsDir = home.appendingPathComponent("Library/Logs/TextEcho", isDirectory: true)
         try? fm.removeItem(at: logsDir)

@@ -53,6 +53,7 @@ struct TextEchoApp: App {
                                 : entry.text
                             Text(preview)
                         }
+                        .help(entry.text)
                     }
                     Divider()
                 }

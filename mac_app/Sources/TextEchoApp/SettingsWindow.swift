@@ -137,6 +137,20 @@ struct SettingsView: View {
     @State private var menuBarHistoryEnabled: Bool = AppConfig.shared.model.menuBarHistoryEnabled
     @State private var maxHistoryCountText: String = String(AppConfig.shared.model.maxHistoryCount)
 
+    // Theme
+    @State private var themePreset: String = AppConfig.shared.model.themePreset
+    @State private var userPresetNames: [String] = Array(UserThemePresets.shared.presets.keys).sorted()
+    @State private var showingSavePresetAlert: Bool = false
+    @State private var newPresetName: String = ""
+    @State private var colorRecording: Color = Color(hex: AppConfig.shared.model.colorRecording) ?? .cyan
+    @State private var colorProcessing: Color = Color(hex: AppConfig.shared.model.colorProcessing) ?? .purple
+    @State private var colorSuccess: Color = Color(hex: AppConfig.shared.model.colorSuccess) ?? .green
+    @State private var colorError: Color = Color(hex: AppConfig.shared.model.colorError) ?? .red
+    @State private var colorLoading: Color = Color(hex: AppConfig.shared.model.colorLoading) ?? .orange
+    @State private var colorWaveform: Color = Color(hex: AppConfig.shared.model.colorWaveform) ?? .blue
+    @State private var colorBgDark: Color = Color(hex: AppConfig.shared.model.colorBgDark) ?? .black
+    @State private var colorBgLight: Color = Color(hex: AppConfig.shared.model.colorBgLight) ?? .black
+
     // Pedal
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
@@ -563,6 +577,127 @@ struct SettingsView: View {
 
                 sectionDivider()
 
+                // MARK: - Overlay Theme
+                sectionHeader("Overlay Theme")
+
+                HStack {
+                    Text("Color preset")
+                    Spacer()
+                    Picker("", selection: Binding(
+                        get: { themePreset },
+                        set: { newValue in
+                            themePreset = newValue
+                            if newValue != "custom" {
+                                if let preset = OverlayTheme.presets[newValue] {
+                                    applyPreset(preset)
+                                } else if let preset = UserThemePresets.shared.presets[newValue] {
+                                    applyPreset(preset)
+                                }
+                            }
+                            if !isDirty { isDirty = true; onDirtyChanged(true) }
+                        }
+                    )) {
+                        Text("TextEcho").tag("textecho")
+                        Text("Cyber").tag("cyber")
+                        Text("Classic").tag("classic")
+                        Text("Ocean").tag("ocean")
+                        Text("Sunset").tag("sunset")
+                        ForEach(userPresetNames, id: \.self) { name in
+                            Text(name.capitalized).tag(name)
+                        }
+                        Text("Custom").tag("custom")
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 160)
+                }
+
+                HStack(spacing: 8) {
+                    Button("Save Current…") {
+                        newPresetName = ""
+                        showingSavePresetAlert = true
+                    }
+                    .font(.system(size: 11))
+
+                    if !UserThemePresets.shared.isReserved(themePreset) && themePreset != "custom" && userPresetNames.contains(themePreset) {
+                        Button("Delete \"\(themePreset.capitalized)\"") {
+                            UserThemePresets.shared.delete(name: themePreset)
+                            refreshUserPresets()
+                            themePreset = "cyber"
+                            if let preset = OverlayTheme.presets["cyber"] {
+                                applyPreset(preset)
+                            }
+                            if !isDirty { isDirty = true; onDirtyChanged(true) }
+                        }
+                        .font(.system(size: 11))
+                        .foregroundColor(.red)
+                    }
+
+                    Spacer()
+                }
+                .sheet(isPresented: $showingSavePresetAlert) {
+                    VStack(spacing: 16) {
+                        Text("Save Current Colors as Preset")
+                            .font(.headline)
+
+                        TextField("Preset name", text: $newPresetName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+
+                        if UserThemePresets.shared.isReserved(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                            Text("Cannot overwrite built-in presets.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.red)
+                        }
+
+                        HStack(spacing: 12) {
+                            Button("Cancel") {
+                                showingSavePresetAlert = false
+                            }
+                            Button("Save") {
+                                saveCurrentAsPreset()
+                                showingSavePresetAlert = false
+                            }
+                            .disabled(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || UserThemePresets.shared.isReserved(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()))
+                            .keyboardShortcut(.defaultAction)
+                        }
+                    }
+                    .padding(24)
+                    .frame(minWidth: 300)
+                }
+
+                // Color preview strip
+                HStack(spacing: 4) {
+                    colorSwatch(colorRecording, label: "Rec")
+                    colorSwatch(colorProcessing, label: "Proc")
+                    colorSwatch(colorSuccess, label: "Done")
+                    colorSwatch(colorError, label: "Err")
+                    colorSwatch(colorLoading, label: "Load")
+                    colorSwatch(colorWaveform, label: "Wave")
+                    colorSwatch(colorBgDark, label: "BG")
+                }
+                .padding(.vertical, 6)
+
+                if themePreset == "custom" {
+                    VStack(spacing: 8) {
+                        themeColorRow("Recording", color: dirty($colorRecording))
+                        themeColorRow("Processing / LLM", color: dirty($colorProcessing))
+                        themeColorRow("Success / Result", color: dirty($colorSuccess))
+                        themeColorRow("Error", color: dirty($colorError))
+                        themeColorRow("Loading", color: dirty($colorLoading))
+                        themeColorRow("Waveform", color: dirty($colorWaveform))
+                        themeColorRow("Background Dark", color: dirty($colorBgDark))
+                        themeColorRow("Background Light", color: dirty($colorBgLight))
+                    }
+                }
+
+                Text("Colors apply after saving. Presets override all custom colors.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
+
+                sectionDivider()
+
                 // MARK: - Transcription History
                 sectionHeader("Transcription History")
 
@@ -679,7 +814,7 @@ struct SettingsView: View {
 
                 sectionDivider()
 
-                // MARK: - Unsaved changes indicator + Done button
+                // MARK: - Unsaved changes indicator + Save/Done buttons
                 HStack {
                     if isDirty {
                         HStack(spacing: 4) {
@@ -692,7 +827,12 @@ struct SettingsView: View {
                         }
                     }
                     Spacer()
-                    Button("Done") {
+                    Button("Save") {
+                        save()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!isDirty)
+                    Button("Save & Close") {
                         save()
                         onClose()
                     }
@@ -704,6 +844,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 520, minHeight: 560)
         .onAppear {
+            refreshUserPresets()
             refreshPermissions()
             inputDevices = AudioRecorder.availableInputDevices()
             downloadedModelNames = WhisperKitTranscriber.availableModelList
@@ -772,6 +913,69 @@ struct SettingsView: View {
         .padding(12)
     }
 
+    // MARK: - Theme helpers
+
+    @ViewBuilder
+    private func themeColorRow(_ label: String, color: Binding<Color>) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            Spacer()
+            ColorPicker("", selection: color, supportsOpacity: false)
+                .labelsHidden()
+        }
+        .padding(.leading, 16)
+    }
+
+    @ViewBuilder
+    private func colorSwatch(_ color: Color, label: String) -> some View {
+        VStack(spacing: 2) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color)
+                .frame(width: 36, height: 24)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.2), lineWidth: 1))
+            Text(label)
+                .font(.system(size: 8))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func applyPreset(_ preset: [String: String]) {
+        if let v = preset["colorRecording"] { colorRecording = Color(hex: v) ?? colorRecording }
+        if let v = preset["colorProcessing"] { colorProcessing = Color(hex: v) ?? colorProcessing }
+        if let v = preset["colorSuccess"] { colorSuccess = Color(hex: v) ?? colorSuccess }
+        if let v = preset["colorError"] { colorError = Color(hex: v) ?? colorError }
+        if let v = preset["colorLoading"] { colorLoading = Color(hex: v) ?? colorLoading }
+        if let v = preset["colorWaveform"] { colorWaveform = Color(hex: v) ?? colorWaveform }
+        if let v = preset["colorBgDark"] { colorBgDark = Color(hex: v) ?? colorBgDark }
+        if let v = preset["colorBgLight"] { colorBgLight = Color(hex: v) ?? colorBgLight }
+    }
+
+    private func saveCurrentAsPreset() {
+        let name = newPresetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let colors: [String: String] = [
+            "colorRecording": colorRecording.toHex(),
+            "colorProcessing": colorProcessing.toHex(),
+            "colorSuccess": colorSuccess.toHex(),
+            "colorError": colorError.toHex(),
+            "colorLoading": colorLoading.toHex(),
+            "colorWaveform": colorWaveform.toHex(),
+            "colorBgDark": colorBgDark.toHex(),
+            "colorBgLight": colorBgLight.toHex(),
+        ]
+        UserThemePresets.shared.save(name: name, colors: colors)
+        refreshUserPresets()
+        themePreset = name.lowercased()
+        if !isDirty { isDirty = true; onDirtyChanged(true) }
+    }
+
+    private func refreshUserPresets() {
+        UserThemePresets.shared.load()
+        userPresetNames = Array(UserThemePresets.shared.presets.keys).sorted()
+    }
+
     // MARK: - Logic
 
     private func restartApp() {
@@ -833,6 +1037,17 @@ struct SettingsView: View {
             model.historyEnabled = historyEnabled
             model.menuBarHistoryEnabled = menuBarHistoryEnabled
             model.maxHistoryCount = max(10, min(Int(maxHistoryCountText) ?? 50, 1000))
+
+            // Theme
+            model.themePreset = themePreset
+            model.colorRecording = colorRecording.toHex()
+            model.colorProcessing = colorProcessing.toHex()
+            model.colorSuccess = colorSuccess.toHex()
+            model.colorError = colorError.toHex()
+            model.colorLoading = colorLoading.toHex()
+            model.colorWaveform = colorWaveform.toHex()
+            model.colorBgDark = colorBgDark.toHex()
+            model.colorBgLight = colorBgLight.toHex()
 
             // Idle timeout
             if idleTimeoutPreset == -1 {

@@ -1,5 +1,28 @@
 # Worklog
 
+## 2026-03-22 — Theme Customization + Swift CI
+
+**Focus:** Theme presets, custom color picker, CI workflow, dependency updates
+
+### Theme System (PR #7)
+- 5 built-in presets: TextEcho, Cyber, Classic, Ocean, Sunset
+- Full color picker UI in Settings for custom themes
+- Save/load/delete user presets (~/.textecho_themes.json)
+- Fixed overlay not reading from config (was hardcoded)
+- Menu bar tooltip showing recording status
+- Settings save button for explicit persistence
+- CodeQL fix: @MainActor on TextEchoApp deinit
+
+### Swift CI
+- Created `.github/workflows/swift-ci.yml` — `swift test` + `swift build -c release` on PRs to main
+- Uses macos-latest + actions/checkout@v6
+
+### Dependency Updates
+- Merged Dependabot PRs #4 (actions/checkout v6) and #5 (codeql-action v4)
+
+### GitHub Security
+- Enabled Dependency graph, Dependabot alerts, Dependabot security updates, Code scanning
+
 ## 2026-03-20 — UX Polish & Cyberpunk Overlay
 
 **Focus:** Per-pedal actions, auto-detect, Settings persistence, overlay redesign, setup wizard

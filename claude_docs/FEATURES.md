@@ -36,11 +36,18 @@
 - Configurable system prompt, temperature, repeat penalty, top-p/top-k
 - Reasoning tag stripping (<think>/<reasoning> blocks)
 
+## Theme Customization
+- 5 built-in presets: TextEcho (original cyan-blue), Cyber, Classic, Ocean, Sunset
+- Full color picker in Settings: background, text, accent, waveform colors
+- Save/load/delete custom user presets stored at `~/.textecho_themes.json`
+- Live overlay preview when changing themes
+- Built-in presets cannot be deleted; user presets can be
+
 ## Cyberpunk Overlay UI
 - Floating overlay follows cursor during recording
 - Real-time waveform visualization (40-bar RMS, magenta→neon green gradient)
-- Cyberpunk color flow: Pink recording → Electric Purple processing → Neon Green result
-- Silver TEXT + neon green ECHO logo
+- Theme-aware: colors driven by active theme preset
+- Silver TEXT + neon green ECHO logo (default TextEcho theme)
 - Model badge: "WHISPER // LARGE V3 TURBO" at bottom
 - Full transcription text visible (no line limit, auto-expands)
 - Smart auto-hide: 1.5s base + scales with text length, max 4s

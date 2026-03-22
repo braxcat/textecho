@@ -23,6 +23,7 @@ Voice-to-text dictation for macOS with native WhisperKit transcription on Apple 
 
 - **Native WhisperKit** — transcription via Apple Neural Engine (Core ML), ~1.6GB RAM
 - **Push-to-talk** — middle-click, Ctrl+D, or Stream Deck Pedal
+- **Theme presets** — 5 built-in themes (TextEcho, Cyber, Classic, Ocean, Sunset) + custom color picker + saveable user presets
 - **Cyberpunk overlay** — pink→purple→neon green states, waveform visualization
 - **Stream Deck Pedal** — center=dictate, left=paste, right=enter (auto-detect, no Elgato software)
 - **Instant paste** — transcribed text goes straight to your cursor via clipboard
@@ -222,6 +223,7 @@ Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-
 ## Security
 
 - **Fully local** — no network calls after model download, no telemetry, no cloud
+- **Swift CI** — automated `swift test` + `swift build` on every PR to main
 - **CodeQL scanning** — automated SAST on PRs (Swift injection, path traversal, data races)
 - **Dependabot** — weekly dependency vulnerability checks (SwiftPM + GitHub Actions)
 - **File permissions** — transcription history written with 0600 (owner-only) permissions

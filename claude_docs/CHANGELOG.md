@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-03-22 — Theme Customization + Swift CI (PR #7)
+
+### Theme System
+- **5 built-in presets:** TextEcho (original cyan-blue), Cyber, Classic, Ocean, Sunset
+- **Custom colors:** full color picker UI in Settings for background, text, accent, waveform
+- **User presets:** save/load/delete custom themes (~/.textecho_themes.json)
+- **Overlay integration:** overlay reads theme colors from config, updates live
+- **Menu bar tooltip:** shows recording status
+- **Settings save button:** explicit save for settings changes
+
+### CI/CD
+- **Swift CI workflow** (`.github/workflows/swift-ci.yml`) — `swift test` + `swift build -c release` on every PR to main
+- Uses `macos-latest` runner with `actions/checkout@v6`
+- Complements existing CodeQL weekly SAST scan
+
+### Bug Fixes
+- Fixed overlay not reading theme colors from config (was using hardcoded values)
+- CodeQL fix: `@MainActor` wrapper in `TextEchoApp.deinit`
+
+### Dependency Updates (Dependabot)
+- `actions/checkout` v4 → v6 (PR #4)
+- `github/codeql-action` v3 → v4 (PR #5)
+
 ## 2026-03-22 — PR #2 Merge + Security/Memory Fixes
 
 ### PR #2 Merge (by Lochie / MachinationsContinued)

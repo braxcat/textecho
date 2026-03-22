@@ -71,18 +71,114 @@ final class OverlayViewModel: ObservableObject {
     }
 }
 
-// MARK: - Color palette (Artificer Cyber)
+// MARK: - Overlay theme (reads from AppConfig)
 
+struct OverlayTheme {
+    static var current: OverlayTheme { OverlayTheme() }
+
+    let recording: Color
+    let processing: Color
+    let success: Color
+    let error: Color
+    let loading: Color
+    let waveform: Color
+    let bgDark: Color
+    let bgLight: Color
+
+    /// Matrix green for logo — derived from success color brightened
+    var logoGreen: Color { success }
+
+    init() {
+        let cfg = AppConfig.shared.model
+        recording = Color(hex: cfg.colorRecording) ?? Color(red: 0.0, green: 1.0, blue: 0.88)
+        processing = Color(hex: cfg.colorProcessing) ?? Color(red: 0.54, green: 0.36, blue: 0.96)
+        success = Color(hex: cfg.colorSuccess) ?? Color(red: 0.3, green: 0.85, blue: 0.65)
+        error = Color(hex: cfg.colorError) ?? Color(red: 1.0, green: 0.2, blue: 0.2)
+        loading = Color(hex: cfg.colorLoading) ?? Color(red: 1.0, green: 0.76, blue: 0.0)
+        waveform = Color(hex: cfg.colorWaveform) ?? Color(red: 0.3, green: 0.6, blue: 0.9)
+        bgDark = Color(hex: cfg.colorBgDark) ?? Color(red: 0.04, green: 0.04, blue: 0.1)
+        bgLight = Color(hex: cfg.colorBgLight) ?? Color(red: 0.06, green: 0.06, blue: 0.14)
+    }
+
+    /// Named presets
+    static let presets: [String: [String: String]] = [
+        "cyber": [
+            "colorRecording": "#00FFE0",
+            "colorProcessing": "#8A5CF6",
+            "colorSuccess": "#4DD9A6",
+            "colorError": "#FF3333",
+            "colorLoading": "#FFC200",
+            "colorWaveform": "#4D99E6",
+            "colorBgDark": "#0A0A1A",
+            "colorBgLight": "#0F0F24",
+        ],
+        "classic": [
+            "colorRecording": "#4A90D9",
+            "colorProcessing": "#7B68EE",
+            "colorSuccess": "#50C878",
+            "colorError": "#DC3545",
+            "colorLoading": "#FFB347",
+            "colorWaveform": "#6495ED",
+            "colorBgDark": "#1A1A2E",
+            "colorBgLight": "#16213E",
+        ],
+        "ocean": [
+            "colorRecording": "#00CED1",
+            "colorProcessing": "#4169E1",
+            "colorSuccess": "#20B2AA",
+            "colorError": "#FF6B6B",
+            "colorLoading": "#48D1CC",
+            "colorWaveform": "#5F9EA0",
+            "colorBgDark": "#0B132B",
+            "colorBgLight": "#1C2541",
+        ],
+        "sunset": [
+            "colorRecording": "#FF6B35",
+            "colorProcessing": "#D63384",
+            "colorSuccess": "#FFC107",
+            "colorError": "#DC3545",
+            "colorLoading": "#FF8C42",
+            "colorWaveform": "#E85D75",
+            "colorBgDark": "#1A0A0A",
+            "colorBgLight": "#2D1B1B",
+        ],
+    ]
+}
+
+// MARK: - Color hex parsing
+
+extension Color {
+    init?(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard cleaned.count == 6,
+              let rgb = UInt64(cleaned, radix: 16) else { return nil }
+        let r = Double((rgb >> 16) & 0xFF) / 255.0
+        let g = Double((rgb >> 8) & 0xFF) / 255.0
+        let b = Double(rgb & 0xFF) / 255.0
+        self.init(red: r, green: g, blue: b)
+    }
+
+    func toHex() -> String {
+        guard let components = NSColor(self).usingColorSpace(.sRGB) else { return "#000000" }
+        let r = Int(round(components.redComponent * 255))
+        let g = Int(round(components.greenComponent * 255))
+        let b = Int(round(components.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
+}
+
+// MARK: - Legacy alias for compatibility
 private struct CyberColors {
-    static let cyan = Color(red: 0.0, green: 1.0, blue: 0.88)       // #00FFE0
-    static let magenta = Color(red: 1.0, green: 0.0, blue: 0.4)     // #FF0066
-    static let purple = Color(red: 0.54, green: 0.36, blue: 0.96)   // #8A5CF6
-    static let green = Color(red: 0.2, green: 1.0, blue: 0.2)       // #33FF33 matrix green
-    static let amber = Color(red: 1.0, green: 0.76, blue: 0.0)      // #FFC200
-    static let red = Color(red: 1.0, green: 0.2, blue: 0.2)         // #FF3333
-    static let bgDark = Color(red: 0.04, green: 0.04, blue: 0.1)    // #0A0A1A
-    static let bgMid = Color(red: 0.06, green: 0.06, blue: 0.14)    // #0F0F24
-    static let borderGlow = Color(red: 0.0, green: 0.8, blue: 0.7)  // #00CCB3
+    static var cyan: Color { OverlayTheme.current.recording }
+    static var magenta: Color { Color(red: 1.0, green: 0.0, blue: 0.4) }
+    static var purple: Color { OverlayTheme.current.processing }
+    static var green: Color { OverlayTheme.current.logoGreen }
+    static var amber: Color { OverlayTheme.current.loading }
+    static var red: Color { OverlayTheme.current.error }
+    static var bgDark: Color { OverlayTheme.current.bgDark }
+    static var bgMid: Color { OverlayTheme.current.bgLight }
+    static var borderGlow: Color { OverlayTheme.current.recording.opacity(0.8) }
 }
 
 // MARK: - Main overlay view
@@ -209,40 +305,41 @@ struct OverlayView: View {
 
     @ViewBuilder
     private var statusIndicator: some View {
+        let theme = OverlayTheme.current
         switch viewModel.state {
         case .recording:
             Circle()
-                .fill(Color(red: 0.0, green: 0.9, blue: 1.0))
+                .fill(theme.recording)
                 .frame(width: 8, height: 8)
                 .scaleEffect(pulseScale)
-                .shadow(color: Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0.7), radius: 6)
+                .shadow(color: theme.recording.opacity(0.7), radius: 6)
         case .processing:
             Circle()
-                .fill(CyberColors.purple)
+                .fill(theme.processing)
                 .frame(width: 8, height: 8)
                 .opacity(glowIntensity)
-                .shadow(color: CyberColors.purple.opacity(0.5), radius: 4)
+                .shadow(color: theme.processing.opacity(0.5), radius: 4)
         case .loadingModel:
             Circle()
-                .fill(CyberColors.amber)
+                .fill(theme.loading)
                 .frame(width: 8, height: 8)
                 .opacity(glowIntensity)
-                .shadow(color: CyberColors.amber.opacity(0.6), radius: 4)
+                .shadow(color: theme.loading.opacity(0.6), radius: 4)
         case .downloading:
             Circle()
-                .fill(CyberColors.amber)
+                .fill(theme.loading)
                 .frame(width: 8, height: 8)
-                .shadow(color: CyberColors.amber.opacity(0.5), radius: 4)
+                .shadow(color: theme.loading.opacity(0.5), radius: 4)
         case .result:
             Circle()
-                .fill(Color(red: 0.3, green: 0.85, blue: 0.65))
+                .fill(theme.success)
                 .frame(width: 8, height: 8)
-                .shadow(color: Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.5), radius: 4)
+                .shadow(color: theme.success.opacity(0.5), radius: 4)
         case .error:
             Circle()
-                .fill(CyberColors.red)
+                .fill(theme.error)
                 .frame(width: 8, height: 8)
-                .shadow(color: CyberColors.red.opacity(0.5), radius: 4)
+                .shadow(color: theme.error.opacity(0.5), radius: 4)
         case .hidden:
             EmptyView()
         }
@@ -293,14 +390,15 @@ struct OverlayView: View {
     // MARK: - Colors
 
     private var accentColor: Color {
+        let theme = OverlayTheme.current
         switch viewModel.state {
-        case .recording: return Color(red: 0.0, green: 0.9, blue: 1.0)
-        case .processing: return CyberColors.purple
-        case .loadingModel: return CyberColors.amber
-        case .downloading: return CyberColors.amber
-        case .result(let isLLM): return isLLM ? CyberColors.purple : Color(red: 0.3, green: 0.85, blue: 0.65)
-        case .error: return CyberColors.red
-        case .hidden: return Color(red: 0.3, green: 0.85, blue: 0.65)
+        case .recording: return theme.recording
+        case .processing: return theme.processing
+        case .loadingModel: return theme.loading
+        case .downloading: return theme.loading
+        case .result(let isLLM): return isLLM ? theme.processing : theme.success
+        case .error: return theme.error
+        case .hidden: return theme.success
         }
     }
 
@@ -313,10 +411,11 @@ struct OverlayView: View {
     }
 
     private var resultTextColor: Color {
+        let theme = OverlayTheme.current
         switch viewModel.state {
-        case .result(let isLLM): return isLLM ? CyberColors.purple.opacity(0.9) : Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.9)
-        case .error: return CyberColors.red.opacity(0.9)
-        default: return Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.9)
+        case .result(let isLLM): return isLLM ? theme.processing.opacity(0.9) : theme.success.opacity(0.9)
+        case .error: return theme.error.opacity(0.9)
+        default: return theme.success.opacity(0.9)
         }
     }
 
@@ -352,7 +451,7 @@ struct CyberWaveformView: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(barColor)
                         .frame(width: 6, height: barHeight(level: level, active: isActive))
-                        .shadow(color: isActive ? Color(red: 0.2, green: 0.5, blue: 1.0).opacity(0.5) : .clear, radius: 4)
+                        .shadow(color: isActive ? OverlayTheme.current.waveform.opacity(0.5) : .clear, radius: 4)
                         .animation(.easeOut(duration: 0.06), value: level)
                 }
             }
@@ -360,22 +459,23 @@ struct CyberWaveformView: View {
             // Vertical force-field line at center
             GeometryReader { geo in
                 let lineX = geo.size.width / 2
+                let lineColor = OverlayTheme.current.recording
                 Rectangle()
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0),
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(pulseOpacity),
-                                Color(red: 0.2, green: 1.0, blue: 1.0),
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(pulseOpacity),
-                                Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0),
+                                lineColor.opacity(0),
+                                lineColor.opacity(pulseOpacity),
+                                lineColor,
+                                lineColor.opacity(pulseOpacity),
+                                lineColor.opacity(0),
                             ],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                     .frame(width: 2)
-                    .shadow(color: Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0.8), radius: 6)
+                    .shadow(color: lineColor.opacity(0.8), radius: 6)
                     .position(x: lineX, y: geo.size.height / 2)
             }
             .allowsHitTesting(false)
@@ -389,13 +489,9 @@ struct CyberWaveformView: View {
 
     private func barGradient(index: Int, active: Bool) -> LinearGradient {
         let progress = Double(index) / Double(max(levels.count - 1, 1))
-        // Muted blue (left) → Bright blue (right)
-        let startColor = active
-            ? Color(red: 0.3, green: 0.6, blue: 0.9)
-            : Color(red: 0.3, green: 0.6, blue: 0.9).opacity(0.12)
-        let endColor = active
-            ? Color(red: 0.1, green: 0.4, blue: 0.95)
-            : Color(red: 0.1, green: 0.4, blue: 0.95).opacity(0.12)
+        let waveColor = OverlayTheme.current.waveform
+        let startColor = active ? waveColor : waveColor.opacity(0.12)
+        let endColor = active ? waveColor.opacity(0.8) : waveColor.opacity(0.08)
 
         return LinearGradient(
             colors: [

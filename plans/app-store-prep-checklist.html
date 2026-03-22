@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextEcho: Distribution Prep Checklist</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; padding: 32px; max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 24px; color: #00E6FF; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
+  .phase { margin-bottom: 32px; }
+  .phase-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 12px 16px; background: #111128; border-radius: 8px; border-left: 4px solid #00E6FF; }
+  .phase-header.future { border-left-color: #555; }
+  .phase-header h2 { font-size: 16px; color: #fff; flex: 1; }
+  .phase-header .badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+  .badge.recommended { background: #00E6FF22; color: #00E6FF; }
+  .badge.optional { background: #55555533; color: #888; }
+  .progress { font-size: 12px; color: #00E6FF; font-weight: 600; }
+  .steps { list-style: none; padding-left: 0; }
+  .step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #1a1a2e; }
+  .step:last-child { border-bottom: none; }
+  .step input[type="checkbox"] { margin-top: 3px; accent-color: #00E6FF; width: 16px; height: 16px; flex-shrink: 0; }
+  .step label { flex: 1; cursor: pointer; }
+  .step label .title { font-size: 14px; font-weight: 500; }
+  .step label .detail { font-size: 11px; color: #888; margin-top: 2px; display: block; }
+  .step input:checked + label .title { color: #4DD9A6; text-decoration: line-through; text-decoration-color: #4DD9A655; }
+  .blocker { background: #ff333310; border-left: 3px solid #ff3333; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 12px; }
+  .blocker strong { color: #ff6666; }
+  .info { background: #00E6FF08; border-left: 3px solid #00E6FF33; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 12px; }
+  .info strong { color: #00E6FF; }
+  .comparable { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  .comparable th { text-align: left; padding: 6px 10px; border-bottom: 2px solid #1a1a2e; color: #888; font-weight: 600; }
+  .comparable td { padding: 6px 10px; border-bottom: 1px solid #1a1a2e; }
+  footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #1a1a2e; font-size: 11px; color: #555; text-align: center; }
+  a { color: #00E6FF; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const key = 'textecho-dist-checklist';
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      if (saved[cb.id]) cb.checked = true;
+      cb.addEventListener('change', () => {
+        const state = {};
+        document.querySelectorAll('input[type="checkbox"]').forEach(c => { if (c.checked) state[c.id] = true; });
+        localStorage.setItem(key, JSON.stringify(state));
+        updateProgress();
+      });
+    });
+    updateProgress();
+  });
+  function updateProgress() {
+    document.querySelectorAll('.phase').forEach(phase => {
+      const boxes = phase.querySelectorAll('input[type="checkbox"]');
+      const checked = phase.querySelectorAll('input[type="checkbox"]:checked');
+      const el = phase.querySelector('.progress');
+      if (el && boxes.length) el.textContent = `${checked.length}/${boxes.length}`;
+    });
+  }
+</script>
+</head>
+<body>
+
+<h1>TextEcho Distribution Prep</h1>
+<p class="subtitle">2026-03-22 &mdash; Signed DMG first, App Store later (if needed)</p>
+
+<div class="blocker">
+  <strong>App Store Blockers:</strong> CGEventTap (global hotkeys) and IOKit HID (pedal) are incompatible with the macOS sandbox. TextEcho must distribute outside the App Store to keep its core features. This is the same approach used by Superwhisper, MacWhisper, and similar dictation apps.
+</div>
+
+<div class="phase">
+  <div class="phase-header">
+    <h2>Phase 1: Signed DMG Distribution</h2>
+    <span class="badge recommended">Recommended</span>
+    <span class="progress">0/9</span>
+  </div>
+
+  <ul class="steps">
+    <li class="step">
+      <input type="checkbox" id="p1-0">
+      <label for="p1-0">
+        <span class="title">Enroll in Apple Developer Program</span>
+        <span class="detail"><a href="https://developer.apple.com/programs/">developer.apple.com/programs</a> &mdash; $99/year, up to 48h for approval</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-1">
+      <label for="p1-1">
+        <span class="title">Create signing certificate</span>
+        <span class="detail">Xcode &rarr; Settings &rarr; Accounts &rarr; Manage Certificates &rarr; "Developer ID Application"</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-2">
+      <label for="p1-2">
+        <span class="title">Create entitlements file</span>
+        <span class="detail">mac_app/TextEcho.entitlements &mdash; no sandbox, hardened runtime, disable-library-validation</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-3">
+      <label for="p1-3">
+        <span class="title">Update build script with --sign flag</span>
+        <span class="detail">build_native_app.sh &mdash; hardened runtime + entitlements when signing identity provided</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-4">
+      <label for="p1-4">
+        <span class="title">Create notarization script</span>
+        <span class="detail">notarize.sh &mdash; xcrun notarytool submit + staple</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-5">
+      <label for="p1-5">
+        <span class="title">Generate app-specific password</span>
+        <span class="detail"><a href="https://appleid.apple.com/account/manage">appleid.apple.com</a> &rarr; App-Specific Passwords. Store in Keychain via notarytool.</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-6">
+      <label for="p1-6">
+        <span class="title">Update DMG build to sign + notarize</span>
+        <span class="detail">build_native_dmg.sh &mdash; codesign DMG + notarytool submit + stapler staple</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-7">
+      <label for="p1-7">
+        <span class="title">Build, sign, notarize, test on clean Mac</span>
+        <span class="detail">Verify Gatekeeper accepts without "unidentified developer" warning. Test all features.</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p1-8">
+      <label for="p1-8">
+        <span class="title">Create GitHub Release with signed DMG</span>
+        <span class="detail">git tag v2.1.0, gh release create with DMG attached</span>
+      </label>
+    </li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header future">
+    <h2>Phase 2: CI Release Workflow (Optional)</h2>
+    <span class="badge optional">Nice to have</span>
+    <span class="progress">0/3</span>
+  </div>
+
+  <ul class="steps">
+    <li class="step">
+      <input type="checkbox" id="p2-0">
+      <label for="p2-0">
+        <span class="title">Export signing certificate as P12</span>
+        <span class="detail">Keychain Access &rarr; export cert + key. Add as GitHub secret APPLE_CERTIFICATE_P12.</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p2-1">
+      <label for="p2-1">
+        <span class="title">Add GitHub secrets</span>
+        <span class="detail">APPLE_CERTIFICATE_P12, APPLE_CERTIFICATE_PASSWORD, APPLE_ID, TEAM_ID, APP_SPECIFIC_PASSWORD</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p2-2">
+      <label for="p2-2">
+        <span class="title">Create release.yml workflow</span>
+        <span class="detail">Trigger on tag push (v*), build + sign + notarize + create GitHub Release + upload DMG</span>
+      </label>
+    </li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header future">
+    <h2>Phase 3: App Store (Future, Only If Demand)</h2>
+    <span class="badge optional">Major rework</span>
+    <span class="progress">0/7</span>
+  </div>
+
+  <div class="info">
+    <strong>Note:</strong> This requires removing global hotkeys and pedal support. The App Store version would be significantly limited compared to the direct distribution. Only pursue if there's user demand.
+  </div>
+
+  <ul class="steps">
+    <li class="step">
+      <input type="checkbox" id="p3-0">
+      <label for="p3-0">
+        <span class="title">Replace CGEventTap with NSEvent.addGlobalMonitorForEvents</span>
+        <span class="detail">App-scoped only &mdash; no system-wide hotkeys, must activate app first</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p3-1">
+      <label for="p3-1">
+        <span class="title">Remove StreamDeckPedalMonitor</span>
+        <span class="detail">No sandbox-compatible alternative for USB HID devices</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p3-2">
+      <label for="p3-2">
+        <span class="title">Replace TextInjector (CGEvent keystroke synthesis)</span>
+        <span class="detail">NSPasteboard only &mdash; user must Cmd+V manually</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p3-3">
+      <label for="p3-3">
+        <span class="title">Replace LaunchdManager with SMAppService</span>
+        <span class="detail">macOS 13+ Login Items framework (sandbox-compatible)</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p3-4">
+      <label for="p3-4">
+        <span class="title">Create Xcode project wrapping SwiftPM package</span>
+        <span class="detail">App Store submissions require .xcodeproj (can't submit pure SwiftPM)</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p3-5">
+      <label for="p3-5">
+        <span class="title">Create App Store Connect listing</span>
+        <span class="detail">Screenshots, description, privacy policy, age rating</span>
+      </label>
+    </li>
+    <li class="step">
+      <input type="checkbox" id="p3-6">
+      <label for="p3-6">
+        <span class="title">Submit for App Store review</span>
+        <span class="detail">Expect 1-2 review cycles for Accessibility/Input Monitoring justification</span>
+      </label>
+    </li>
+  </ul>
+</div>
+
+<div class="phase">
+  <div class="phase-header future">
+    <h2>Comparable Apps</h2>
+    <span class="badge optional">Reference</span>
+  </div>
+  <table class="comparable">
+    <tr><th>App</th><th>Distribution</th><th>Price</th><th>Global Hotkeys</th><th>Sandboxed</th></tr>
+    <tr><td>Superwhisper</td><td>Direct (website)</td><td>$8/mo</td><td>Yes</td><td>No</td></tr>
+    <tr><td>MacWhisper</td><td>Direct + App Store</td><td>$15+</td><td>Direct only</td><td>App Store: yes</td></tr>
+    <tr><td>Whisper Transcription</td><td>App Store</td><td>$5</td><td>No</td><td>Yes</td></tr>
+    <tr><td><strong>TextEcho</strong></td><td>Direct (DMG)</td><td>Free</td><td>Yes</td><td>No</td></tr>
+  </table>
+</div>
+
+<footer>
+  TextEcho Distribution Prep &mdash; Plan: <code>bb/dictation-mac/plans/app-store-prep.md</code>
+</footer>
+
+</body>
+</html>

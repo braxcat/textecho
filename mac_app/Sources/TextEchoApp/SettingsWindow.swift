@@ -814,7 +814,7 @@ struct SettingsView: View {
 
                 sectionDivider()
 
-                // MARK: - Unsaved changes indicator + Done button
+                // MARK: - Unsaved changes indicator + Save/Done buttons
                 HStack {
                     if isDirty {
                         HStack(spacing: 4) {
@@ -827,7 +827,12 @@ struct SettingsView: View {
                         }
                     }
                     Spacer()
-                    Button("Done") {
+                    Button("Save") {
+                        save()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!isDirty)
+                    Button("Save & Close") {
                         save()
                         onClose()
                     }

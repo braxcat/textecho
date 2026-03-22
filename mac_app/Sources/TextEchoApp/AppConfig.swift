@@ -89,7 +89,7 @@ final class AppConfig {
         pedalPosition: 1,
         overlayPositionMode: 0,
         whisperModel: "openai_whisper-large-v3_turbo",
-        whisperIdleTimeout: 3600,
+        whisperIdleTimeout: 0,
         inputDeviceUID: "",
         capsLockEnabled: false,
         mouseEnabled: true,
@@ -148,7 +148,7 @@ final class AppConfig {
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
         if let value = obj["overlay_position_mode"] as? Int { updated.overlayPositionMode = value == 1 ? 1 : 0 }
         if let value = obj["whisper_model"] as? String { updated.whisperModel = WhisperKitTranscriber.migrateModelName(value) }
-        if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = max(60, min(value, 86400)) }
+        if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = value == 0 ? 0 : max(60, min(value, 86400)) }
         if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
 
         // New activation mode fields
@@ -216,7 +216,7 @@ final class AppConfig {
         dict["max_history_count"] = model.maxHistoryCount
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
-            try? data.write(to: fileURL)
+            try? data.write(to: fileURL, options: .atomic)
         }
     }
 

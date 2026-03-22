@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 
+@MainActor
 final class AppState {
     private let config = AppConfig.shared
     private let logger = AppLogger.shared
@@ -94,24 +95,25 @@ final class AppState {
     private func startPreloadTask() {
         guard !hasPreloaded else { return }
         hasPreloaded = true
-        Task(priority: .utility) { [weak self] in
-            guard let self else { return }
-            await MainActor.run {
-                self.isModelLoading = true
-                NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
-            }
-            self.overlay.showLoadingModel()
+        isModelLoading = true
+        NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
+        overlay.showLoadingModel()
+        Task.detached(priority: .utility) { [weak self] in
             do {
-                try await self.transcriber.preload()
-                self.logger.info("WhisperKit model preloaded")
+                try await self?.transcriber.preload()
+                await MainActor.run {
+                    self?.logger.info("WhisperKit model preloaded")
+                }
             } catch {
-                self.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self?.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
+                }
             }
             await MainActor.run {
-                self.isModelLoading = false
-                NotificationCenter.default.post(name: Self.modelLoadingNotification, object: false)
+                self?.isModelLoading = false
+                NotificationCenter.default.post(name: AppState.modelLoadingNotification, object: false)
+                self?.overlay.hide()
             }
-            self.overlay.hide()
         }
     }
 

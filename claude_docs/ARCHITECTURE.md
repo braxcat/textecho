@@ -94,3 +94,5 @@ Binary hash caching avoids re-signing when only resource files change (preserves
 | Input monitoring | CGEventTap | System-wide hotkeys without extra frameworks |
 | Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
 | Concurrency | Swift actor for transcriber | No shared mutable state, no data races |
+| Thread safety | @MainActor on AppState | All UI state mutations on main thread; background work via Task.detached |
+| File safety | Atomic writes for config/history | Prevents corruption on crash; history has 0600 permissions |

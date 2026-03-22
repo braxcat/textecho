@@ -17,6 +17,11 @@ let package = Package(
             name: "TextEchoApp",
             dependencies: ["WhisperKit"],
             path: "Sources/TextEchoApp"
+        ),
+        .testTarget(
+            name: "TextEchoTests",
+            dependencies: ["TextEchoApp"],
+            path: "Tests/TextEchoTests"
         )
     ]
 )

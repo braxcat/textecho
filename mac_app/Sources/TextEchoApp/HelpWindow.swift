@@ -38,22 +38,36 @@ struct HelpView: View {
                 // How to Dictate
                 helpSection(title: "How to Dictate") {
                     VStack(alignment: .leading, spacing: 4) {
+                        Text("TextEcho supports two activation modes:")
+                        Text("")
+                        Text("Toggle mode: Press the hotkey once to start recording, press again to stop.")
+                        Text("Hold mode: Hold the hotkey to record, release to stop and transcribe.")
+                        Text("")
                         Text("1. Place your cursor where you want text to appear")
-                        Text("2. Hold the dictation hotkey (default: Ctrl+D) or middle-click")
+                        Text("2. Activate recording with your chosen method (keyboard, mouse, Caps Lock, or pedal)")
                         Text("3. Speak clearly")
-                        Text("4. Release the key — text is transcribed and pasted automatically")
+                        Text("4. Stop recording — text is transcribed and pasted automatically")
                         Text("")
                         Text("Silence auto-stop: Recording stops automatically after a configurable period of silence (default 2.5 seconds).")
+                    }
+                }
+
+                // Activation Methods
+                helpSection(title: "Activation Methods") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Enable one or more methods in Settings:")
+                            .font(.system(size: 12))
+                        shortcutRow(keys: "Caps Lock", action: "Toggle recording on/off")
+                        shortcutRow(keys: "Mouse button", action: "Toggle or hold (configurable button)")
+                        shortcutRow(keys: "Keyboard shortcut", action: "Toggle or hold (default: Ctrl+Opt+Z)")
+                        shortcutRow(keys: "Stream Deck Pedal", action: "Push-to-talk (hold)")
                     }
                 }
 
                 // Keyboard Shortcuts
                 helpSection(title: "Keyboard Shortcuts") {
                     VStack(alignment: .leading, spacing: 6) {
-                        shortcutRow(keys: "Ctrl + D (hold)", action: "Record and transcribe")
-                        shortcutRow(keys: "Ctrl + Shift + D (hold)", action: "Record with LLM processing")
-                        shortcutRow(keys: "Middle mouse (hold)", action: "Record and transcribe")
-                        shortcutRow(keys: "Ctrl + Middle mouse (hold)", action: "Record with LLM processing")
+                        shortcutRow(keys: "Ctrl + Shift + shortcut", action: "Record with LLM processing")
                         shortcutRow(keys: "Cmd + Option + Space", action: "Open Settings")
                         shortcutRow(keys: "Cmd + Option + 1-9", action: "Save clipboard to register")
                         shortcutRow(keys: "Cmd + Option + 0", action: "Clear all registers")
@@ -73,16 +87,37 @@ struct HelpView: View {
                     }
                 }
 
+                // Transcription History
+                helpSection(title: "Transcription History") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TextEcho saves your transcriptions so you can review and re-copy them later.")
+                        Text("")
+                        Text("Access history from the menu bar or via the History window. Recent transcriptions appear in the menu bar for quick re-copy. Configure the maximum number of entries (10-1000) in Settings.")
+                        Text("")
+                        Text("History is stored locally at ~/.textecho_history.json with restricted file permissions (owner-only read/write).")
+                    }
+                }
+
+                // Model Management
+                helpSection(title: "Model Management") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Download, switch, and delete transcription models from Settings > Transcription Model.")
+                        Text("")
+                        Text("Model Memory: Configure how long the model stays in RAM after your last transcription. Options: Never unload (instant, uses ~1.6GB), 1 hour, 4 hours, 8 hours, or a custom duration.")
+                        Text("")
+                        Text("Default is Never — the model stays loaded for instant transcription. Change this in Settings if you need to free RAM.")
+                    }
+                }
+
                 // Settings
                 helpSection(title: "Settings") {
                     VStack(alignment: .leading, spacing: 4) {
-                        settingRow(name: "Mouse Button", desc: "Which mouse button triggers recording (default: middle)")
-                        settingRow(name: "Dictation Key", desc: "Which keyboard key triggers recording (default: D)")
-                        settingRow(name: "Modifiers", desc: "Which modifier keys must be held (default: Ctrl)")
+                        settingRow(name: "Activation", desc: "Enable Caps Lock, mouse, keyboard, or pedal triggers (toggle or hold mode)")
+                        settingRow(name: "Transcription Model", desc: "Active model, download/delete models, idle timeout")
                         settingRow(name: "Silence Duration", desc: "Seconds of silence before auto-stop (default: 2.5)")
                         settingRow(name: "Silence Threshold", desc: "RMS level below which audio is silence (default: 0.015)")
-                        settingRow(name: "Sample Rate", desc: "Audio recording sample rate in Hz (default: 16000)")
-                        settingRow(name: "Transcription Model", desc: "Which Whisper model to use for transcription")
+                        settingRow(name: "History", desc: "Enable/disable transcription history, menu bar display, max entries")
+                        settingRow(name: "Overlay Position", desc: "Fixed position or follow cursor")
                     }
                 }
 
@@ -93,7 +128,19 @@ struct HelpView: View {
                         troubleRow(issue: "No audio captured", fix: "Check Microphone permission. Make sure your mic is selected in System Settings > Sound.")
                         troubleRow(issue: "Model not loading", fix: "Check internet connection for first download. Models are cached locally after first download.")
                         troubleRow(issue: "Transcription is gibberish", fix: "Try the large-v3 model in Settings for better accuracy. Speak clearly and reduce background noise.")
-                        troubleRow(issue: "App uses too much memory", fix: "The model auto-unloads after 1 hour of idle. You can also switch to the smaller base.en model.")
+                        troubleRow(issue: "App uses too much memory", fix: "Set idle timeout in Settings > Transcription Model > Model Memory, or switch to the smaller base.en model.")
+                    }
+                }
+
+                helpSection(title: "More Information") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Full documentation, source code, and issue tracker:")
+                        Button("Open on GitHub") {
+                            if let url = URL(string: "https://github.com/braxcat/textecho") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .font(.system(size: 12))
                     }
                 }
 

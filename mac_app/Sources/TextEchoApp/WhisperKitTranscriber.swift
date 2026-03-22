@@ -72,9 +72,9 @@ actor WhisperKitTranscriber: Transcriber {
 
     // MARK: - Init
 
-    init(modelName: String = "openai_whisper-large-v3_turbo", idleTimeout: Int = 3600) {
+    init(modelName: String = "openai_whisper-large-v3_turbo", idleTimeout: Int = 0) {
         self.modelName = Self.migrateModelName(modelName)
-        self.idleTimeout = TimeInterval(max(60, min(idleTimeout, 86400)))
+        self.idleTimeout = idleTimeout == 0 ? 0 : TimeInterval(max(60, min(idleTimeout, 86400)))
     }
 
     // MARK: - Transcriber protocol
@@ -324,6 +324,10 @@ actor WhisperKitTranscriber: Transcriber {
     }
 
     nonisolated static func deleteModel(_ modelName: String) throws {
+        guard !modelName.contains("..") && !modelName.contains("/") else {
+            throw NSError(domain: "TextEcho", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Invalid model name"])
+        }
         for cacheDir in modelCacheDirectories() {
             guard let contents = try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path) else { continue }
             for entry in contents where matchesModel(entry, modelName) {
@@ -366,6 +370,7 @@ actor WhisperKitTranscriber: Transcriber {
 
     private func resetIdleTimer() {
         idleTask?.cancel()
+        guard idleTimeout > 0 else { return }  // 0 = never unload
         idleTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(self?.idleTimeout ?? 3600) * 1_000_000_000)

@@ -762,17 +762,19 @@ struct SetupWizardView: View {
     private func startModelPreload(modelName: String) {
         loadingModelName = modelName
         Task {
-            let transcriber = WhisperKitTranscriber(
+            var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
                 modelName: modelName,
                 idleTimeout: AppConfig.shared.model.whisperIdleTimeout
             )
             do {
-                try await transcriber.preload()
+                try await transcriber?.preload()
+                transcriber = nil  // Release CoreML models from memory
                 await MainActor.run {
                     loadingModelName = nil
                     if selectedModel == modelName { modelReady = true }
                 }
             } catch {
+                transcriber = nil  // Release on error too
                 await MainActor.run {
                     loadingModelName = nil
                     downloadError = "Model failed to load: \(error.localizedDescription)"
@@ -804,13 +806,15 @@ struct SetupWizardView: View {
         downloadingModel = modelName
         downloadError = nil
         Task {
-            let transcriber = WhisperKitTranscriber(
+            var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
                 modelName: modelName,
                 idleTimeout: AppConfig.shared.model.whisperIdleTimeout
             )
             do {
-                try await transcriber.preload()
+                try await transcriber?.preload()
+                transcriber = nil  // Release CoreML models from memory
             } catch {
+                transcriber = nil  // Release on error too
                 await MainActor.run {
                     self.downloadingModel = nil
                     self.downloadError = "Download failed: \(error.localizedDescription)"

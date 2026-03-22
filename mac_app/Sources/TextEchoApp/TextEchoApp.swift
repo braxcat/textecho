@@ -80,6 +80,7 @@ struct TextEchoApp: App {
     }
 }
 
+@MainActor
 final class AppModel: ObservableObject {
     @Published var menuBarVisible: Bool
     @Published var autostartEnabled: Bool
@@ -291,7 +292,11 @@ final class AppModel: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         notificationObservers.removeAll()
-        appState.stop()
+        // deinit is nonisolated — dispatch to MainActor for @MainActor AppState.stop()
+        let state = appState
+        Task { @MainActor in
+            state.stop()
+        }
     }
 
     // SwiftUI onChange hooks

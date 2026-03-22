@@ -28,7 +28,7 @@ final class UninstallManager {
         }
     }
 
-    private func performUninstall(appState: AppState, moveToTrash: Bool) {
+    @MainActor private func performUninstall(appState: AppState, moveToTrash: Bool) {
         appState.stop()
         LaunchdManager.shared.disable()
         cleanupFiles()

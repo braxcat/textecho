@@ -23,8 +23,8 @@ final class AppState {
     private var isModelLoading = false
     private var hasPreloaded = false
 
-    static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
-    static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
+    nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
+    nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
 
     init() {
         let model = AppConfig.shared.model

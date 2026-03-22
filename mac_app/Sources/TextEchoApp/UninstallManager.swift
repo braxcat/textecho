@@ -1,30 +1,29 @@
 import AppKit
 import Foundation
 
+@MainActor
 final class UninstallManager {
     static let shared = UninstallManager()
 
     private init() {}
 
     func requestUninstall(appState: AppState) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Uninstall TextEcho?"
-            alert.informativeText = "This will stop background services, disable launch-on-login, and remove logs and config files. You will still need to remove macOS permissions manually."
-            alert.addButton(withTitle: "Uninstall")
-            alert.addButton(withTitle: "Uninstall & Move to Trash")
-            alert.addButton(withTitle: "Cancel")
-            alert.alertStyle = .warning
+        let alert = NSAlert()
+        alert.messageText = "Uninstall TextEcho?"
+        alert.informativeText = "This will stop background services, disable launch-on-login, and remove logs and config files. You will still need to remove macOS permissions manually."
+        alert.addButton(withTitle: "Uninstall")
+        alert.addButton(withTitle: "Uninstall & Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
 
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                self.performUninstall(appState: appState, moveToTrash: false)
-            case .alertSecondButtonReturn:
-                self.confirmMoveToTrash(appState: appState)
-            default:
-                break
-            }
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            performUninstall(appState: appState, moveToTrash: false)
+        case .alertSecondButtonReturn:
+            confirmMoveToTrash(appState: appState)
+        default:
+            break
         }
     }
 

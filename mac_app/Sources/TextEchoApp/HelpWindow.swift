@@ -98,6 +98,24 @@ struct HelpView: View {
                     }
                 }
 
+                // Themes
+                helpSection(title: "Themes") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Customize the recording overlay's appearance in Settings.")
+                        Text("")
+                        Text("Built-in presets:")
+                        Text("  TextEcho — bright cyan-blue (the original look)")
+                        Text("  Cyber — teal-green cyberpunk")
+                        Text("  Classic — clean grey")
+                        Text("  Ocean — deep blue")
+                        Text("  Sunset — warm orange-red")
+                        Text("")
+                        Text("Custom themes: Pick the Theme preset dropdown, choose \"Custom\", then use the color pickers to set background, text, accent, and waveform colors.")
+                        Text("")
+                        Text("Save your custom theme: Click \"Save Current…\" to name and save it. Your themes are stored at ~/.textecho_themes.json and appear in the preset picker alongside the built-ins. You can delete custom themes but not built-in ones.")
+                    }
+                }
+
                 // Model Management
                 helpSection(title: "Model Management") {
                     VStack(alignment: .leading, spacing: 4) {
@@ -109,6 +127,24 @@ struct HelpView: View {
                     }
                 }
 
+                // Idle Timeout
+                helpSection(title: "Idle Timeout") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("The idle timeout controls how long the transcription model stays loaded in memory after your last transcription.")
+                        Text("")
+                        Text("When the model is loaded, transcription is instant — no startup delay. But it uses ~1.6GB of RAM (for Large V3 Turbo). If you don't dictate for a while, the model can unload to free that memory. The next transcription will take a few seconds while the model reloads.")
+                        Text("")
+                        Text("Presets in Settings > Model Memory:")
+                        Text("  Never — model stays loaded permanently (best for frequent use)")
+                        Text("  1 hour — unloads after 1 hour of inactivity")
+                        Text("  4 hours — good balance for regular use throughout the day")
+                        Text("  8 hours — unloads overnight if you leave the app running")
+                        Text("  Custom — set any duration in seconds")
+                        Text("")
+                        Text("Recommendation: If you dictate throughout the day, leave it on Never. If you only dictate occasionally, set it to 1 or 4 hours to save RAM when you're not using it.")
+                    }
+                }
+
                 // Settings
                 helpSection(title: "Settings") {
                     VStack(alignment: .leading, spacing: 4) {
@@ -116,6 +152,7 @@ struct HelpView: View {
                         settingRow(name: "Transcription Model", desc: "Active model, download/delete models, idle timeout")
                         settingRow(name: "Silence Duration", desc: "Seconds of silence before auto-stop (default: 2.5)")
                         settingRow(name: "Silence Threshold", desc: "RMS level below which audio is silence (default: 0.015)")
+                        settingRow(name: "Theme", desc: "Choose a preset or create custom colors for the overlay")
                         settingRow(name: "History", desc: "Enable/disable transcription history, menu bar display, max entries")
                         settingRow(name: "Overlay Position", desc: "Fixed position or follow cursor")
                     }

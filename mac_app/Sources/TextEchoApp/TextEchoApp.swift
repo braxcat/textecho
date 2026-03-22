@@ -48,12 +48,10 @@ struct TextEchoApp: App {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(entry.text, forType: .string)
                         }) {
-                            let preview = entry.text.count > 40
-                                ? String(entry.text.prefix(40)) + "…"
-                                : entry.text
-                            Text(preview)
+                            Text(entry.text.count > 120
+                                ? String(entry.text.prefix(120)) + "…"
+                                : entry.text)
                         }
-                        .help(entry.text)
                     }
                     Divider()
                 }

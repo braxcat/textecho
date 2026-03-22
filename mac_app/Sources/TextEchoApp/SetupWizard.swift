@@ -39,13 +39,15 @@ private enum WizardStep: Int, CaseIterable {
     case welcome = 0
     case model = 1
     case activation = 2
-    case ready = 3
+    case customize = 3
+    case ready = 4
 
     var title: String {
         switch self {
         case .welcome: return "Welcome"
         case .model: return "Model"
         case .activation: return "Activation"
+        case .customize: return "Customize"
         case .ready: return "Ready"
         }
     }
@@ -75,6 +77,15 @@ struct SetupWizardView: View {
     }()
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
+    @State private var themePreset: String = AppConfig.shared.model.themePreset
+    @State private var idleTimeoutPreset: Int = {
+        let t = AppConfig.shared.model.whisperIdleTimeout
+        return [0, 3600, 14400, 28800].contains(t) ? t : -1
+    }()
+    @State private var customTimeoutSeconds: String = {
+        let t = AppConfig.shared.model.whisperIdleTimeout
+        return [0, 3600, 14400, 28800].contains(t) ? "" : "\(t)"
+    }()
 
     let onClose: () -> Void
 
@@ -97,6 +108,8 @@ struct SetupWizardView: View {
                         modelStep
                     case .activation:
                         activationStep
+                    case .customize:
+                        customizeStep
                     case .ready:
                         readyStep
                     }
@@ -533,6 +546,106 @@ struct SetupWizardView: View {
         }
     }
 
+    private var customizeStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Customize")
+                    .font(.system(size: 20, weight: .bold))
+                Text("Set your preferred theme and model memory behavior. You can always change these later in Settings.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Theme
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Overlay Theme")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Choose how the recording overlay looks.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                let allPresets = ["textecho", "cyber", "classic", "ocean", "sunset"]
+                ForEach(allPresets, id: \.self) { name in
+                    themeOptionRow(name: name, selected: themePreset == name) {
+                        themePreset = name
+                    }
+                }
+            }
+
+            Divider()
+
+            // Idle Timeout
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Model Memory")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("The transcription model uses ~1.6GB RAM when loaded. Choose how long it stays in memory after your last transcription. \"Never\" keeps it loaded for instant response.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Picker("Unload after", selection: $idleTimeoutPreset) {
+                    Text("Never (always ready)").tag(0)
+                    Text("1 hour").tag(3600)
+                    Text("4 hours").tag(14400)
+                    Text("8 hours").tag(28800)
+                    Text("Custom").tag(-1)
+                }
+                .pickerStyle(.menu)
+
+                if idleTimeoutPreset == -1 {
+                    HStack {
+                        Text("Seconds:")
+                            .font(.system(size: 12))
+                        TextField("e.g. 7200", text: $customTimeoutSeconds)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 100)
+                    }
+                }
+
+                Text(idleTimeoutPreset == 0
+                    ? "Model stays loaded permanently — transcription is always instant."
+                    : "Model unloads after inactivity to free RAM. Next transcription may take a few seconds to reload.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func themeOptionRow(name: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        let descriptions: [String: String] = [
+            "textecho": "Bright cyan-blue — the original look",
+            "cyber": "Teal-green cyberpunk",
+            "classic": "Clean grey",
+            "ocean": "Deep blue",
+            "sunset": "Warm orange-red"
+        ]
+        return Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: selected ? "circle.inset.filled" : "circle")
+                    .font(.system(size: 14))
+                    .foregroundColor(selected ? .accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name.capitalized)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(descriptions[name] ?? "")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .padding(8)
+            .background(selected ? Color.accentColor.opacity(0.06) : Color.clear)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(selected ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.15), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private func activationOptionCard<Extra: View>(
         icon: String,
@@ -651,10 +764,17 @@ struct SetupWizardView: View {
             case .activation:
                 Button("Next") {
                     saveActivationConfig()
-                    currentStep = .ready
+                    currentStep = .customize
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!capsLockEnabled && !mouseEnabled && !keyboardEnabled && !pedalEnabled)
+
+            case .customize:
+                Button("Next") {
+                    saveCustomizeConfig()
+                    currentStep = .ready
+                }
+                .buttonStyle(.borderedProminent)
 
             case .ready:
                 Button("Start Using TextEcho") {
@@ -674,7 +794,8 @@ struct SetupWizardView: View {
         case .welcome: break
         case .model: currentStep = .welcome
         case .activation: currentStep = .model
-        case .ready: currentStep = .activation
+        case .customize: currentStep = .activation
+        case .ready: currentStep = .customize
         }
     }
 
@@ -688,6 +809,19 @@ struct SetupWizardView: View {
             model.triggerButton = triggerButtonChoice
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
+        }
+    }
+
+    private func saveCustomizeConfig() {
+        let timeout: Int
+        if idleTimeoutPreset == -1 {
+            timeout = Int(customTimeoutSeconds) ?? 3600
+        } else {
+            timeout = idleTimeoutPreset
+        }
+        AppConfig.shared.update { model in
+            model.themePreset = themePreset
+            model.whisperIdleTimeout = timeout
         }
     }
 

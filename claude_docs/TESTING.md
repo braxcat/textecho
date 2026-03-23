@@ -22,6 +22,10 @@ Located in `tests/`:
 - `test_minimal_window.py` — minimal window creation test
 - `test_pynput.py` — pynput input test (legacy, may be removed)
 
+## CI
+
+- **`swift-ci.yml`** — GitHub Actions workflow that runs `swift test` and `swift build -c release` on every PR targeting `main`. Uses macOS runners with Xcode.
+
 ## Future Testing
 
 - Unit tests for UnixSocket protocol serialization

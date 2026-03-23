@@ -21,8 +21,8 @@
 
 ### UI/UX
 - Waveform frequency spectrum visualization
-- Transcription history panel
-- Configurable overlay themes
+- ~~Transcription history panel~~ — **COMPLETE** (shipped PR #8, 2026-03-20)
+- ~~Configurable overlay themes~~ — **COMPLETE** (shipped PR #7, 2026-03-19 — 5 presets + full customization)
 - Global search across past transcriptions
 
 ### System Integration

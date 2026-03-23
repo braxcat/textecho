@@ -1,5 +1,7 @@
 # TextEcho UX Polish Plan
 
+> **Phases 1–3 shipped (2026-03-20) via PRs #7–#9.** Phase 4 items not started.
+
 **Branch:** `feature/ux-polish`
 **Base:** `main` (after WhisperKit merge)
 **Goal:** Make TextEcho feel polished for first-time setup and daily use without breaking the working audio/transcription/pedal stack.

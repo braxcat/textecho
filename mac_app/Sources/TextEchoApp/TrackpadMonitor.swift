@@ -216,7 +216,7 @@ final class TrackpadMonitor {
 
     private func scheduleNextRetry() {
         retryTimer = Timer.scheduledTimer(withTimeInterval: retryInterval, repeats: false) { [weak self] _ in
-            guard let self, !self.connected, let manager = self.manager else { return }
+            guard let self, self.connectedDevices.isEmpty, let manager = self.manager else { return }
             self.retryCount += 1
             if self.retryCount == 1 || self.retryCount % 10 == 0 {
                 AppLogger.shared.info("Magic Trackpad: scanning for device... (attempt \(self.retryCount))")

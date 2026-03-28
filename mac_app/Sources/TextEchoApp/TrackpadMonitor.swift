@@ -25,7 +25,7 @@ final class TrackpadMonitor {
     var onConnectionChanged: ((Bool) -> Void)?
 
     private var manager: IOHIDManager?
-    private var connected = false
+    private var connectedDevices: Set<IOHIDDevice> = []
     private var retryTimer: Timer?
     private var retryInterval: TimeInterval = 3.0
     private var retryCount: Int = 0
@@ -37,7 +37,7 @@ final class TrackpadMonitor {
     // Right-click state tracking
     private var rightButtonDown = false
 
-    var isConnected: Bool { connected }
+    var isConnected: Bool { !connectedDevices.isEmpty }
 
     func start() {
         guard manager == nil else { return }
@@ -45,9 +45,11 @@ final class TrackpadMonitor {
         manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         guard let manager else { return }
 
+        // Match Apple Magic Trackpad over Bluetooth only — skip built-in trackpad (SPI)
         let matchDict: [String: Any] = [
             kIOHIDVendorIDKey as String: Self.vendorID,
             kIOHIDProductIDKey as String: Self.productID,
+            kIOHIDTransportKey as String: "Bluetooth",
         ]
         IOHIDManagerSetDeviceMatching(manager, matchDict as CFDictionary)
 
@@ -59,10 +61,10 @@ final class TrackpadMonitor {
             monitor.deviceConnected(device)
         }, selfPtr)
 
-        IOHIDManagerRegisterDeviceRemovalCallback(manager, { context, _, _, _ in
+        IOHIDManagerRegisterDeviceRemovalCallback(manager, { context, _, _, device in
             guard let context else { return }
             let monitor = Unmanaged<TrackpadMonitor>.fromOpaque(context).takeUnretainedValue()
-            monitor.deviceDisconnected()
+            monitor.deviceDisconnected(device)
         }, selfPtr)
 
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
@@ -82,7 +84,7 @@ final class TrackpadMonitor {
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         self.manager = nil
-        connected = false
+        connectedDevices.removeAll()
         clickStage = 0
         triggerActive = false
         rightButtonDown = false
@@ -95,15 +97,33 @@ final class TrackpadMonitor {
     // MARK: - Device lifecycle
 
     private func deviceConnected(_ device: IOHIDDevice) {
-        connected = true
+        // Skip if already tracking this device (multiple HID interfaces per physical device)
+        guard !connectedDevices.contains(device) else { return }
+
+        // Verify this is actually a Bluetooth device (double-check transport)
+        if let transport = IOHIDDeviceGetProperty(device, kIOHIDTransportKey as CFString) as? String {
+            AppLogger.shared.info("Magic Trackpad device transport: \(transport)")
+            guard transport.lowercased().contains("bluetooth") else {
+                AppLogger.shared.info("Skipping non-Bluetooth trackpad device (transport: \(transport))")
+                return
+            }
+        }
+
+        connectedDevices.insert(device)
         clickStage = 0
         triggerActive = false
         rightButtonDown = false
         stopRetryTimer()
         retryInterval = 3.0
         retryCount = 0
-        AppLogger.shared.info("Magic Trackpad connected")
+        AppLogger.shared.info("Magic Trackpad connected (devices: \(connectedDevices.count))")
         onConnectionChanged?(true)
+
+        // Only receive button events — not touch/movement/pressure (which flood the runloop)
+        let buttonMatch: [String: Any] = [
+            kIOHIDElementUsagePageKey as String: 0x09, // kHIDPage_Button
+        ]
+        IOHIDDeviceSetInputValueMatching(device, buttonMatch as CFDictionary)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -114,18 +134,19 @@ final class TrackpadMonitor {
         }, selfPtr)
     }
 
-    private func deviceDisconnected() {
-        connected = false
-        clickStage = 0
-        // Release trigger if active when device disconnects
-        if triggerActive {
-            triggerActive = false
-            onTriggerUp?()
+    private func deviceDisconnected(_ device: IOHIDDevice) {
+        connectedDevices.remove(device)
+        AppLogger.shared.info("Magic Trackpad disconnected (devices: \(connectedDevices.count))")
+        if connectedDevices.isEmpty {
+            clickStage = 0
+            if triggerActive {
+                triggerActive = false
+                onTriggerUp?()
+            }
+            rightButtonDown = false
+            onConnectionChanged?(false)
+            startRetryTimer()
         }
-        rightButtonDown = false
-        AppLogger.shared.info("Magic Trackpad disconnected")
-        onConnectionChanged?(false)
-        startRetryTimer()
     }
 
     // MARK: - HID input value handling
@@ -144,61 +165,27 @@ final class TrackpadMonitor {
         }
     }
 
-    /// Force click detection via digitizer click stage.
-    /// Apple trackpads report: stage 0 = no click, 1 = normal, 2 = force click.
-    /// We also check button usage page for the click stage transition.
+    /// Force click detection via button events.
+    /// Apple Magic Trackpad reports button 1 for normal click.
+    /// Force click (deep press) triggers button 2 on some models, or
+    /// a distinct button event. We use button 1 as trigger since we're
+    /// only monitoring the external trackpad — normal clicks on this
+    /// device are dedicated to TextEcho when enabled.
     private func handleForceClick(usagePage: UInt32, usage: UInt32, value: Int) {
-        // Digitizer page — look for click/touch pressure or stage
-        // Usage 0x30 = Tip Pressure, 0x3D = Touch Type, various button usages
-        // Apple encodes force click as button with stage info
-        if usagePage == 0x0D { // kHIDPage_Digitizer
-            // Some trackpads report stage via digitizer quality or touch type
-            return
-        }
+        guard usagePage == 0x09 else { return } // kHIDPage_Button
 
-        // Button page — Apple Magic Trackpad reports force click as button events
-        // Button 1 (usage 1) = normal click, but force click triggers a distinct stage
-        if usagePage == 0x09 { // kHIDPage_Button
-            if usage == 1 { // Primary button
-                let newStage = value > 0 ? 1 : 0
-                handleStageTransition(newStage)
-            }
-            // Usage for force click stage varies; some models use button 6 or
-            // report via GenericDesktop with a specific usage
-            return
-        }
+        // Button 1 = primary click (force click also triggers this)
+        guard usage == 1 else { return }
 
-        // Generic Desktop page — some trackpads report click count/stage here
-        if usagePage == 0x01 { // kHIDPage_GenericDesktop
-            // System-defined usages for click stage
-            return
-        }
-    }
-
-    private func handleStageTransition(_ newStage: Int) {
-        let oldStage = clickStage
-        clickStage = newStage
-
-        // Normal click down → potential force click
-        // Force click fires when we detect sustained hard press
-        // For now, use button down as trigger since IOKit stage detection
-        // varies across trackpad firmware versions
-        if newStage == 1 && oldStage == 0 {
-            // Normal click — don't trigger yet, wait for force indication
-            // However, IOKit may not reliably report stage 2 on all models.
-            // If we detect a button down, start trigger immediately for now.
-            // TODO: Refine with pressure/stage detection once we can test on hardware
-            if !triggerActive {
-                triggerActive = true
-                AppLogger.shared.info("Trackpad force click DOWN")
-                onTriggerDown?()
-            }
-        } else if newStage == 0 && oldStage > 0 {
-            if triggerActive {
-                triggerActive = false
-                AppLogger.shared.info("Trackpad force click UP")
-                onTriggerUp?()
-            }
+        let pressed = value > 0
+        if pressed && !triggerActive {
+            triggerActive = true
+            AppLogger.shared.info("Trackpad force click DOWN")
+            onTriggerDown?()
+        } else if !pressed && triggerActive {
+            triggerActive = false
+            AppLogger.shared.info("Trackpad force click UP")
+            onTriggerUp?()
         }
     }
 
@@ -237,6 +224,7 @@ final class TrackpadMonitor {
             let matchDict: [String: Any] = [
                 kIOHIDVendorIDKey as String: Self.vendorID,
                 kIOHIDProductIDKey as String: Self.productID,
+                kIOHIDTransportKey as String: "Bluetooth",
             ]
             IOHIDManagerSetDeviceMatching(manager, matchDict as CFDictionary)
             self.retryInterval = min(self.retryInterval * 2, 60.0)

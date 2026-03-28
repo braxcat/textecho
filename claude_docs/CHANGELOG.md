@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-28 — Event Tap Resilience, Pedal Backoff, Magic Trackpad Support
+
+### Event Tap Health Check
+- **30-second health check timer** in InputMonitor.swift detects when macOS invalidates the CGEventTap mach port during long idle periods
+- Automatically recreates the tap — previously required an app restart
+
+### Pedal Retry Backoff
+- Changed StreamDeckPedalMonitor retry timer from constant 3s polling to **exponential backoff** (3s → 6s → 12s → ... capped at 60s)
+- Reduced log noise: only logs on first scan and every 10th attempt
+
+### Magic Trackpad Support
+- **New activation method:** Apple Magic Trackpad as dictation trigger via IOKit HID
+- Supports **force click** or **right-click** gestures
+- **Toggle or hold** mode (matches other activation methods)
+- Matches all Magic Trackpad models by Apple vendor/product ID
+- Settings UI: enable toggle, gesture picker, mode picker
+- **New files:** TrackpadMonitor.swift, updates to AppConfig.swift, AppState.swift, SettingsWindow.swift
+
 ## 2026-03-22 — Theme Customization + Swift CI (PR #7)
 
 ### Theme System

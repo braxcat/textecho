@@ -155,6 +155,11 @@ struct SettingsView: View {
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
 
+    // Magic Trackpad
+    @State private var trackpadEnabled: Bool = AppConfig.shared.model.trackpadEnabled
+    @State private var trackpadGesture: Int = AppConfig.shared.model.trackpadGesture
+    @State private var trackpadMode: Int = AppConfig.shared.model.trackpadMode
+
     // LLM
     @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
     @State private var llmModelPath: String = AppConfig.shared.model.llmModelPath
@@ -404,6 +409,56 @@ struct SettingsView: View {
                             }
                             .padding(.leading, 30)
                             Text("Left pedal = Paste, Center = Push-to-talk, Right = Enter. Quit Elgato Stream Deck app if not detected.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 30)
+                        }
+                    }
+                }
+
+                activationCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "hand.tap")
+                                .font(.system(size: 15))
+                                .frame(width: 20, height: 20)
+                                .foregroundColor(.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Magic Trackpad")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Use force click or right-click on an external Magic Trackpad to trigger recording.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: dirty($trackpadEnabled)).labelsHidden()
+                        }
+                        if trackpadEnabled {
+                            HStack {
+                                Text("Trigger gesture")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: dirty($trackpadGesture)) {
+                                    Text("Force Click").tag(0)
+                                    Text("Right Click").tag(1)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 200)
+                            }
+                            .padding(.leading, 30)
+                            HStack {
+                                Text("Recording mode")
+                                    .font(.system(size: 12)).foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: dirty($trackpadMode)) {
+                                    Text("Toggle").tag(0)
+                                    Text("Hold").tag(1)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 200)
+                            }
+                            .padding(.leading, 30)
+                            Text("Works with any Apple Magic Trackpad. Does not affect your Mac's built-in trackpad or mouse.")
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                                 .padding(.leading, 30)
@@ -1036,6 +1091,9 @@ struct SettingsView: View {
             model.inputDeviceUID = selectedDeviceUID
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
+            model.trackpadEnabled = trackpadEnabled
+            model.trackpadGesture = trackpadGesture
+            model.trackpadMode = trackpadMode
             model.overlayPositionMode = overlayPositionMode == 1 ? 1 : 0
             model.capsLockEnabled = capsLockEnabled
             model.mouseEnabled = mouseEnabled

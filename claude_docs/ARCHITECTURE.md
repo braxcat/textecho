@@ -16,6 +16,9 @@ TextEcho is a native macOS menu bar application written in Swift. Transcription 
 │  │             │                      │      │
 │  InputMonitor  AudioRecorder  TextInjector   │
 │  (CGEventTap)  (AVAudioEngine) (Cmd+V)      │
+│                                              │
+│  TrackpadMonitor  StreamDeckPedalMonitor     │
+│  (IOKit HID)      (IOKit HID)               │
 │                │                             │
 │  Overlay ◄─────┤                             │
 │  (SwiftUI)     │                             │
@@ -91,7 +94,8 @@ Binary hash caching avoids re-signing when only resource files change (preserves
 | Model loading | Lazy (on first use) | Avoids startup delay; model cached after first download |
 | RAM management | Auto-unload after idle | Frees Neural Engine/RAM when not in use |
 | LLM | Optional Python daemon | Not core feature, rarely used — keep simple |
-| Input monitoring | CGEventTap | System-wide hotkeys without extra frameworks |
+| Input monitoring | CGEventTap | System-wide hotkeys without extra frameworks; 30s health check auto-recreates tap |
+| Trackpad input | IOKit HID (TrackpadMonitor) | Matches Magic Trackpad by vendor/product ID; force click or right-click gestures |
 | Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
 | Concurrency | Swift actor for transcriber | No shared mutable state, no data races |
 | Thread safety | @MainActor on AppState | All UI state mutations on main thread; background work via Task.detached |

@@ -119,11 +119,13 @@ final class TrackpadMonitor {
         AppLogger.shared.info("Magic Trackpad connected (devices: \(connectedDevices.count))")
         onConnectionChanged?(true)
 
-        // Only receive button events — not touch/movement/pressure (which flood the runloop)
-        let buttonMatch: [String: Any] = [
-            kIOHIDElementUsagePageKey as String: 0x09, // kHIDPage_Button
+        // Filter to button + digitizer pages (skip generic desktop / touch coordinates)
+        // Using multiple match via array of dicts
+        let buttonMatch: [[String: Any]] = [
+            [kIOHIDElementUsagePageKey as String: 0x09], // kHIDPage_Button
+            [kIOHIDElementUsagePageKey as String: 0x0D], // kHIDPage_Digitizer
         ]
-        IOHIDDeviceSetInputValueMatching(device, buttonMatch as CFDictionary)
+        IOHIDDeviceSetInputValueMatchingMultiple(device, buttonMatch as CFArray)
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -156,6 +158,9 @@ final class TrackpadMonitor {
         let usagePage = IOHIDElementGetUsagePage(element)
         let usage = IOHIDElementGetUsage(element)
         let intValue = IOHIDValueGetIntegerValue(value)
+
+        // Debug: log all incoming HID values to understand what the trackpad reports
+        AppLogger.shared.info("Trackpad HID: page=0x\(String(usagePage, radix: 16)) usage=0x\(String(usage, radix: 16)) value=\(intValue)")
 
         switch gesture {
         case .forceClick:

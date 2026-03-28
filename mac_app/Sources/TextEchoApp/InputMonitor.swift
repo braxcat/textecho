@@ -270,8 +270,8 @@ final class InputMonitor {
             return
         }
         if !CGEvent.tapIsEnabled(tap: tap) {
-            AppLogger.shared.warn("Health check: event tap disabled — re-enabling")
-            CGEvent.tapEnable(tap: tap, enable: true)
+            AppLogger.shared.warn("Health check: event tap disabled — recreating tap (re-enable insufficient)")
+            restart()
         }
     }
 

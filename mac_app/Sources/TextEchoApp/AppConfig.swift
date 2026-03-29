@@ -38,6 +38,10 @@ final class AppConfig {
         // Stream Deck Pedal
         var pedalEnabled: Bool
         var pedalPosition: Int // 0=left, 1=center, 2=right
+        // Magic Trackpad
+        var trackpadEnabled: Bool
+        var trackpadGesture: Int    // 0=forceClick, 1=rightClick
+        var trackpadMode: Int       // 0=toggle, 1=hold
         // Overlay
         var overlayPositionMode: Int // 0=static bottom middle, 1=follow cursor
         // WhisperKit
@@ -98,6 +102,9 @@ final class AppConfig {
         llmSocket: "/tmp/textecho_llm.sock",
         pedalEnabled: false,
         pedalPosition: 1,
+        trackpadEnabled: false,
+        trackpadGesture: 0,
+        trackpadMode: 1,
         overlayPositionMode: 0,
         whisperModel: "openai_whisper-large-v3_turbo",
         whisperIdleTimeout: 0,
@@ -166,6 +173,9 @@ final class AppConfig {
         if let value = obj["llm_socket"] as? String { updated.llmSocket = value }
         if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
+        if let v = obj["trackpad_enabled"] as? Bool { updated.trackpadEnabled = v }
+        if let v = obj["trackpad_gesture"] as? Int { updated.trackpadGesture = max(0, min(v, 1)) }
+        if let v = obj["trackpad_mode"] as? Int { updated.trackpadMode = max(0, min(v, 1)) }
         if let value = obj["overlay_position_mode"] as? Int { updated.overlayPositionMode = value == 1 ? 1 : 0 }
         if let value = obj["whisper_model"] as? String { updated.whisperModel = WhisperKitTranscriber.migrateModelName(value) }
         if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = value == 0 ? 0 : max(60, min(value, 86400)) }
@@ -232,6 +242,9 @@ final class AppConfig {
         dict["llm_socket"] = model.llmSocket
         dict["pedal_enabled"] = model.pedalEnabled
         dict["pedal_position"] = model.pedalPosition
+        dict["trackpad_enabled"] = model.trackpadEnabled
+        dict["trackpad_gesture"] = model.trackpadGesture
+        dict["trackpad_mode"] = model.trackpadMode
         dict["overlay_position_mode"] = model.overlayPositionMode
         dict["whisper_model"] = model.whisperModel
         dict["whisper_idle_timeout"] = model.whisperIdleTimeout

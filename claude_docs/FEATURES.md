@@ -1,7 +1,7 @@
 # Features
 
 ## Voice-to-Text Dictation
-- Multiple activation methods: Caps Lock, mouse button, keyboard shortcut, Stream Deck Pedal
+- Multiple activation methods: Caps Lock, mouse button, keyboard shortcut, Stream Deck Pedal, Magic Trackpad
 - Toggle mode (press to start/stop) and Hold mode (hold to record, release to stop)
 - Automatic silence detection (configurable threshold + duration)
 - Automatic text paste into active window via clipboard + Cmd+V
@@ -58,9 +58,16 @@
 ## Stream Deck Pedal
 - Elgato Stream Deck Pedal via IOKit HID (shared mode, no Elgato software needed)
 - Per-pedal actions: center=push-to-talk, left=paste (Cmd+V), right=enter
-- 3-second auto-detect timer — no unplug/replug needed
+- Exponential backoff auto-detect (3s → 6s → 12s → ... capped at 60s) — reduced log noise
 - Auto-reconnect after disconnect
 - Configurable push-to-talk pedal position (left/center/right)
+
+## Magic Trackpad
+- Apple Magic Trackpad as dictation trigger via IOKit HID
+- Gesture options: force click or right-click
+- Toggle mode (tap to start/stop) and Hold mode (hold to record, release to stop)
+- Matches all Magic Trackpad models by Apple vendor/product ID
+- Settings UI: enable toggle, gesture picker, mode picker
 
 ## Setup Wizard
 - 6-step walkthrough: Welcome → Accessibility → Microphone → Model → Pedal → Ready
@@ -102,7 +109,7 @@
 - Autostart via launchd plist management
 - Menu bar icon with daemon controls
 - Log viewer (app + Python daemon logs)
-- CGEventTap for global input monitoring
+- CGEventTap for global input monitoring (30s health check timer, auto-recreates if macOS invalidates mach port)
 - Developer ID signed .app bundle (ad-hoc for dev builds)
 - `rebuild.sh` — one-command pull + build + deploy + launch
 - `uninstall.sh` — full cleanup (app, config, models, logs, permissions)

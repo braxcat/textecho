@@ -36,6 +36,8 @@ final class StreamDeckPedalMonitor {
     private var pedalStates: [Bool] = [false, false, false]
     private var connected = false
     private var retryTimer: Timer?
+    private var retryInterval: TimeInterval = 3.0
+    private var retryCount: Int = 0
 
     init() {
         reportBuffer = .allocate(capacity: Self.reportBufferSize)
@@ -125,6 +127,8 @@ final class StreamDeckPedalMonitor {
         connected = true
         pedalStates = [false, false, false]
         stopRetryTimer()
+        retryInterval = 3.0
+        retryCount = 0
         AppLogger.shared.info("Stream Deck Pedal connected")
         onConnectionChanged?(true)
 
@@ -157,14 +161,25 @@ final class StreamDeckPedalMonitor {
 
     private func startRetryTimer() {
         guard retryTimer == nil else { return }
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        scheduleNextRetry()
+    }
+
+    private func scheduleNextRetry() {
+        retryTimer = Timer.scheduledTimer(withTimeInterval: retryInterval, repeats: false) { [weak self] _ in
             guard let self, !self.connected, let manager = self.manager else { return }
-            AppLogger.shared.info("Stream Deck Pedal: scanning for device...")
+            self.retryCount += 1
+            // Log on first scan, then every 10th to reduce noise
+            if self.retryCount == 1 || self.retryCount % 10 == 0 {
+                AppLogger.shared.info("Stream Deck Pedal: scanning for device... (attempt \(self.retryCount))")
+            }
             let matchDict: [String: Any] = [
                 kIOHIDVendorIDKey as String: Self.vendorID,
                 kIOHIDProductIDKey as String: Self.productID,
             ]
             IOHIDManagerSetDeviceMatching(manager, matchDict as CFDictionary)
+            // Exponential backoff: 3s → 6s → 12s → 24s → 48s → 60s (cap)
+            self.retryInterval = min(self.retryInterval * 2, 60.0)
+            self.scheduleNextRetry()
         }
     }
 

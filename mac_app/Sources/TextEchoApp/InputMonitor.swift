@@ -21,6 +21,7 @@ final class InputMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var configObserver: NSObjectProtocol?
+    private var healthCheckTimer: Timer?
 
     private var triggerButton: Int { AppConfig.shared.triggerButton }
     private var dictationKeyCode: Int { AppConfig.shared.dictationKeyCode }
@@ -72,11 +73,14 @@ final class InputMonitor {
         }
         CGEvent.tapEnable(tap: eventTap, enable: true)
 
+        startHealthCheckTimer()
         setupConfigObserverIfNeeded()
         syncCapsLockStateIfNeeded()
     }
 
     func stop() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = nil
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -99,7 +103,7 @@ final class InputMonitor {
         // macOS disables the event tap if our callback takes too long — re-enable it.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap {
-                AppLogger.shared.info("Event tap was disabled by system, re-enabling")
+                AppLogger.shared.warn("Event tap was disabled by system (\(type.rawValue)), re-enabling")
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
             return Unmanaged.passUnretained(event)
@@ -243,6 +247,37 @@ final class InputMonitor {
     private func syncCapsLockStateIfNeeded() {
         guard AppConfig.shared.model.capsLockEnabled else { return }
         onEvent?(.capsLockChanged(NSEvent.modifierFlags.contains(.capsLock)))
+    }
+
+    // MARK: - Health check
+
+    private func startHealthCheckTimer() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.checkTapHealth()
+        }
+    }
+
+    private func checkTapHealth() {
+        guard let tap = eventTap else {
+            AppLogger.shared.error("Health check: event tap is nil — recreating")
+            restart()
+            return
+        }
+        if !CFMachPortIsValid(tap) {
+            AppLogger.shared.error("Health check: mach port invalidated by macOS — recreating tap")
+            restart()
+            return
+        }
+        if !CGEvent.tapIsEnabled(tap: tap) {
+            AppLogger.shared.warn("Health check: event tap disabled — recreating tap (re-enable insufficient)")
+            restart()
+        }
+    }
+
+    private func restart() {
+        stop()
+        start()
     }
 
     private func modifierFlags(from stored: UInt) -> CGEventFlags {

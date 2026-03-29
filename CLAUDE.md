@@ -79,6 +79,9 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 | `whisper_idle_timeout` | `3600` | Seconds before model unloads from RAM |
 | `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
 | `llm_model_path` | `""` | Path to GGUF model file |
+| `trackpad_enabled` | `false` | Enable Magic Trackpad as dictation trigger |
+| `trackpad_gesture` | `force_click` | Trackpad gesture: `force_click` or `right_click` |
+| `trackpad_mode` | `hold` | Trackpad mode: `hold` or `toggle` |
 
 ## Hotkeys
 
@@ -91,6 +94,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 | Save clipboard to register | Cmd+Option+[1-9] |
 | Clear all registers | Cmd+Option+0 |
 | Settings dialog | Cmd+Option+Space |
+| Transcribe & paste (trackpad) | Force click or right-click (configurable) |
 | Cancel recording | ESC |
 
 ## Development Guidelines
@@ -151,6 +155,7 @@ dictation-mac/
 │       ├── UninstallManager.swift    # Cleanup helper
 │       ├── RestoreWindow.swift       # Window restore helper
 │       ├── StreamDeckPedalMonitor.swift # IOKit HID pedal monitor
+│       ├── TrackpadMonitor.swift      # IOKit HID Magic Trackpad monitor
 │       ├── TextEchoApp.swift         # @main SwiftUI app + menu bar
 │       └── AppLogger.swift           # File logging
 ├── llm_daemon.py                     # Optional LLM daemon (llama-cpp)

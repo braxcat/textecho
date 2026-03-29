@@ -12,6 +12,7 @@ final class AppState {
     private let textInjector = TextInjector()
     private let pythonServices = PythonServiceManager()
     private let pedalMonitor = StreamDeckPedalMonitor()
+    private let trackpadMonitor = TrackpadMonitor()
 
     private let transcriber: WhisperKitTranscriber
 
@@ -60,6 +61,11 @@ final class AppState {
             startPedalMonitor()
         }
 
+        // Magic Trackpad — force click / right-click trigger
+        if config.model.trackpadEnabled {
+            startTrackpadMonitor()
+        }
+
         // Pre-warm only on non-first-launch when model is already downloaded.
         // On first launch the setup wizard handles loading inline.
         if config.model.firstLaunch {
@@ -80,6 +86,7 @@ final class AppState {
         logger.info("Stopping TextEcho")
         inputMonitor.stop()
         pedalMonitor.stop()
+        trackpadMonitor.stop()
         recorder.stop()
         overlay.hide()
         pythonServices.stopAll()
@@ -336,6 +343,35 @@ final class AppState {
             self?.logger.info("Stream Deck Pedal \(connected ? "connected" : "disconnected")")
         }
         pedalMonitor.start()
+    }
+
+    private func startTrackpadMonitor() {
+        trackpadMonitor.gesture = TrackpadGesture(rawValue: config.model.trackpadGesture) ?? .forceClick
+
+        if config.model.trackpadMode == 0 {
+            // Toggle mode
+            trackpadMonitor.onTriggerDown = { [weak self] in
+                if self?.isRecording == true {
+                    self?.endRecording(userInitiated: true)
+                } else {
+                    self?.beginRecording(mode: .standard)
+                }
+            }
+            trackpadMonitor.onTriggerUp = nil
+        } else {
+            // Hold mode (default)
+            trackpadMonitor.onTriggerDown = { [weak self] in
+                self?.beginRecording(mode: .standard)
+            }
+            trackpadMonitor.onTriggerUp = { [weak self] in
+                self?.endRecording(userInitiated: true)
+            }
+        }
+
+        trackpadMonitor.onConnectionChanged = { [weak self] connected in
+            self?.logger.info("Magic Trackpad \(connected ? "connected" : "disconnected")")
+        }
+        trackpadMonitor.start()
     }
 
     private func cleanStaleSocket(path: String) {

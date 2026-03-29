@@ -22,6 +22,27 @@
 - `.github/CODEOWNERS` — require review on workflow and signing file changes
 - `docs/SIGNING.md` — signing architecture and secret rotation documentation
 
+## 2026-03-28 — Event Tap Resilience, Pedal Backoff, Magic Trackpad
+
+**Focus:** CGEventTap health monitoring, pedal retry improvements, Magic Trackpad as new activation method
+
+### Event Tap Health Check
+- Added 30-second health check timer in InputMonitor.swift
+- Detects macOS invalidating the CGEventTap mach port during long idle periods
+- Automatically recreates the tap (previously required app restart)
+
+### Pedal Retry Backoff
+- Changed StreamDeckPedalMonitor from constant 3s polling to exponential backoff (3s → 60s cap)
+- Reduced log noise: first scan + every 10th attempt only
+
+### Magic Trackpad Support
+- New TrackpadMonitor.swift — IOKit HID monitor for Apple Magic Trackpad
+- Supports force click and right-click gestures, toggle and hold modes
+- Matches all Magic Trackpad models by vendor/product ID
+- Added trackpad config fields to AppConfig.swift
+- Added trackpad integration to AppState.swift
+- Added Settings UI: enable toggle, gesture picker, mode picker in SettingsWindow.swift
+
 ## 2026-03-22 — Theme Customization + Swift CI
 
 **Focus:** Theme presets, custom color picker, CI workflow, dependency updates

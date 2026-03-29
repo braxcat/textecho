@@ -1,12 +1,13 @@
 # Changelog
 
-## 2026-03-29 — Parakeet TDT Transcription Engine
+## v2.2.0 (2026-03-29) — Parakeet TDT Transcription Engine
 
 ### Dual-Engine Transcription
 - **Parakeet TDT v3** added as default transcription engine via FluidAudio SDK
-- 2.1% WER (vs Whisper 7.8%), 3-6x faster inference, 600M params, 25 European languages
+- Evaluated every major local STT model available in 2026 (Whisper variants, Distil-Whisper, Moonshine, NVIDIA Canary/Parakeet, Apple SpeechAnalyzer, MLX Whisper) — Parakeet TDT v3 was the clear winner: 2.1% WER vs Whisper's 7.8% (3.7x more accurate), 3-6x faster inference, smaller model (600M vs 809M params)
+- Only model with Core ML support, a Swift SDK (FluidAudio), and better accuracy than Whisper combined
 - Runs on Apple Neural Engine via Core ML (all Apple Silicon M1-M4, macOS 14+)
-- WhisperKit retained as fallback engine — user selects in Setup Wizard or Settings
+- WhisperKit retained as fallback for rare language support (99 languages vs Parakeet's 25) — user selects in Setup Wizard or Settings
 
 ### New Files
 - **`ParakeetTranscriber.swift`** — actor conforming to Transcriber protocol, FluidAudio SDK integration

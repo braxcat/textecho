@@ -1,4 +1,4 @@
-# TextEcho — Next Steps (updated 2026-03-22)
+# TextEcho — Next Steps (updated 2026-03-29)
 
 ## Completed (2026-03-22)
 
@@ -18,6 +18,15 @@
 - **PR #9 merged** — help window (themes + idle timeout sections), double privacy prompt fix, wizard Customize step (theme picker with color swatches, silence slider, model memory), Settings silence slider
 - **README updated** — contributor credit for Lochie, setup wizard description
 
+## Completed (2026-03-29)
+
+- **Signed release pipeline:** Developer ID signing, notarization, GitHub Actions release workflow (v* tags), Sigstore attestation
+- **Parakeet TDT v3 (v2.2.0):** Default transcription engine. Evaluated all major local STT models (Whisper, Distil-Whisper, Moonshine, NVIDIA Canary/Parakeet, Apple SpeechAnalyzer, MLX Whisper). Parakeet won on accuracy (2.1% WER, 3.7x better than Whisper), speed (3-6x faster), and Swift support (FluidAudio SDK, Core ML). WhisperKit kept as fallback for 99 languages vs Parakeet's 25.
+
 ## Next
 
-- [ ] **App Store prep** — Code signing, sandbox entitlements, App Store Connect setup
+- [ ] **Auto-update mechanism** — Sparkle or similar for in-app updates
+- [ ] **Apple SpeechAnalyzer** — Evaluate as third engine option when macOS 26 ships
+- [ ] **App Store distribution** — Sandbox entitlements, App Store Connect setup
+- [ ] **Multi-language improvements** — Parakeet supports 25 European languages; test and document language switching
+- [ ] **Speaker diarization** — Identify different speakers in multi-person dictation

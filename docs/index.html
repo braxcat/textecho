@@ -226,7 +226,7 @@ footer a{color:var(--cyan)}
 <!-- ════ Hero ════ -->
 <section class="hero">
   <div class="logo"><span class="logo-text">TEXT</span><span class="logo-echo">ECHO</span></div>
-  <p class="tagline">Voice-to-text. Local. Instant.</p>
+  <p class="tagline">Voice-to-text. Local. Instant. 3.7x more accurate than Whisper.</p>
   <div class="waveform" id="heroWaveform"></div>
   <div class="btn-row">
     <a href="https://github.com/braxcat/textecho/releases/latest" class="btn-primary">Download DMG</a>
@@ -247,7 +247,7 @@ footer a{color:var(--cyan)}
       <div class="step">
         <div class="step-num">2</div>
         <h3>Speak</h3>
-        <p>Talk naturally. WhisperKit transcribes locally on Apple&nbsp;Silicon — nothing leaves your Mac.</p>
+        <p>Talk naturally. Parakeet TDT transcribes locally on Apple&nbsp;Silicon — nothing leaves your Mac.</p>
       </div>
       <div class="step">
         <div class="step-num">3</div>
@@ -265,8 +265,8 @@ footer a{color:var(--cyan)}
     <div class="features-grid">
       <div class="card">
         <div class="card-icon">🧠</div>
-        <h3>Local Transcription</h3>
-        <p>WhisperKit runs on Apple Neural Engine. No cloud, no network, no latency. Fully offline after first model download.</p>
+        <h3>Parakeet TDT Engine</h3>
+        <p>NVIDIA Parakeet TDT v3 — 2.1% word error rate, 3-6x faster than Whisper. Runs on Apple Neural Engine via Core ML. Whisper available as fallback.</p>
       </div>
       <div class="card">
         <div class="card-icon">🎨</div>
@@ -460,7 +460,7 @@ const tabs = document.querySelectorAll('.demo-tab');
 
 const states = {
   recording: { status: 'Recording', text: 'Listening...' },
-  processing: { status: 'Processing', text: 'Transcribing with WhisperKit...' },
+  processing: { status: 'Processing', text: 'Transcribing with Parakeet TDT...' },
   done: { status: 'Done', text: '"Voice-to-text that just works."' }
 };
 

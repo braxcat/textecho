@@ -1,5 +1,9 @@
 # TextEcho: Parakeet TDT Integration Plan
 
+**STATUS: COMPLETE (v2.2.0, 2026-03-29)**
+
+All phases implemented and shipped. Parakeet TDT v3 is the default engine. WhisperKit retained as fallback. See `claude_docs/CHANGELOG.md` for release details.
+
 ## Summary
 
 Replace WhisperKit as the default transcription engine with NVIDIA Parakeet TDT via FluidAudio SDK. Keep WhisperKit as a fallback option.

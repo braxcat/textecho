@@ -12,8 +12,28 @@
 | 6 | COMPLETE | MLX Whisper Upgrade — mlx-whisper + large-v3-turbo |
 | 7 | COMPLETE | Native WhisperKit Migration — replace Python daemon with Swift WhisperKit |
 | 8 | COMPLETE | UX Polish — pedal actions, auto-detect, cyberpunk overlay, wizard redesign |
-| 9 | PLANNED | Distribution — DMG signing, notarization, auto-update |
-| 10 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
+| 9 | COMPLETE | Signed Release Pipeline — Developer ID signing, notarization, GitHub Actions |
+| 10 | COMPLETE | Parakeet TDT Integration — dual-engine transcription, Parakeet default |
+| 11 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
+
+## Phase 10: Parakeet TDT Integration (v2.2.0)
+**Status:** COMPLETE
+
+- Evaluated all major local STT models (Whisper, Distil-Whisper, Moonshine, NVIDIA Canary/Parakeet, Apple SpeechAnalyzer, MLX Whisper)
+- Parakeet TDT v3 selected: 2.1% WER (3.7x more accurate than Whisper), 3-6x faster, 600M params
+- ParakeetTranscriber actor via FluidAudio SDK, conforms to existing Transcriber protocol
+- WhisperKit retained as fallback (99 languages vs Parakeet's 25)
+- Engine selection in Setup Wizard and Settings, no rebuild needed
+- CC-BY-4.0 attribution for NVIDIA Parakeet model weights
+
+## Phase 9: Signed Release Pipeline
+**Status:** COMPLETE
+
+- Developer ID signing with hardened runtime
+- Apple notarization via App Store Connect API key
+- GitHub Actions release workflow (triggered by v* tags)
+- Sigstore build attestation for verifiable provenance
+- Tag protection and CODEOWNERS for workflow/signing files
 
 ## Phase 8: UX Polish & Cyberpunk Overlay
 **Status:** COMPLETE
@@ -39,10 +59,10 @@
 - In-app Help window with embedded user documentation
 - macOS 14+ minimum (required by WhisperKit)
 
-## Phase 9+: Future Work (TBD)
+## Phase 11+: Future Work (TBD)
 
-- DMG signing and notarization for distribution
-- Auto-update mechanism
+- **Apple SpeechAnalyzer (macOS 26)** — Apple's on-device speech framework, potential third engine option when macOS 26 ships
+- Auto-update mechanism (Sparkle or similar)
 - Multi-language transcription support
 - Speaker diarization
 - LLM conversation memory across sessions

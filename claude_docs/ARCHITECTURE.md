@@ -83,7 +83,7 @@ Binary hash caching avoids re-signing when only resource files change (preserves
 2. **AppState.start():** starts InputMonitor + AudioRecorder callbacks, pre-warms WhisperKit model via `Task(priority: .utility)`
 3. **First transcription:** WhisperKit downloads Core ML model from HuggingFace (~1.6GB for large-v3-turbo), cached locally
 4. **Recording:** AVAudioEngine tap → PCM buffer → WhisperKitTranscriber.transcribe() → TextInjector.inject()
-5. **Idle:** WhisperKit model auto-unloads after configurable timeout (default 1 hour) to free ~1.6GB RAM
+5. **Idle:** WhisperKit model auto-unloads after configurable timeout (default: never — stays loaded) to free ~1.6GB RAM
 6. **App quit:** AppState.stop() → InputMonitor.stop(), PythonServiceManager.stopAll()
 
 ## CI/Release Pipeline

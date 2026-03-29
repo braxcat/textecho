@@ -51,10 +51,12 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 ```
 TextEcho.app (Swift)
 ├── AppMain → AppState (orchestrator)
-├── InputMonitor (CGEventTap → hotkeys)
+├── InputMonitor (CGEventTap → hotkeys, 30s health check timer)
 ├── AudioRecorder (AVAudioEngine → PCM)
 ├── WhisperKitTranscriber (Core ML → Neural Engine)
 │   └── Transcriber protocol (swappable backend)
+├── StreamDeckPedalMonitor (IOKit HID, exponential backoff retry)
+├── TrackpadMonitor (IOKit HID, disabled by default)
 ├── Overlay (SwiftUI floating window)
 ├── TextInjector (clipboard + Cmd+V paste)
 ├── HelpWindow (embedded user docs)
@@ -76,7 +78,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 | `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
 | `silence_duration` | `2.5` | Seconds before auto-stop |
 | `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
-| `whisper_idle_timeout` | `3600` | Seconds before model unloads from RAM |
+| `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
 | `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
 | `llm_model_path` | `""` | Path to GGUF model file |
 | `trackpad_enabled` | `false` | Enable Magic Trackpad as dictation trigger |

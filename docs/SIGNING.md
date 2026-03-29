@@ -29,7 +29,7 @@ Developer pushes tag v*.*.* → GitHub Actions (release.yml)
 | App Store Connect API key | Scoped to ASC only (not full Apple ID access) |
 | CODEOWNERS | Workflow changes require @braxcat review |
 | Sigstore attestation | Cryptographic proof of build provenance |
-| Minimal entitlements | Only `audio-input` — each entitlement weakens hardened runtime |
+| Minimal entitlements | `audio-input` + `network.client` (for WhisperKit model download) — each entitlement weakens hardened runtime |
 
 ## Local Signing
 

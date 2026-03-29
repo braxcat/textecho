@@ -14,7 +14,7 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 - **Developer ID signed** with hardened runtime (`--options runtime`)
 - **Apple notarized** via App Store Connect API key — no Gatekeeper warnings
 - **Sigstore build attestation** — verifiable build provenance on GitHub Releases
-- **Entitlements:** `mac_app/TextEcho.entitlements` — non-sandboxed (CGEventTap + IOKit HID require it), `disable-library-validation` for WhisperKit Core ML model loading
+- **Entitlements:** `mac_app/TextEcho.entitlements` — non-sandboxed (CGEventTap + IOKit HID require it), `audio-input` (microphone), `network.client` (WhisperKit model download from HuggingFace)
 - **Dev builds:** ad-hoc signed (`codesign --force --deep --sign -`) when `--sign` flag is not used
 - Binary hash caching in build script preserves existing permissions when only resource files change
 

@@ -5,7 +5,7 @@
 ### Code Signing & Notarization
 - **Developer ID signing** with hardened runtime in `build_native_app.sh` and `build_native_dmg.sh` (`--sign` flag)
 - **Apple notarization** via App Store Connect API key — no Gatekeeper warnings for end users
-- **Entitlements file** (`mac_app/TextEcho.entitlements`) — non-sandboxed + disable-library-validation for Core ML
+- **Entitlements file** (`mac_app/TextEcho.entitlements`) — non-sandboxed, `audio-input` (microphone) + `network.client` (WhisperKit model download)
 - **Sigstore build attestation** — verifiable build provenance on GitHub Releases
 
 ### GitHub Actions Release Workflow
@@ -33,6 +33,7 @@
 - **Toggle or hold** mode (matches other activation methods)
 - Matches all Magic Trackpad models by Apple vendor/product ID
 - Settings UI: enable toggle, gesture picker, mode picker
+- **Disabled by default** — IOKit HID approach does not reliably detect force click yet; right-click gesture works
 - **New files:** TrackpadMonitor.swift, updates to AppConfig.swift, AppState.swift, SettingsWindow.swift
 
 ## 2026-03-22 — Theme Customization + Swift CI (PR #7)

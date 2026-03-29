@@ -68,6 +68,7 @@
 - Toggle mode (tap to start/stop) and Hold mode (hold to record, release to stop)
 - Matches all Magic Trackpad models by Apple vendor/product ID
 - Settings UI: enable toggle, gesture picker, mode picker
+- **Disabled by default** — IOKit HID approach does not reliably detect force click yet; right-click gesture works
 
 ## Setup Wizard
 - 6-step walkthrough: Welcome → Accessibility → Microphone → Model → Pedal → Ready

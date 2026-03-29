@@ -222,7 +222,7 @@ Elgato Stream Deck Pedal works out of the box via IOKit HID — no Elgato softwa
 | Center | Push-to-talk (hold to record) |
 | Right | Enter |
 
-Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-reconnects on unplug/replug.
+Enable in Settings or `~/.textecho_config`. Auto-detects with exponential backoff (3s to 60s), auto-reconnects on unplug/replug.
 
 ## Security
 

@@ -14,12 +14,22 @@
 - Configurable max entries (10-1000)
 - Stored locally with 0600 file permissions
 
-## Native WhisperKit Transcription
+## Parakeet TDT Transcription (Default)
+- **Default engine** — Parakeet TDT v3 via FluidAudio SDK (Core ML / Apple Neural Engine)
+- 2.1% WER, 600M params, 3-6x faster than Whisper, 25 European languages
+- Available models: Parakeet TDT v3 (default), Parakeet TDT v2 (English-only)
+- Runs on all Apple Silicon Macs (M1-M4), macOS 14+
+- Model weights licensed CC-BY-4.0 (NVIDIA)
+
+## WhisperKit Transcription (Fallback)
 - Apple Silicon native via WhisperKit (Core ML / Apple Neural Engine)
 - No Python process — runs entirely in Swift
-- Default model: large-v3-turbo (~1.6GB download, ~1.6GB RAM, near large-v3 quality)
+- Default Whisper model: large-v3-turbo (~1.6GB download, ~1.6GB RAM, 7.8% WER)
 - Available models: large-v3 (highest quality), base.en (fastest, smallest)
-- Model selection in Setup Wizard and Settings
+
+## Shared Transcription Features
+- Engine selection in Setup Wizard and Settings (`transcription_engine` config field)
+- Model selection per engine in Setup Wizard and Settings
 - Models cached locally after first download — fully offline after that
 - Lazy model loading — first use downloads/loads, subsequent uses instant
 - Configurable idle timeout: Never / 1hr / 4hr / 8hr / Custom (default: Never — stays loaded)

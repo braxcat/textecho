@@ -71,6 +71,7 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 
 ## Dependencies
 
-- **Swift:** WhisperKit (Core ML transcription) — sole third-party dependency
+- **Swift:** FluidAudio (Parakeet TDT transcription, Apache 2.0) and WhisperKit (Whisper transcription) — two third-party Swift dependencies
+- **Model weights:** Parakeet TDT models are licensed CC-BY-4.0 (NVIDIA) — attribution required in distribution
 - **Optional:** llama-cpp-python (for LLM features, build with `--with-llm`)
 - Dependabot monitors for known CVEs in all dependencies

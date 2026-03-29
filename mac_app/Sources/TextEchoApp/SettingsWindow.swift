@@ -116,8 +116,10 @@ struct SettingsView: View {
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
     @State private var silenceThreshold: String = String(AppConfig.shared.model.silenceThreshold)
     @State private var sampleRate: String = String(Int(AppConfig.shared.model.sampleRate))
-    // WhisperKit model
+    // Transcription engine
+    @State private var selectedEngine: String = AppConfig.shared.model.transcriptionEngine
     @State private var selectedWhisperModel: String = AppConfig.shared.model.whisperModel
+    @State private var selectedParakeetModel: String = AppConfig.shared.model.parakeetModel
     @State private var showModelPicker: Bool = false
     @State private var downloadedModelNames: [String] = []
     @State private var idleTimeoutPreset: Int = AppConfig.shared.model.whisperIdleTimeout
@@ -468,39 +470,63 @@ struct SettingsView: View {
 
                 sectionDivider()
 
-                // MARK: - Transcription Model
-                sectionHeader("Transcription Model")
+                // MARK: - Transcription Engine
+                sectionHeader("Transcription Engine")
 
                 HStack {
-                    Text("Active Model")
+                    Text("Engine")
                     Spacer()
-                    if downloadedModelNames.isEmpty {
-                        Text("No models downloaded")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    } else {
-                        Picker("", selection: dirty($selectedWhisperModel)) {
-                            ForEach(downloadedModelNames, id: \.self) { name in
-                                let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == name })
-                                Text(info?.displayName ?? name).tag(name)
+                    Picker("", selection: dirty($selectedEngine)) {
+                        Text("Parakeet (Recommended)").tag("parakeet")
+                        Text("Whisper").tag("whisper")
+                    }
+                    .frame(maxWidth: 220)
+                }
+                .padding(.bottom, 4)
+
+                if selectedEngine == "parakeet" {
+                    Text("NVIDIA Parakeet TDT — 2.1% WER, 3-6x faster than Whisper. Powered by FluidAudio.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 4)
+
+                    HStack {
+                        Text("Model")
+                        Spacer()
+                        Picker("", selection: dirty($selectedParakeetModel)) {
+                            ForEach(ParakeetTranscriber.availableModelList, id: \.name) { model in
+                                Text(model.displayName).tag(model.name)
                             }
                         }
                         .frame(maxWidth: 220)
                     }
-                }
-                .padding(.bottom, 4)
-
-                Text("Select from your downloaded models. The selected model is loaded on your next recording.")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .padding(.top, 2)
+                    .padding(.bottom, 4)
+                } else {
+                    HStack {
+                        Text("Active Model")
+                        Spacer()
+                        if downloadedModelNames.isEmpty {
+                            Text("No models downloaded")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        } else {
+                            Picker("", selection: dirty($selectedWhisperModel)) {
+                                ForEach(downloadedModelNames, id: \.self) { name in
+                                    let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == name })
+                                    Text(info?.displayName ?? name).tag(name)
+                                }
+                            }
+                            .frame(maxWidth: 220)
+                        }
+                    }
                     .padding(.bottom, 4)
 
-                Button("Manage & Download Models…") {
-                    showModelPicker = true
-                }
-                .sheet(isPresented: $showModelPicker) {
-                    ModelPickerView(selectedModel: dirty($selectedWhisperModel))
+                    Button("Manage & Download Models…") {
+                        showModelPicker = true
+                    }
+                    .sheet(isPresented: $showModelPicker) {
+                        ModelPickerView(selectedModel: dirty($selectedWhisperModel))
+                    }
                 }
 
                 // MARK: - Model Memory (Idle Timeout)
@@ -1087,7 +1113,9 @@ struct SettingsView: View {
             model.showMenuBarIcon = showMenuBarIcon
             model.pythonPath = pythonPath
             model.daemonScriptsDir = scriptsDir
+            model.transcriptionEngine = selectedEngine
             model.whisperModel = selectedWhisperModel
+            model.parakeetModel = selectedParakeetModel
             model.inputDeviceUID = selectedDeviceUID
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition

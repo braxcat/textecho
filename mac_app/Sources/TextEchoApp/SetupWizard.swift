@@ -58,7 +58,9 @@ struct SetupWizardView: View {
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
     @State private var micStatus: AVAuthorizationStatus = MicrophoneHelper.authorizationStatus()
     @State private var timer: Timer?
-    @State private var selectedModel: String = AppConfig.shared.model.whisperModel
+    @State private var selectedEngine: String = AppConfig.shared.model.transcriptionEngine
+    @State private var selectedModel: String = AppConfig.shared.model.transcriptionEngine == "whisper"
+        ? AppConfig.shared.model.whisperModel : AppConfig.shared.model.parakeetModel
     @State private var downloadingModel: String? = nil
     @State private var validatingModels: Set<String> = []
     @State private var downloadedModels: Set<String> = []
@@ -90,7 +92,11 @@ struct SetupWizardView: View {
 
     let onClose: () -> Void
 
-    private let curatedModels = WhisperKitTranscriber.availableModelList
+    private let whisperModels = WhisperKitTranscriber.availableModelList
+    private let parakeetModels = ParakeetTranscriber.availableModelList
+    private var curatedModels: [WhisperKitTranscriber.ModelInfo] {
+        whisperModels // Used for Whisper-specific UI (model picker sheet)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -293,12 +299,34 @@ struct SetupWizardView: View {
     private var modelStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Transcription Model")
+                Text("Transcription Engine")
                     .font(.system(size: 20, weight: .bold))
-                Text("Download a model, then select it to load it into memory.")
+                Text("Choose an engine, download a model, then select it to load.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Engine picker
+            Picker("", selection: $selectedEngine) {
+                Text("Parakeet (Recommended)").tag("parakeet")
+                Text("Whisper (Legacy)").tag("whisper")
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: selectedEngine) { _, newEngine in
+                if newEngine == "parakeet" {
+                    selectedModel = AppConfig.shared.model.parakeetModel
+                } else {
+                    selectedModel = AppConfig.shared.model.whisperModel
+                }
+                modelReady = false
+                downloadError = nil
+            }
+
+            if selectedEngine == "parakeet" {
+                Text("Parakeet TDT by NVIDIA — 3.7x better accuracy than Whisper, faster on Apple Silicon.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
 
             if let error = downloadError {
@@ -310,22 +338,38 @@ struct SetupWizardView: View {
                     .cornerRadius(6)
             }
 
-            Text("Recommended Models")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
-                .padding(.bottom, 2)
+            if selectedEngine == "parakeet" {
+                // Parakeet model list
+                Text("Parakeet Models")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 2)
 
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(curatedModels, id: \.name) { model in
-                    modelRow(name: model.name, displayName: model.displayName,
-                             size: sizeFromName(model.name) ?? "", detail: model.description)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(parakeetModels, id: \.name) { model in
+                        modelRow(name: model.name, displayName: model.displayName,
+                                 size: model.version == .v3 ? "~6 GB" : "~6 GB",
+                                 detail: model.description)
+                    }
                 }
-                // Show a non-curated model if it was selected via "Other models"
-                if !curatedModels.map(\.name).contains(selectedModel) {
-                    modelRow(name: selectedModel,
-                             displayName: cleanDisplayName(selectedModel),
-                             size: sizeFromName(selectedModel) ?? "",
-                             detail: "Selected from full model list")
+            } else {
+                // Whisper model list
+                Text("Whisper Models")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 2)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(curatedModels, id: \.name) { model in
+                        modelRow(name: model.name, displayName: model.displayName,
+                                 size: sizeFromName(model.name) ?? "", detail: model.description)
+                    }
+                    if !curatedModels.map(\.name).contains(selectedModel) {
+                        modelRow(name: selectedModel,
+                                 displayName: cleanDisplayName(selectedModel),
+                                 size: sizeFromName(selectedModel) ?? "",
+                                 detail: "Selected from full model list")
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: WhisperKitTranscriber.downloadProgressNotification)) { _ in }
@@ -798,7 +842,12 @@ struct SetupWizardView: View {
             case .model:
                 Button("Next") {
                     AppConfig.shared.update { model in
-                        model.whisperModel = selectedModel
+                        model.transcriptionEngine = selectedEngine
+                        if selectedEngine == "whisper" {
+                            model.whisperModel = selectedModel
+                        } else {
+                            model.parakeetModel = selectedModel
+                        }
                     }
                     currentStep = .activation
                 }
@@ -824,7 +873,12 @@ struct SetupWizardView: View {
                 Button("Start Using TextEcho") {
                     AppConfig.shared.update { model in
                         model.firstLaunch = false
-                        model.whisperModel = selectedModel
+                        model.transcriptionEngine = selectedEngine
+                        if selectedEngine == "whisper" {
+                            model.whisperModel = selectedModel
+                        } else {
+                            model.parakeetModel = selectedModel
+                        }
                     }
                     onClose()
                 }
@@ -899,11 +953,13 @@ struct SetupWizardView: View {
     // MARK: - Logic
 
     private func determineInitialStep() {
-        if !curatedModels.contains(where: { WhisperKitTranscriber.isModelCached($0.name) }) {
-            currentStep = .model
+        let hasCachedModel: Bool
+        if selectedEngine == "parakeet" {
+            hasCachedModel = parakeetModels.contains(where: { ParakeetTranscriber.isModelCached($0.name) })
         } else {
-            currentStep = .welcome
+            hasCachedModel = whisperModels.contains(where: { WhisperKitTranscriber.isModelCached($0.name) })
         }
+        currentStep = hasCachedModel ? .welcome : .model
     }
 
     private func refreshStatus() {
@@ -913,17 +969,29 @@ struct SetupWizardView: View {
 
     private func checkCacheStatus(for modelNames: [String]) {
         for name in modelNames {
-            guard WhisperKitTranscriber.isModelCached(name) else { continue }
+            let isCached: Bool
+            if selectedEngine == "parakeet" {
+                isCached = ParakeetTranscriber.isModelCached(name)
+            } else {
+                isCached = WhisperKitTranscriber.isModelCached(name)
+            }
+            guard isCached else { continue }
             guard !downloadedModels.contains(name) && !validatingModels.contains(name) else { continue }
-            validatingModels.insert(name)
-            Task {
-                let isValid = await WhisperKitTranscriber.validateModel(name)
-                await MainActor.run {
-                    validatingModels.remove(name)
-                    if isValid {
-                        downloadedModels.insert(name)
-                        // Auto-preload if this is the selected model and not loading yet
-                        if name == selectedModel { maybeStartPreload(for: name) }
+
+            if selectedEngine == "parakeet" {
+                // FluidAudio models don't need validation — if cached, they're valid
+                downloadedModels.insert(name)
+                if name == selectedModel { maybeStartPreload(for: name) }
+            } else {
+                validatingModels.insert(name)
+                Task {
+                    let isValid = await WhisperKitTranscriber.validateModel(name)
+                    await MainActor.run {
+                        validatingModels.remove(name)
+                        if isValid {
+                            downloadedModels.insert(name)
+                            if name == selectedModel { maybeStartPreload(for: name) }
+                        }
                     }
                 }
             }
@@ -941,19 +1009,27 @@ struct SetupWizardView: View {
     private func startModelPreload(modelName: String) {
         loadingModelName = modelName
         Task {
-            var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
-                modelName: modelName,
-                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
-            )
             do {
-                try await transcriber?.preload()
-                transcriber = nil  // Release CoreML models from memory
+                if selectedEngine == "parakeet" {
+                    var transcriber: ParakeetTranscriber? = ParakeetTranscriber(
+                        modelName: modelName,
+                        idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+                    )
+                    try await transcriber?.preload()
+                    transcriber = nil
+                } else {
+                    var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
+                        modelName: modelName,
+                        idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+                    )
+                    try await transcriber?.preload()
+                    transcriber = nil
+                }
                 await MainActor.run {
                     loadingModelName = nil
                     if selectedModel == modelName { modelReady = true }
                 }
             } catch {
-                transcriber = nil  // Release on error too
                 await MainActor.run {
                     loadingModelName = nil
                     downloadError = "Model failed to load: \(error.localizedDescription)"
@@ -985,39 +1061,52 @@ struct SetupWizardView: View {
         downloadingModel = modelName
         downloadError = nil
         Task {
-            var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
-                modelName: modelName,
-                idleTimeout: AppConfig.shared.model.whisperIdleTimeout
-            )
             do {
-                try await transcriber?.preload()
-                transcriber = nil  // Release CoreML models from memory
+                if selectedEngine == "parakeet" {
+                    // FluidAudio handles download + load in one call
+                    var transcriber: ParakeetTranscriber? = ParakeetTranscriber(
+                        modelName: modelName,
+                        idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+                    )
+                    try await transcriber?.preload()
+                    transcriber = nil
+                    await MainActor.run {
+                        self.downloadingModel = nil
+                        self.downloadedModels.insert(modelName)
+                        if modelName == self.selectedModel {
+                            self.modelReady = true
+                        }
+                    }
+                } else {
+                    var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
+                        modelName: modelName,
+                        idleTimeout: AppConfig.shared.model.whisperIdleTimeout
+                    )
+                    try await transcriber?.preload()
+                    transcriber = nil
+                    await MainActor.run {
+                        self.downloadingModel = nil
+                        self.validatingModels.insert(modelName)
+                    }
+                    let isValid = await WhisperKitTranscriber.validateModel(modelName)
+                    await MainActor.run {
+                        self.validatingModels.remove(modelName)
+                        if isValid {
+                            self.downloadedModels.insert(modelName)
+                            if modelName == self.selectedModel {
+                                self.modelReady = true
+                            }
+                        } else {
+                            self.downloadError = "Download completed but validation failed. Try again."
+                        }
+                    }
+                }
             } catch {
-                transcriber = nil  // Release on error too
                 await MainActor.run {
                     self.downloadingModel = nil
                     self.downloadError = "Download failed: \(error.localizedDescription)"
                 }
                 AppLogger.shared.error("Setup wizard model download failed: \(error)")
-                return
-            }
-            await MainActor.run {
-                self.downloadingModel = nil
-                self.validatingModels.insert(modelName)
-            }
-            let isValid = await WhisperKitTranscriber.validateModel(modelName)
-            await MainActor.run {
-                self.validatingModels.remove(modelName)
-                if isValid {
-                    self.downloadedModels.insert(modelName)
-                    // The download's preload() already loaded the model into memory,
-                    // so mark it ready directly — no second preload needed.
-                    if modelName == self.selectedModel {
-                        self.modelReady = true
-                    }
-                } else {
-                    self.downloadError = "Download completed but validation failed. Try again."
-                }
             }
         }
     }

@@ -10,7 +10,7 @@ final class AppState {
     private let inputMonitor = InputMonitor()
     private let recorder = AudioRecorder()
     private let textInjector = TextInjector()
-    private let pythonServices = PythonServiceManager()
+    private let llmProcessor = MLXLLMProcessor()
     private let pedalMonitor = StreamDeckPedalMonitor()
     private let trackpadMonitor = TrackpadMonitor()
 
@@ -44,9 +44,6 @@ final class AppState {
 
     func start() {
         logger.info("Starting TextEcho")
-
-        // Clean stale LLM socket from previous sessions
-        cleanStaleSocket(path: config.model.llmSocket)
 
         AccessibilityHelper.requestIfNeeded()
         MicrophoneHelper.requestIfNeeded()
@@ -96,7 +93,6 @@ final class AppState {
         trackpadMonitor.stop()
         recorder.stop()
         overlay.hide()
-        pythonServices.stopAll()
     }
 
     /// Called by the setup wizard after first-time model selection/loading is done.
@@ -266,23 +262,49 @@ final class AppState {
     }
 
     private func handleLLM(text: String) {
-        guard config.llmEnabled, config.model.llmAvailable else {
+        guard config.model.llmEngine == "mlx" else {
             overlay.showResult(text, isLLM: false)
             textInjector.inject(text)
             return
         }
 
-        pythonServices.ensureLLMDaemon()
         let context = textInjector.registersContext()
-        LLMClient.shared.send(prompt: text, context: context) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let response):
-                self.overlay.showResult(response, isLLM: true)
-                self.textInjector.inject(response)
-                TranscriptionHistory.shared.add(text: response, isLLM: true)
-            case .failure(let error):
-                self.overlay.showError(error.localizedDescription)
+        let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
+
+        overlay.showProcessing(isLLM: true)
+
+        Task(priority: .userInitiated) {
+            do {
+                // Lazy-load model if not already loaded
+                if !(await llmProcessor.isLoaded) {
+                    await MainActor.run { self.overlay.showLoadingModel() }
+                    try await llmProcessor.loadModel(id: config.model.llmModelID)
+                }
+
+                let response = try await llmProcessor.generate(
+                    prompt: text,
+                    systemPrompt: systemPrompt,
+                    context: context
+                ) { [weak self] partialText in
+                    // Stream tokens to overlay
+                    Task { @MainActor in
+                        self?.overlay.showResult(partialText, isLLM: true)
+                    }
+                }
+
+                await MainActor.run {
+                    self.overlay.showResult(response, isLLM: true)
+                    if self.config.model.llmAutoPaste {
+                        self.textInjector.inject(response)
+                    }
+                    TranscriptionHistory.shared.add(text: response, isLLM: true)
+                }
+            } catch {
+                await MainActor.run {
+                    self.overlay.showError(error.localizedDescription)
+                }
+                AppLogger.shared.error("LLM processing failed: \(error)")
             }
         }
     }

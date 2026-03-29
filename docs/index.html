@@ -229,7 +229,7 @@ footer a{color:var(--cyan)}
   <p class="tagline">Voice-to-text. Local. Instant.</p>
   <div class="waveform" id="heroWaveform"></div>
   <div class="btn-row">
-    <a href="#get" class="btn-primary">Build from Source</a>
+    <a href="https://github.com/braxcat/textecho/releases/latest" class="btn-primary">Download DMG</a>
     <a href="https://github.com/braxcat/textecho" class="btn-secondary">View on GitHub</a>
   </div>
 </section>
@@ -399,24 +399,30 @@ footer a{color:var(--cyan)}
 <section id="get">
   <div class="container download-section">
     <h2><span class="accent">Get</span> TextEcho</h2>
-    <p>macOS 14+ &middot; Apple Silicon &middot; Xcode CLI tools</p>
-    <div class="terminal">
-      <div class="terminal-bar">
-        <div class="terminal-dot r"></div>
-        <div class="terminal-dot y"></div>
-        <div class="terminal-dot g"></div>
-        <div class="terminal-title">Terminal</div>
-        <div style="width:50px"></div>
-      </div>
-      <div class="terminal-body">
-        <div class="line">git clone https://github.com/braxcat/textecho.git</div>
-        <div class="line">cd textecho</div>
-        <div class="line">./build_native_app.sh</div>
-        <div class="line">cp -R dist/TextEcho.app /Applications/</div>
-        <div class="comment">ready in ~2 minutes</div>
-      </div>
+    <p>macOS 14+ &middot; Apple Silicon</p>
+    <div style="margin:32px 0">
+      <a href="https://github.com/braxcat/textecho/releases/latest" class="btn-primary" style="font-size:1.2rem;padding:16px 40px">Download TextEcho.dmg</a>
     </div>
-    <div class="coming-soon">Signed DMG download coming soon</div>
+    <p style="color:var(--text-dim);font-size:0.9rem;margin-bottom:32px">Signed &amp; notarized with Apple Developer ID. No Gatekeeper warnings.</p>
+    <details style="max-width:540px;margin:0 auto;text-align:left">
+      <summary style="cursor:pointer;color:var(--cyan);margin-bottom:12px">Or build from source</summary>
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dot r"></div>
+          <div class="terminal-dot y"></div>
+          <div class="terminal-dot g"></div>
+          <div class="terminal-title">Terminal</div>
+          <div style="width:50px"></div>
+        </div>
+        <div class="terminal-body">
+          <div class="line">git clone https://github.com/braxcat/textecho.git</div>
+          <div class="line">cd textecho</div>
+          <div class="line">./build_native_app.sh</div>
+          <div class="line">cp -R dist/TextEcho.app /Applications/</div>
+          <div class="comment">requires Xcode CLI tools</div>
+        </div>
+      </div>
+    </details>
   </div>
 </section>
 

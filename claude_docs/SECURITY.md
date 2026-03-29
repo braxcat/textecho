@@ -11,10 +11,21 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 
 ## Code Signing
 
-- **Ad-hoc signed** (`codesign --force --deep --sign -`)
-- Not notarized — not distributable via Gatekeeper without re-signing
-- Binary hash caching in build script preserves existing permissions when only Python files change
-- **App Store target:** Apple Developer license + signing planned for future distribution
+- **Developer ID signed** with hardened runtime (`--options runtime`)
+- **Apple notarized** via App Store Connect API key — no Gatekeeper warnings
+- **Sigstore build attestation** — verifiable build provenance on GitHub Releases
+- **Entitlements:** `mac_app/TextEcho.entitlements` — non-sandboxed (CGEventTap + IOKit HID require it), `disable-library-validation` for WhisperKit Core ML model loading
+- **Dev builds:** ad-hoc signed (`codesign --force --deep --sign -`) when `--sign` flag is not used
+- Binary hash caching in build script preserves existing permissions when only resource files change
+
+### Release Workflow Security
+
+- **GitHub Environment** with required approval before release jobs run
+- **Tag protection** — only authorized users can push `v*` tags
+- **CODEOWNERS** — PRs to workflows and signing files require review
+- **Ephemeral keychain** — signing certificate imported into a temporary keychain, destroyed after build
+- **SHA-pinned actions** — all third-party GitHub Actions pinned to specific commit SHAs
+- **Secrets:** Developer ID certificate (P12), App Store Connect API key, stored as GitHub repository secrets
 
 ## Automated Security Scanning
 

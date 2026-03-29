@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-29 — Signed Release Pipeline
+
+### Code Signing & Notarization
+- **Developer ID signing** with hardened runtime in `build_native_app.sh` and `build_native_dmg.sh` (`--sign` flag)
+- **Apple notarization** via App Store Connect API key — no Gatekeeper warnings for end users
+- **Entitlements file** (`mac_app/TextEcho.entitlements`) — non-sandboxed + disable-library-validation for Core ML
+- **Sigstore build attestation** — verifiable build provenance on GitHub Releases
+
+### GitHub Actions Release Workflow
+- **`.github/workflows/release.yml`** — triggered by `v*` tags: build, sign, notarize, DMG, publish
+- **Security hardening:** ephemeral keychain, SHA-pinned actions, GitHub Environment with approval gate
+- **Tag protection** and **CODEOWNERS** (`.github/CODEOWNERS`) for workflow/signing file changes
+
+### Build Script Updates
+- `build_native_app.sh` — `--sign` flag for Developer ID signing + hardened runtime + entitlements
+- `build_native_dmg.sh` — `--sign` flag for signed + notarized DMG
+
 ## 2026-03-22 — Theme Customization + Swift CI (PR #7)
 
 ### Theme System

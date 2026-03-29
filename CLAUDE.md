@@ -15,6 +15,7 @@ Native macOS menu bar app for voice-to-text dictation. Uses **WhisperKit** (Core
 | [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Permissions, signing, data handling | Security changes |
 | [claude_docs/TESTING.md](claude_docs/TESTING.md) | Test strategy | Test stack changes |
 | [claude_docs/WORKLOG.md](claude_docs/WORKLOG.md) | Dev session log | After each session |
+| [docs/SIGNING.md](docs/SIGNING.md) | Code signing, notarization, secret rotation | Signing or release changes |
 
 ## Quick Start
 
@@ -40,6 +41,7 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 | `./reset_accessibility.sh` | Reset Accessibility permission after a rebuild invalidates the signature |
 | `./build_native_app.sh` | Release build — outputs to `dist/TextEcho.app` |
 | `./build_native_app.sh --debug` | Debug build — faster incremental rebuilds, outputs to `dist/TextEcho.app` |
+| `./build_native_app.sh --sign` | Release build with Developer ID signing + hardened runtime + notarization |
 | `./build_native_app.sh --with-llm` | Build with optional LLM module (requires Python 3.12) |
 | `swift build -c release --package-path mac_app` | Build Swift only (no .app bundle) |
 | `./build_native_dmg.sh` | Create distributable DMG |
@@ -125,6 +127,7 @@ If building with `--with-llm`: **Python 3.13+ breaks tiktoken** — Rust/pyo3 se
 dictation-mac/
 ├── mac_app/                          # Swift app (SwiftPM package)
 │   ├── Package.swift                 # WhisperKit dependency, macOS 14+
+│   ├── TextEcho.entitlements         # Hardened runtime entitlements (non-sandboxed)
 │   └── Sources/TextEchoApp/
 │       ├── AppMain.swift             # Entry point, menu bar setup
 │       ├── AppState.swift            # Orchestrator (recording flow)
@@ -151,9 +154,13 @@ dictation-mac/
 │       ├── TextEchoApp.swift         # @main SwiftUI app + menu bar
 │       └── AppLogger.swift           # File logging
 ├── llm_daemon.py                     # Optional LLM daemon (llama-cpp)
-├── build_native_app.sh               # Build script (--with-llm for Python)
-├── build_native_dmg.sh               # DMG creation script
+├── .github/
+│   ├── workflows/release.yml        # Signed release pipeline (triggered by v* tags)
+│   └── CODEOWNERS                   # Require review on workflow/signing changes
+├── build_native_app.sh               # Build script (--sign for signing, --with-llm for Python)
+├── build_native_dmg.sh               # DMG creation script (--sign for signed DMG)
 ├── pyproject.toml                    # Python deps (LLM optional only)
+├── docs/SIGNING.md                  # Code signing architecture and secret rotation
 └── claude_docs/                      # Project documentation
 ```
 

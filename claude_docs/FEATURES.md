@@ -91,11 +91,18 @@
 - Model selection guide, LLM module instructions
 - Embedded in binary — works offline
 
+## Signed Distribution
+- Developer ID code signing with hardened runtime
+- Apple notarization via App Store Connect API key — no Gatekeeper warnings
+- Sigstore build attestation for verifiable build provenance
+- GitHub Actions release workflow — build, sign, notarize, publish on version tags
+- Signed DMG available from GitHub Releases
+
 ## System Integration
 - Autostart via launchd plist management
 - Menu bar icon with daemon controls
 - Log viewer (app + Python daemon logs)
 - CGEventTap for global input monitoring
-- Ad-hoc code signed .app bundle
+- Developer ID signed .app bundle (ad-hoc for dev builds)
 - `rebuild.sh` — one-command pull + build + deploy + launch
 - `uninstall.sh` — full cleanup (app, config, models, logs, permissions)

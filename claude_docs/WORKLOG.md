@@ -1,5 +1,27 @@
 # Worklog
 
+## 2026-03-29 — Signed Release Pipeline
+
+**Focus:** Developer ID code signing, notarization, GitHub Actions release workflow, security hardening
+
+### Code Signing
+- Created `mac_app/TextEcho.entitlements` (non-sandboxed + disable-library-validation)
+- Updated `build_native_app.sh` — `--sign` flag for Developer ID signing with hardened runtime
+- Updated `build_native_dmg.sh` — `--sign` flag for signed + notarized DMG
+- Notarization via App Store Connect API key (not app-specific password)
+
+### Release Workflow
+- Created `.github/workflows/release.yml` — triggered by `v*` tags
+- Full pipeline: build → sign → notarize → staple → DMG → GitHub Release → Sigstore attestation
+- Ephemeral keychain for certificate handling (created and destroyed in workflow)
+- All third-party actions SHA-pinned
+
+### Security Hardening
+- GitHub Environment with required approval before release jobs
+- Tag protection rules for `v*` tags
+- `.github/CODEOWNERS` — require review on workflow and signing file changes
+- `docs/SIGNING.md` — signing architecture and secret rotation documentation
+
 ## 2026-03-28 — Event Tap Resilience, Pedal Backoff, Magic Trackpad
 
 **Focus:** CGEventTap health monitoring, pedal retry improvements, Magic Trackpad as new activation method

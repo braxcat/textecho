@@ -86,6 +86,25 @@ Binary hash caching avoids re-signing when only resource files change (preserves
 5. **Idle:** WhisperKit model auto-unloads after configurable timeout (default 1 hour) to free ~1.6GB RAM
 6. **App quit:** AppState.stop() → InputMonitor.stop(), PythonServiceManager.stopAll()
 
+## CI/Release Pipeline
+
+```
+Tag push (v*) → GitHub Actions release.yml
+  ├── Checkout + swift build -c release
+  ├── Import Developer ID cert → ephemeral keychain
+  ├── codesign --sign "Developer ID" --options runtime --entitlements TextEcho.entitlements
+  ├── xcrun notarytool submit (App Store Connect API key)
+  ├── xcrun stapler staple
+  ├── build_native_dmg.sh --sign → signed DMG
+  ├── gh release create → upload DMG
+  └── Sigstore build attestation
+```
+
+- **Trigger:** version tags (`v*`)
+- **Runner:** `macos-latest` (required for codesign + notarytool)
+- **Security:** ephemeral keychain (destroyed after build), SHA-pinned actions, GitHub Environment with approval gate, CODEOWNERS on workflow files
+- **Secrets:** `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPSTORE_CONNECT_API_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`, `APPSTORE_CONNECT_API_KEY_P8`, `APPLE_TEAM_ID`
+
 ## Key Design Decisions
 
 | Decision | Choice | Rationale |

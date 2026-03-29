@@ -1,5 +1,6 @@
 #!/bin/bash
 # Create a DMG for the native Swift TextEcho app.
+# With --sign: signs the DMG with Developer ID, notarizes with Apple, and staples the ticket.
 
 set -e
 
@@ -11,6 +12,25 @@ APP_PATH="dist/${APP_NAME}.app"
 DMG_NAME="TextEcho"
 DMG_PATH="dist/${DMG_NAME}.dmg"
 STAGING_DIR="dist/dmg-staging"
+SIGN_MODE="none"
+
+for arg in "$@"; do
+    case "$arg" in
+        --sign) SIGN_MODE="developer" ;;
+    esac
+done
+
+if [ "$SIGN_MODE" = "developer" ]; then
+    if [ -z "$DEVELOPER_ID" ]; then
+        echo "ERROR: --sign requires DEVELOPER_ID env var."
+        exit 1
+    fi
+    # Notarization requires ASC API key
+    if [ -z "$ASC_API_KEY_PATH" ] || [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ]; then
+        echo "ERROR: --sign requires ASC_API_KEY_PATH, ASC_KEY_ID, and ASC_ISSUER_ID env vars for notarization."
+        exit 1
+    fi
+fi
 
 if [ ! -d "$APP_PATH" ]; then
     echo "ERROR: $APP_PATH not found. Run ./build_native_app.sh first."
@@ -35,4 +55,21 @@ hdiutil create \
 
 rm -rf "$STAGING_DIR"
 
-echo "==> DMG created: $DMG_PATH"
+if [ "$SIGN_MODE" = "developer" ]; then
+    echo "==> Signing DMG with Developer ID..."
+    codesign --force --sign "$DEVELOPER_ID" --timestamp "$DMG_PATH"
+
+    echo "==> Submitting for notarization (App Store Connect API key)..."
+    xcrun notarytool submit "$DMG_PATH" \
+        --key "$ASC_API_KEY_PATH" \
+        --key-id "$ASC_KEY_ID" \
+        --issuer "$ASC_ISSUER_ID" \
+        --wait
+
+    echo "==> Stapling notarization ticket..."
+    xcrun stapler staple "$DMG_PATH"
+
+    echo "==> DMG signed + notarized: $DMG_PATH"
+else
+    echo "==> DMG created (unsigned): $DMG_PATH"
+fi

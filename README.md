@@ -39,27 +39,29 @@ Voice-to-text dictation for macOS with native WhisperKit transcription on Apple 
 - Microphone + Accessibility permissions
 - Internet for first model download (~1.6GB)
 
-## Install from DMG (unsigned)
+## Install from DMG
 
-Download `TextEcho.dmg` and follow these steps:
+Download the latest signed DMG from [GitHub Releases](https://github.com/braxcat/dictation-mac/releases). The app is Developer ID signed and Apple-notarized — no Gatekeeper warnings, no right-click workarounds.
 
 1. **Open the DMG** — double-click `TextEcho.dmg`
 2. **Drag TextEcho to Applications** — standard drag-and-drop install
-3. **First launch — bypass Gatekeeper:**
-   - Open **Finder → Applications**
-   - **Right-click** (or Control-click) `TextEcho.app` → **Open**
-   - Click **Open** on the warning dialog ("macOS cannot verify the developer")
-   - You only need to do this once — after that it opens normally
+3. **Launch TextEcho** — opens normally (signed + notarized)
 4. **Grant permissions** when prompted:
    - **Accessibility** — System Settings → Privacy & Security → Accessibility → enable TextEcho
    - **Microphone** — System Settings → Privacy & Security → Microphone → enable TextEcho
 5. **Setup Wizard** — on first launch, the wizard walks you through model download, activation method, theme, and silence timeout.
 
-> **If you get "app is damaged":** Open Terminal and run:
-> ```bash
-> xattr -cr /Applications/TextEcho.app
-> ```
-> Then right-click → Open again.
+**Verify the signature:**
+```bash
+# Check code signature
+codesign -dv --verbose=2 /Applications/TextEcho.app
+
+# Verify notarization
+spctl -a -vv /Applications/TextEcho.app
+# Expected: "source=Notarized Developer ID"
+```
+
+> **Unsigned dev builds:** If you build from source without `--sign`, you'll need to right-click → Open on first launch and may need `xattr -cr /Applications/TextEcho.app`.
 
 ## Quick Start (build from source)
 
@@ -92,6 +94,7 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 | `./uninstall.sh` | Remove app, config, models, logs, everything |
 | `./build_native_app.sh` | Release build only (no deploy) |
 | `./build_native_app.sh --debug` | Debug build only (faster, no deploy) |
+| `./build_native_app.sh --sign` | Build with Developer ID signing + notarization |
 | `./build_native_app.sh --with-llm` | Build with optional LLM module |
 
 ## Usage
@@ -224,7 +227,10 @@ Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-
 ## Security
 
 - **Fully local** — no network calls after model download, no telemetry, no cloud
+- **Signed & notarized** — Developer ID code signing with hardened runtime, Apple notarization
+- **Sigstore attestation** — build provenance verification on GitHub Releases
 - **Swift CI** — automated `swift test` + `swift build` on every PR to main
+- **Release CI** — GitHub Actions workflow builds, signs, notarizes, and publishes on version tags
 - **CodeQL scanning** — automated SAST on PRs (Swift injection, path traversal, data races)
 - **Dependabot** — weekly dependency vulnerability checks (SwiftPM + GitHub Actions)
 - **File permissions** — transcription history written with 0600 (owner-only) permissions
@@ -241,6 +247,18 @@ Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-
 | Permissions lost after rebuild | Re-grant in System Settings (ad-hoc signing changes signature) |
 | Model not downloading | Check internet, try `./rebuild.sh --clean` |
 
+## Distribution
+
+Releases are built and published via GitHub Actions on version tags (`v*`). The workflow:
+
+1. Builds the Swift app on a macOS runner
+2. Signs with Developer ID certificate (hardened runtime + entitlements)
+3. Notarizes with App Store Connect API key
+4. Creates a DMG and signs it
+5. Publishes to GitHub Releases with Sigstore build attestation
+
+See [docs/SIGNING.md](docs/SIGNING.md) for signing architecture and secret rotation.
+
 ## Documentation
 
 | Document | Purpose |
@@ -250,6 +268,7 @@ Enable in Settings or `~/.textecho_config`. Auto-detects within 3 seconds, auto-
 | [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory |
 | [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan and future work |
 | [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Security and permissions |
+| [docs/SIGNING.md](docs/SIGNING.md) | Code signing and notarization |
 
 ## License
 

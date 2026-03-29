@@ -161,17 +161,17 @@ This is nice-to-have — you can do the first release manually.
 
 ### Phase 1 Checklist
 
-| Step | Task | Depends On |
-|------|------|-----------|
-| 0 | Enroll in Apple Developer Program | — |
-| 1 | Create entitlements file | — |
-| 2 | Update build script with `--sign` flag | Step 0 |
-| 3 | Create notarization script | Step 0 |
-| 4 | Update DMG build to sign + notarize | Steps 2, 3 |
-| 5 | Version bump | — |
-| 6 | Build, sign, notarize, test on a clean Mac | Steps 1-5 |
-| 7 | Create GitHub Release with DMG | Step 6 |
-| 8 | (Optional) CI release workflow | Step 7 |
+| Step | Task | Depends On | Status |
+|------|------|-----------|--------|
+| 0 | Enroll in Apple Developer Program | — | |
+| 1 | Create entitlements file | — | DONE (mac_app/TextEcho.entitlements) |
+| 2 | Update build script with `--sign` flag | Step 0 | DONE (build_native_app.sh --sign) |
+| 3 | Create notarization script | Step 0 | DONE (integrated into build scripts + release.yml) |
+| 4 | Update DMG build to sign + notarize | Steps 2, 3 | DONE (build_native_dmg.sh --sign) |
+| 5 | Version bump | — | |
+| 6 | Build, sign, notarize, test on a clean Mac | Steps 1-5 | |
+| 7 | Create GitHub Release with DMG | Step 6 | |
+| 8 | (Optional) CI release workflow | Step 7 | DONE (.github/workflows/release.yml) |
 
 ---
 

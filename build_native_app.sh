@@ -15,14 +15,24 @@ RESOURCES_DIR="$APP_DIR/Contents/Resources"
 WITH_LLM=false
 CLEAN=false
 DEBUG=false
+SIGN_MODE="adhoc"
 
 for arg in "$@"; do
     case "$arg" in
         --with-llm) WITH_LLM=true ;;
         --clean) CLEAN=true ;;
         --debug) DEBUG=true ;;
+        --sign) SIGN_MODE="developer" ;;
     esac
 done
+
+if [ "$SIGN_MODE" = "developer" ]; then
+    if [ -z "$DEVELOPER_ID" ]; then
+        echo "ERROR: --sign requires DEVELOPER_ID env var."
+        echo "  Example: DEVELOPER_ID='Developer ID Application: Name (TEAMID)' $0 --sign"
+        exit 1
+    fi
+fi
 
 if [ "$CLEAN" = true ]; then
     echo "==> Clean build: removing all caches..."
@@ -195,14 +205,25 @@ PLIST
 xattr -rc "$APP_DIR" 2>/dev/null || true
 
 if [ "$BINARY_CHANGED" = true ]; then
-    if codesign --force --deep --sign - "$APP_DIR" 2>/dev/null; then
-        echo "==> Code signing complete"
+    if [ "$SIGN_MODE" = "developer" ]; then
+        echo "==> Signing with Developer ID (hardened runtime)..."
+        codesign --force --deep --sign "$DEVELOPER_ID" \
+            --entitlements mac_app/TextEcho.entitlements \
+            --options runtime \
+            --timestamp \
+            "$APP_DIR"
+        echo "==> Developer ID signing complete"
     else
-        echo "==> Code signing skipped (ad-hoc failed)"
+        if codesign --force --deep --sign - "$APP_DIR" 2>/dev/null; then
+            echo "==> Ad-hoc code signing complete"
+        else
+            echo "==> Code signing skipped (ad-hoc failed)"
+        fi
+        echo ""
+        echo "NOTE: macOS permissions (Accessibility, Microphone) are tied to the code signature."
+        echo "      You may need to re-grant them in System Settings → Privacy & Security."
+        echo "      Use --sign with DEVELOPER_ID for stable signatures."
     fi
-    echo ""
-    echo "NOTE: macOS permissions (Accessibility, Microphone) are tied to the code signature."
-    echo "      You may need to re-grant them in System Settings → Privacy & Security."
 else
     echo "==> Code signing skipped (binary unchanged, permissions preserved)"
 fi

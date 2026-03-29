@@ -45,6 +45,7 @@ actor ParakeetTranscriber: Transcriber {
         switch version {
         case .v2: return "parakeet-tdt-v2"
         case .v3: return "parakeet-tdt-v3"
+        case .tdtCtc110m: return "parakeet-tdt-ctc-110m"
         @unknown default: return "parakeet-tdt-v3"
         }
     }
@@ -60,8 +61,9 @@ actor ParakeetTranscriber: Transcriber {
         self.idleTimeout = idleTimeout == 0 ? 0 : TimeInterval(max(60, min(idleTimeout, 86400)))
     }
 
-    convenience init(modelName: String = "parakeet-tdt-v3", idleTimeout: Int = 0) {
-        self.init(modelVersion: Self.modelVersion(from: modelName), idleTimeout: idleTimeout)
+    init(modelName: String, idleTimeout: Int) {
+        self.modelVersion = Self.modelVersion(from: modelName)
+        self.idleTimeout = idleTimeout == 0 ? 0 : TimeInterval(max(60, min(idleTimeout, 86400)))
     }
 
     // MARK: - Transcriber protocol
@@ -128,16 +130,16 @@ actor ParakeetTranscriber: Transcriber {
 
     func switchModel(_ newModelName: String) async throws {
         idleTask?.cancel()
-        asrManager?.cleanup()
+        await asrManager?.cleanup()
         asrManager = nil
         _isModelLoaded = false
         modelVersion = Self.modelVersion(from: newModelName)
         try await initParakeet()
     }
 
-    func unloadModel() {
+    private func performUnload() async {
         idleTask?.cancel()
-        asrManager?.cleanup()
+        await asrManager?.cleanup()
         asrManager = nil
         _isModelLoaded = false
         AppLogger.shared.info("Parakeet model unloaded (idle)")
@@ -189,7 +191,7 @@ actor ParakeetTranscriber: Transcriber {
         idleTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(self?.idleTimeout ?? 3600) * 1_000_000_000)
-                await self?.unloadModel()
+                await self?.performUnload()
             } catch {
                 // Task cancelled — fine
             }

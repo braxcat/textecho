@@ -372,18 +372,19 @@ struct SetupWizardView: View {
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: WhisperKitTranscriber.downloadProgressNotification)) { _ in }
 
-            Button(action: { showModelPicker = true }) {
-                HStack(spacing: 4) {
-                    Text("All models")
-                        .font(.system(size: 11))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 9))
+            if selectedEngine == "whisper" {
+                Button(action: { showModelPicker = true }) {
+                    HStack(spacing: 4) {
+                        Text("All models")
+                            .font(.system(size: 11))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9))
+                    }
+                    .foregroundColor(.accentColor)
                 }
-                .foregroundColor(.accentColor)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             if !modelReady {
                 Text(downloadingModel != nil

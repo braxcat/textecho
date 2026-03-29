@@ -1,6 +1,8 @@
 # TextEcho
 
-Voice-to-text dictation for macOS with native WhisperKit transcription on Apple Silicon. Hold a button, speak, release — your words appear as text. No cloud, no Python, fully offline after first model download.
+Voice-to-text dictation for macOS with native on-device transcription on Apple Silicon. Hold a button, speak, release — your words appear as text. No cloud, no Python, fully offline after first model download.
+
+**Default engine: Parakeet TDT v3** (2.1% WER, 3-6x faster than Whisper) via FluidAudio SDK. WhisperKit available as fallback. Choose your engine in Setup Wizard or Settings.
 
 **Author:** Braxton Bragg
 **Contributor:** [Lochie](https://github.com/MachinationsContinued) — UI rework, settings redesign, model management, activation modes, transcription history
@@ -22,7 +24,7 @@ Voice-to-text dictation for macOS with native WhisperKit transcription on Apple 
 
 ## Features
 
-- **Native WhisperKit** — transcription via Apple Neural Engine (Core ML), ~1.6GB RAM
+- **Dual transcription engines** — Parakeet TDT v3 (default, 2.1% WER) or WhisperKit, both via Apple Neural Engine (Core ML)
 - **Push-to-talk** — middle-click, Ctrl+D, or Stream Deck Pedal
 - **Theme presets** — 5 built-in themes (TextEcho, Cyber, Classic, Ocean, Sunset) + custom color picker + saveable user presets
 - **Cyberpunk overlay** — pink→purple→neon green states, waveform visualization
@@ -49,7 +51,7 @@ Download the latest signed DMG from [GitHub Releases](https://github.com/braxcat
 4. **Grant permissions** when prompted:
    - **Accessibility** — System Settings → Privacy & Security → Accessibility → enable TextEcho
    - **Microphone** — System Settings → Privacy & Security → Microphone → enable TextEcho
-5. **Setup Wizard** — on first launch, the wizard walks you through model download, activation method, theme, and silence timeout.
+5. **Setup Wizard** — on first launch, the wizard walks you through engine selection (Parakeet recommended), model download, activation method, theme, and silence timeout.
 
 **Verify the signature:**
 ```bash
@@ -141,10 +143,15 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
                     │         (AVAudioEngine)              │
                     │                │                     │
                     │                ▼                     │
-                    │    WhisperKitTranscriber (actor)     │
+                    │    Transcriber (protocol)            │
                     │    ┌────────────────────────┐       │
-                    │    │  Core ML / Neural Engine│       │
-                    │    │  Whisper large-v3-turbo │       │
+                    │    │ ParakeetTranscriber     │       │
+                    │    │ (FluidAudio/Core ML)    │       │
+                    │    │ Parakeet TDT v3 default │       │
+                    │    ├────────────────────────┤       │
+                    │    │ WhisperKitTranscriber   │       │
+                    │    │ (WhisperKit/Core ML)    │       │
+                    │    │ Whisper large-v3-turbo  │       │
                     │    └────────────────────────┘       │
                     │                │                     │
                     │                ▼                     │
@@ -167,7 +174,7 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 
 1. **Input** — CGEventTap (keyboard/mouse) or IOKit HID (pedal) triggers recording
 2. **Capture** — AVAudioEngine records PCM Int16 audio via tap callback
-3. **Transcribe** — WhisperKitTranscriber actor converts to Float32, resamples to 16kHz, runs inference on Neural Engine
+3. **Transcribe** — selected transcriber (Parakeet or WhisperKit) converts to Float32, resamples to 16kHz, runs inference on Neural Engine
 4. **Filter** — RMS silence check, hallucination filter (17 known phrases + repeat detection)
 5. **Paste** — TextInjector writes to clipboard, sends Cmd+V keystroke to active app
 6. **Display** — Cyberpunk overlay shows state: pink recording → purple processing → neon green result
@@ -176,22 +183,33 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Transcription | WhisperKit (native Swift) | Neural Engine, no Python, ~1.6GB vs ~3GB RAM |
+| Transcription | Parakeet TDT (default) / WhisperKit | Neural Engine, no Python; Parakeet: 2.1% WER, 3-6x faster |
 | Concurrency | Swift actor | No shared mutable state, no data races |
 | Audio start | DispatchQueue.main.async | IOKit HID callbacks block AVAudioEngine if started synchronously |
 | Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
 | LLM | Optional Python daemon | Rarely used, not worth native port complexity |
 | Pedal | IOKit HID (shared mode) | No kernel extension, no Elgato software needed |
 
-## Transcription Models
+## Transcription Engines & Models
+
+### Parakeet TDT (Default)
+
+| Model | WER | Params | Languages | Speed |
+|-------|-----|--------|-----------|-------|
+| **Parakeet TDT v3** (default) | 2.1% | 600M | 25 European | 3-6x faster than Whisper |
+| Parakeet TDT v2 | ~3% | 600M | English | Fast |
+
+Parakeet runs via FluidAudio SDK on Apple Neural Engine (Core ML). Model weights are CC-BY-4.0 licensed.
+
+### WhisperKit (Fallback)
 
 | Model | Download | RAM | Speed | Quality |
 |-------|----------|-----|-------|---------|
-| **Large V3 Turbo** (default) | ~1.6GB | ~1.6GB | Fast | Near-best |
+| **Large V3 Turbo** | ~1.6GB | ~1.6GB | Fast | Near-best (7.8% WER) |
 | Large V3 | ~3GB | ~3.5GB | Slower | Best |
 | Base (English) | ~140MB | ~180MB | Very fast | Good for clear speech |
 
-Models download from HuggingFace on first use and cache at `~/Documents/huggingface/models/`. Select in Setup Wizard or Settings.
+Models download on first use and cache locally. Select engine and model in Setup Wizard or Settings.
 
 ## Configuration
 
@@ -203,6 +221,8 @@ Models download from HuggingFace on first use and cache at `~/Documents/huggingf
 | `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
 | `silence_duration` | `2.5` | Seconds of silence before auto-stop |
 | `silence_threshold` | `0.015` | Audio level for silence detection |
+| `transcription_engine` | `parakeet` | Engine: `parakeet` or `whisper` |
+| `parakeet_model` | `parakeet-tdt-v3` | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
 | `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
 | `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
 | `caps_lock_enabled` | `false` | Enable Caps Lock activation |
@@ -273,3 +293,7 @@ See [docs/SIGNING.md](docs/SIGNING.md) for signing architecture and secret rotat
 ## License
 
 MIT
+
+**Third-party attribution:**
+- Parakeet TDT model weights by NVIDIA are licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)
+- FluidAudio SDK is licensed under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)

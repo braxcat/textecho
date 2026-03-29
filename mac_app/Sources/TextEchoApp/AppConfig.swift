@@ -44,9 +44,13 @@ final class AppConfig {
         var trackpadMode: Int       // 0=toggle, 1=hold
         // Overlay
         var overlayPositionMode: Int // 0=static bottom middle, 1=follow cursor
+        // Transcription engine
+        var transcriptionEngine: String  // "parakeet" or "whisper"
         // WhisperKit
         var whisperModel: String
         var whisperIdleTimeout: Int
+        // Parakeet (FluidAudio)
+        var parakeetModel: String  // "parakeet-tdt-v3" or "parakeet-tdt-v2"
         var inputDeviceUID: String  // empty = system default
 
         // --- Transcription Activation Modes ---
@@ -106,8 +110,10 @@ final class AppConfig {
         trackpadGesture: 0,
         trackpadMode: 1,
         overlayPositionMode: 0,
+        transcriptionEngine: "parakeet",
         whisperModel: "openai_whisper-large-v3_turbo",
         whisperIdleTimeout: 0,
+        parakeetModel: "parakeet-tdt-v3",
         inputDeviceUID: "",
         capsLockEnabled: false,
         mouseEnabled: true,
@@ -177,8 +183,10 @@ final class AppConfig {
         if let v = obj["trackpad_gesture"] as? Int { updated.trackpadGesture = max(0, min(v, 1)) }
         if let v = obj["trackpad_mode"] as? Int { updated.trackpadMode = max(0, min(v, 1)) }
         if let value = obj["overlay_position_mode"] as? Int { updated.overlayPositionMode = value == 1 ? 1 : 0 }
+        if let v = obj["transcription_engine"] as? String { updated.transcriptionEngine = v }
         if let value = obj["whisper_model"] as? String { updated.whisperModel = WhisperKitTranscriber.migrateModelName(value) }
         if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = value == 0 ? 0 : max(60, min(value, 86400)) }
+        if let v = obj["parakeet_model"] as? String { updated.parakeetModel = v }
         if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
 
         // New activation mode fields
@@ -246,8 +254,10 @@ final class AppConfig {
         dict["trackpad_gesture"] = model.trackpadGesture
         dict["trackpad_mode"] = model.trackpadMode
         dict["overlay_position_mode"] = model.overlayPositionMode
+        dict["transcription_engine"] = model.transcriptionEngine
         dict["whisper_model"] = model.whisperModel
         dict["whisper_idle_timeout"] = model.whisperIdleTimeout
+        dict["parakeet_model"] = model.parakeetModel
         dict["input_device_uid"] = model.inputDeviceUID
         dict["caps_lock_enabled"] = model.capsLockEnabled
         dict["mouse_enabled"] = model.mouseEnabled

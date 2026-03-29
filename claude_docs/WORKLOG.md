@@ -1,5 +1,25 @@
 # Worklog
 
+## 2026-03-29 — Parakeet TDT Transcription Engine
+
+**Focus:** Add Parakeet TDT as default transcription engine via FluidAudio SDK, dual-engine support
+
+### Parakeet Integration
+- Added FluidAudio dependency to Package.swift
+- Created ParakeetTranscriber.swift — actor conforming to Transcriber protocol
+- Parakeet TDT v3: 2.1% WER, 600M params, 3-6x faster than Whisper, 25 European languages
+- Runs on Apple Neural Engine via Core ML on all Apple Silicon Macs (M1-M4)
+
+### Config & UI Updates
+- Added `transcription_engine` and `parakeet_model` fields to AppConfig
+- AppState selects transcriber based on config engine field
+- Setup Wizard: engine picker (Parakeet recommended, Whisper fallback)
+- Settings: engine picker and Parakeet model selector
+
+### Licensing
+- Parakeet model weights: CC-BY-4.0 (NVIDIA attribution required)
+- FluidAudio SDK: Apache 2.0
+
 ## 2026-03-29 — Signed Release Pipeline
 
 **Focus:** Developer ID code signing, notarization, GitHub Actions release workflow, security hardening

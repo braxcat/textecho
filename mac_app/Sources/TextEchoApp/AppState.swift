@@ -14,7 +14,7 @@ final class AppState {
     private let pedalMonitor = StreamDeckPedalMonitor()
     private let trackpadMonitor = TrackpadMonitor()
 
-    private let transcriber: WhisperKitTranscriber
+    private let transcriber: any Transcriber
 
     private var settingsWindow: SettingsWindowController?
     private var logsWindow: LogsWindowController?
@@ -29,10 +29,17 @@ final class AppState {
 
     init() {
         let model = AppConfig.shared.model
-        transcriber = WhisperKitTranscriber(
-            modelName: model.whisperModel,
-            idleTimeout: model.whisperIdleTimeout
-        )
+        if model.transcriptionEngine == "whisper" {
+            transcriber = WhisperKitTranscriber(
+                modelName: model.whisperModel,
+                idleTimeout: model.whisperIdleTimeout
+            )
+        } else {
+            transcriber = ParakeetTranscriber(
+                modelName: model.parakeetModel,
+                idleTimeout: model.whisperIdleTimeout
+            )
+        }
     }
 
     func start() {
@@ -70,7 +77,7 @@ final class AppState {
         // On first launch the setup wizard handles loading inline.
         if config.model.firstLaunch {
             logger.info("First launch — setup wizard will handle model loading")
-        } else if WhisperKitTranscriber.isModelCached(config.model.whisperModel) {
+        } else if isCurrentModelCached() {
             startPreloadTask()
         } else {
             logger.info("WhisperKit model not downloaded yet, skipping auto-preload")
@@ -95,7 +102,7 @@ final class AppState {
     /// Called by the setup wizard after first-time model selection/loading is done.
     /// Triggers AppState's own transcriber to preload so it's ready for first recording.
     func preloadCurrentModel() {
-        guard !hasPreloaded && WhisperKitTranscriber.isModelCached(config.model.whisperModel) else { return }
+        guard !hasPreloaded && isCurrentModelCached() else { return }
         startPreloadTask()
     }
 
@@ -372,6 +379,14 @@ final class AppState {
             self?.logger.info("Magic Trackpad \(connected ? "connected" : "disconnected")")
         }
         trackpadMonitor.start()
+    }
+
+    private func isCurrentModelCached() -> Bool {
+        if config.model.transcriptionEngine == "whisper" {
+            return WhisperKitTranscriber.isModelCached(config.model.whisperModel)
+        } else {
+            return ParakeetTranscriber.isModelCached(config.model.parakeetModel)
+        }
     }
 
     private func cleanStaleSocket(path: String) {

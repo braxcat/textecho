@@ -1,6 +1,6 @@
 # TextEcho
 
-Native macOS menu bar app for voice-to-text dictation. Uses **WhisperKit** (Core ML / Apple Neural Engine) for local transcription — fully native Swift, no Python needed. Optional local LLM processing via llama-cpp-python (build with `--with-llm`). No cloud, no network after model download, fully offline.
+Native macOS menu bar app for voice-to-text dictation. Dual transcription engines: **Parakeet TDT** (default, via FluidAudio SDK) and **WhisperKit** — both run on Core ML / Apple Neural Engine. Fully native Swift, no Python needed. Optional local LLM processing via llama-cpp-python (build with `--with-llm`). No cloud, no network after model download, fully offline.
 
 ### Documentation Index
 
@@ -53,8 +53,9 @@ TextEcho.app (Swift)
 ├── AppMain → AppState (orchestrator)
 ├── InputMonitor (CGEventTap → hotkeys, 30s health check timer)
 ├── AudioRecorder (AVAudioEngine → PCM)
-├── WhisperKitTranscriber (Core ML → Neural Engine)
-│   └── Transcriber protocol (swappable backend)
+├── Transcriber protocol (swappable backend)
+│   ├── ParakeetTranscriber (FluidAudio SDK → Core ML, default)
+│   └── WhisperKitTranscriber (WhisperKit → Core ML, fallback)
 ├── StreamDeckPedalMonitor (IOKit HID, exponential backoff retry)
 ├── TrackpadMonitor (IOKit HID, disabled by default)
 ├── Overlay (SwiftUI floating window)
@@ -77,6 +78,8 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 | `trigger_button` | `2` | Mouse button (2=middle) |
 | `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
 | `silence_duration` | `2.5` | Seconds before auto-stop |
+| `transcription_engine` | `parakeet` | Engine: `parakeet` or `whisper` |
+| `parakeet_model` | `parakeet-tdt-v3` | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
 | `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
 | `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
 | `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
@@ -101,7 +104,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 
 ## Development Guidelines
 
-- **macOS 14+ only** — Apple Silicon (ARM64), required by WhisperKit
+- **macOS 14+ only** — Apple Silicon (ARM64), required by WhisperKit and FluidAudio
 - **No Python needed** for default build — pure Swift + WhisperKit
 - **Python 3.12** only needed if building with `--with-llm`
 - **Do NOT auto-install deps** — no sudo, no pip install, no downloads
@@ -132,14 +135,15 @@ If building with `--with-llm`: **Python 3.13+ breaks tiktoken** — Rust/pyo3 se
 ```
 dictation-mac/
 ├── mac_app/                          # Swift app (SwiftPM package)
-│   ├── Package.swift                 # WhisperKit dependency, macOS 14+
+│   ├── Package.swift                 # WhisperKit + FluidAudio dependencies, macOS 14+
 │   ├── TextEcho.entitlements         # Hardened runtime entitlements (non-sandboxed)
 │   └── Sources/TextEchoApp/
 │       ├── AppMain.swift             # Entry point, menu bar setup
 │       ├── AppState.swift            # Orchestrator (recording flow)
 │       ├── AppConfig.swift           # ~/.textecho_config reader
 │       ├── Transcriber.swift         # Protocol for transcription backends
-│       ├── WhisperKitTranscriber.swift # Native WhisperKit transcription (actor)
+│       ├── ParakeetTranscriber.swift   # Parakeet TDT transcription via FluidAudio (actor, default)
+│       ├── WhisperKitTranscriber.swift # Native WhisperKit transcription (actor, fallback)
 │       ├── PythonServiceManager.swift # Optional LLM daemon lifecycle
 │       ├── UnixSocket.swift          # Unix socket IPC (used by LLM only)
 │       ├── LLMClient.swift           # LLM socket client
@@ -173,7 +177,7 @@ dictation-mac/
 
 ## Conventions
 
-- All transcription logic lives in `WhisperKitTranscriber` (actor isolation)
+- Transcription logic lives in `ParakeetTranscriber` (default) and `WhisperKitTranscriber` (fallback), both actor-isolated
 - LLM is fully optional — guard all LLM code paths with `llmAvailable` check
 - Config backward compatible — new fields have defaults, old fields preserved
 - No temp files for transcription — WhisperKit accepts float arrays directly

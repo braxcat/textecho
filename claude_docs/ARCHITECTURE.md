@@ -2,7 +2,7 @@
 
 ## Overview
 
-TextEcho is a native macOS menu bar application written in Swift. Transcription runs natively via **WhisperKit** (Core ML / Apple Neural Engine) — no Python process needed. An optional Python LLM daemon can be bundled for local LLM processing.
+TextEcho is a native macOS menu bar application written in Swift. Transcription runs natively via **Parakeet TDT** (default, FluidAudio SDK) or **WhisperKit** (fallback) — both use Core ML / Apple Neural Engine. No Python process needed. An optional Python LLM daemon can be bundled for local LLM processing.
 
 ## Component Diagram
 
@@ -22,7 +22,11 @@ TextEcho is a native macOS menu bar application written in Swift. Transcription 
 │                │                             │
 │  Overlay ◄─────┤                             │
 │  (SwiftUI)     │                             │
-│                WhisperKitTranscriber (actor)  │
+│                Transcriber (protocol)         │
+│                ├── ParakeetTranscriber        │
+│                │   (FluidAudio, default)      │
+│                ├── WhisperKitTranscriber      │
+│                │   (WhisperKit, fallback)     │
 │                │   ┌── Core ML ──┐           │
 │                │   │ Neural Engine│           │
 │                │   └─────────────┘           │
@@ -45,16 +49,16 @@ TextEcho is a native macOS menu bar application written in Swift. Transcription 
 ## Transcription Flow
 
 1. Swift `AudioRecorder` captures PCM Int16 audio via `AVAudioEngine`
-2. `AppState.transcribe()` calls `WhisperKitTranscriber.transcribe()` via Swift async/await
-3. `WhisperKitTranscriber` (actor):
+2. `AppState.transcribe()` calls the active transcriber (selected by `transcription_engine` config) via Swift async/await
+3. **ParakeetTranscriber** (default) or **WhisperKitTranscriber** (fallback), both actors:
    - Converts Int16 PCM → Float32 array
    - Checks RMS silence threshold (skips if too quiet)
    - Resamples to 16kHz if needed (linear interpolation)
-   - Calls `WhisperKit.transcribe(audioArray:)` — runs on Apple Neural Engine via Core ML
+   - Runs inference on Apple Neural Engine via Core ML (FluidAudio SDK for Parakeet, WhisperKit for Whisper)
    - Filters hallucinations (17 known phrases + repeated segment detection)
 4. Result returned to `AppState` → `TextInjector.inject()` pastes via clipboard + Cmd+V
 
-No temp files, no IPC, no Python process involved in transcription.
+No temp files, no IPC, no Python process involved in transcription. Engine selection is persisted in `~/.textecho_config`.
 
 ## LLM Flow (Optional)
 
@@ -109,7 +113,7 @@ Tag push (v*) → GitHub Actions release.yml
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Transcription | WhisperKit (native Swift) | Runs on Neural Engine, no Python process, ~1.6GB RAM vs ~3GB |
+| Transcription | Parakeet TDT (default) / WhisperKit (fallback) | Parakeet: 2.1% WER, 3-6x faster; both run on Neural Engine, no Python |
 | Model loading | Lazy (on first use) | Avoids startup delay; model cached after first download |
 | RAM management | Auto-unload after idle | Frees Neural Engine/RAM when not in use |
 | LLM | Optional Python daemon | Not core feature, rarely used — keep simple |

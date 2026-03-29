@@ -1,0 +1,236 @@
+import Foundation
+import FluidAudio
+
+/// Parakeet TDT transcriber — runs NVIDIA Parakeet on Apple Neural Engine via Core ML.
+/// Uses FluidAudio SDK for model management and inference.
+/// Actor isolation prevents data races on the AsrManager instance and model state.
+actor ParakeetTranscriber: Transcriber {
+
+    // MARK: - Configuration
+
+    private var modelVersion: AsrModelVersion
+    private let idleTimeout: TimeInterval
+    private var asrManager: AsrManager?
+    private var idleTask: Task<Void, Never>?
+    private var _isModelLoaded = false
+
+    /// Notification posted when download completes.
+    static let downloadCompleteNotification = Notification.Name("ParakeetDownloadComplete")
+
+    // MARK: - Known models
+
+    struct ModelInfo {
+        let version: AsrModelVersion
+        let name: String
+        let displayName: String
+        let description: String
+    }
+
+    static let availableModelList: [ModelInfo] = [
+        ModelInfo(version: .v3, name: "parakeet-tdt-v3", displayName: "Parakeet V3 (25 langs)", description: "Best accuracy, 25 European languages (Recommended)"),
+        ModelInfo(version: .v2, name: "parakeet-tdt-v2", displayName: "Parakeet V2 (English)", description: "Fast, English only — 2.1% WER"),
+    ]
+
+    /// Maps config string to AsrModelVersion.
+    nonisolated static func modelVersion(from name: String) -> AsrModelVersion {
+        switch name {
+        case "parakeet-tdt-v2": return .v2
+        case "parakeet-tdt-v3": return .v3
+        default: return .v3
+        }
+    }
+
+    /// Maps AsrModelVersion to config string.
+    nonisolated static func modelName(from version: AsrModelVersion) -> String {
+        switch version {
+        case .v2: return "parakeet-tdt-v2"
+        case .v3: return "parakeet-tdt-v3"
+        case .tdtCtc110m: return "parakeet-tdt-ctc-110m"
+        @unknown default: return "parakeet-tdt-v3"
+        }
+    }
+
+    // MARK: - Hallucination filter (shared with WhisperKit — Parakeet is less prone but still possible)
+
+    private static let silenceRMSThreshold: Float = 0.005
+
+    // MARK: - Init
+
+    init(modelVersion: AsrModelVersion = .v3, idleTimeout: Int = 0) {
+        self.modelVersion = modelVersion
+        self.idleTimeout = idleTimeout == 0 ? 0 : TimeInterval(max(60, min(idleTimeout, 86400)))
+    }
+
+    init(modelName: String, idleTimeout: Int) {
+        self.modelVersion = Self.modelVersion(from: modelName)
+        self.idleTimeout = idleTimeout == 0 ? 0 : TimeInterval(max(60, min(idleTimeout, 86400)))
+    }
+
+    // MARK: - Transcriber protocol
+
+    var isModelLoaded: Bool {
+        _isModelLoaded
+    }
+
+    func preload() async throws {
+        if asrManager != nil { return }
+        try await initParakeet()
+    }
+
+    func transcribe(audioData: Data, sampleRate: Double) async throws -> String {
+        // Validate audio data length (Int16 = 2 bytes per sample)
+        guard audioData.count >= 2, audioData.count % 2 == 0 else {
+            AppLogger.shared.warn("Invalid audio data length: \(audioData.count)")
+            return ""
+        }
+
+        // Convert Int16 PCM → Float array
+        let floatSamples = convertPCMToFloat(audioData)
+
+        // RMS silence check
+        let rms = computeRMS(floatSamples)
+        if rms < Self.silenceRMSThreshold {
+            AppLogger.shared.info("Skipping transcription: audio too quiet (RMS=\(String(format: "%.6f", rms)))")
+            return ""
+        }
+
+        // Resample to 16kHz if needed (FluidAudio expects 16kHz)
+        let samples: [Float]
+        if abs(sampleRate - 16000.0) > 1.0 {
+            samples = resample(floatSamples, from: sampleRate, to: 16000.0)
+        } else {
+            samples = floatSamples
+        }
+
+        // Lazy init
+        if asrManager == nil {
+            try await initParakeet()
+        }
+
+        guard let asr = asrManager else {
+            throw TranscriberError.modelNotLoaded
+        }
+
+        // Transcribe — FluidAudio runs on Neural Engine via Core ML
+        let result = try await asr.transcribe(samples, source: .microphone)
+
+        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if text.isEmpty {
+            return ""
+        }
+
+        AppLogger.shared.info("Parakeet transcription (confidence=\(String(format: "%.2f", result.confidence)), rtfx=\(String(format: "%.1f", result.rtfx))): \(text)")
+
+        resetIdleTimer()
+        return text
+    }
+
+    // MARK: - Model management
+
+    func switchModel(_ newModelName: String) async throws {
+        idleTask?.cancel()
+        await asrManager?.cleanup()
+        asrManager = nil
+        _isModelLoaded = false
+        modelVersion = Self.modelVersion(from: newModelName)
+        try await initParakeet()
+    }
+
+    private func performUnload() async {
+        idleTask?.cancel()
+        await asrManager?.cleanup()
+        asrManager = nil
+        _isModelLoaded = false
+        AppLogger.shared.info("Parakeet model unloaded (idle)")
+    }
+
+    /// Checks if Parakeet models are cached locally.
+    nonisolated static func isModelCached(_ modelName: String) -> Bool {
+        let version = modelVersion(from: modelName)
+        let cacheDir = modelCacheDirectory(for: version)
+        return FileManager.default.fileExists(atPath: cacheDir.path)
+    }
+
+    /// Returns the cache directory for a given model version.
+    nonisolated static func modelCacheDirectory(for version: AsrModelVersion) -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport
+            .appendingPathComponent("FluidAudio", isDirectory: true)
+            .appendingPathComponent("Models", isDirectory: true)
+    }
+
+    // MARK: - Private helpers
+
+    private func initParakeet() async throws {
+        let versionName = Self.modelName(from: modelVersion)
+        AppLogger.shared.info("Initializing Parakeet with model: \(versionName)")
+
+        do {
+            let models = try await AsrModels.downloadAndLoad(version: modelVersion)
+            let asr = AsrManager()
+            try await asr.initialize(models: models)
+            self.asrManager = asr
+            self._isModelLoaded = true
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Self.downloadCompleteNotification, object: nil)
+            }
+
+            AppLogger.shared.info("Parakeet model loaded: \(versionName)")
+            resetIdleTimer()
+        } catch {
+            AppLogger.shared.error("Parakeet init failed for model '\(versionName)': \(error)")
+            throw error
+        }
+    }
+
+    private func resetIdleTimer() {
+        idleTask?.cancel()
+        guard idleTimeout > 0 else { return }
+        idleTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(self?.idleTimeout ?? 3600) * 1_000_000_000)
+                await self?.performUnload()
+            } catch {
+                // Task cancelled — fine
+            }
+        }
+    }
+
+    private func convertPCMToFloat(_ data: Data) -> [Float] {
+        let sampleCount = data.count / 2
+        return data.withUnsafeBytes { buffer -> [Float] in
+            let int16Buffer = buffer.bindMemory(to: Int16.self)
+            var floats = [Float](repeating: 0, count: sampleCount)
+            for i in 0..<sampleCount {
+                floats[i] = Float(int16Buffer[i]) / 32768.0
+            }
+            return floats
+        }
+    }
+
+    private func computeRMS(_ samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0.0 }
+        var sumSquares: Float = 0.0
+        for s in samples {
+            sumSquares += s * s
+        }
+        return sqrtf(sumSquares / Float(samples.count))
+    }
+
+    private func resample(_ samples: [Float], from sourceSR: Double, to targetSR: Double) -> [Float] {
+        let ratio = targetSR / sourceSR
+        let newLength = Int(Double(samples.count) * ratio)
+        guard newLength > 0 else { return [] }
+        var result = [Float](repeating: 0, count: newLength)
+        for i in 0..<newLength {
+            let srcIndex = Double(i) / ratio
+            let low = Int(srcIndex)
+            let high = min(low + 1, samples.count - 1)
+            let frac = Float(srcIndex - Double(low))
+            result[i] = samples[low] * (1.0 - frac) + samples[high] * frac
+        }
+        return result
+    }
+}

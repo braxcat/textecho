@@ -137,12 +137,12 @@ actor ParakeetTranscriber: Transcriber {
         try await initParakeet()
     }
 
-    private func performUnload() async {
+    func unload() async {
         idleTask?.cancel()
         await asrManager?.cleanup()
         asrManager = nil
         _isModelLoaded = false
-        AppLogger.shared.info("Parakeet model unloaded (idle)")
+        AppLogger.shared.info("Parakeet model unloaded")
     }
 
     /// Checks if Parakeet models are cached locally.
@@ -191,7 +191,7 @@ actor ParakeetTranscriber: Transcriber {
         idleTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(self?.idleTimeout ?? 3600) * 1_000_000_000)
-                await self?.performUnload()
+                await self?.unload()
             } catch {
                 // Task cancelled — fine
             }

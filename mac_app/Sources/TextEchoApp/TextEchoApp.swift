@@ -145,6 +145,7 @@ final class AppModel: ObservableObject {
             if self.menuBarVisible != desired {
                 self.applyMenuBarVisibility(desired)
             }
+            self.appState.reloadTranscriber()
             self.refreshHistory()
         })
 
@@ -174,9 +175,16 @@ final class AppModel: ObservableObject {
     }
 
     var currentModelDisplayName: String {
-        let name = AppConfig.shared.model.whisperModel
-        return WhisperKitTranscriber.availableModelList
-            .first(where: { $0.name == name })?.displayName ?? name
+        let config = AppConfig.shared.model
+        if config.transcriptionEngine == "whisper" {
+            let name = config.whisperModel
+            return WhisperKitTranscriber.availableModelList
+                .first(where: { $0.name == name })?.displayName ?? name
+        } else {
+            let name = config.parakeetModel
+            return ParakeetTranscriber.availableModelList
+                .first(where: { $0.name == name })?.displayName ?? name
+        }
     }
 
     private func refreshHistory() {
@@ -244,9 +252,7 @@ final class AppModel: ObservableObject {
             setupWizard = SetupWizardController(onClose: { [weak self] in
                 self?.setupWizard?.close()
                 self?.setupWizard = nil
-                // Wizard already loaded the model into memory inline.
-                // Do NOT call preloadCurrentModel() here — it would trigger a redundant
-                // second load (showing a confusing "loading model" overlay after wizard).
+                self?.appState.finalizeFirstLaunchSetup()
                 self?.appState.restartInputMonitor()
             })
         }

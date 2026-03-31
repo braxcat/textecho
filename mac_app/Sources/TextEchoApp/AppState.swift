@@ -14,7 +14,9 @@ final class AppState {
     private let pedalMonitor = StreamDeckPedalMonitor()
     private let trackpadMonitor = TrackpadMonitor()
 
-    private let transcriber: any Transcriber
+    private var transcriber: (any Transcriber)?
+    private var loadedEngine: String = ""
+    private var loadedModel: String = ""
 
     private var settingsWindow: SettingsWindowController?
     private var logsWindow: LogsWindowController?
@@ -29,16 +31,23 @@ final class AppState {
 
     init() {
         let model = AppConfig.shared.model
-        if model.transcriptionEngine == "whisper" {
+        if model.firstLaunch {
+            // Skip transcriber — setup wizard will call finalizeFirstLaunchSetup() on close.
+            transcriber = nil
+        } else if model.transcriptionEngine == "whisper" {
             transcriber = WhisperKitTranscriber(
                 modelName: model.whisperModel,
                 idleTimeout: model.whisperIdleTimeout
             )
+            loadedEngine = "whisper"
+            loadedModel = model.whisperModel
         } else {
             transcriber = ParakeetTranscriber(
                 modelName: model.parakeetModel,
                 idleTimeout: model.whisperIdleTimeout
             )
+            loadedEngine = "parakeet"
+            loadedModel = model.parakeetModel
         }
     }
 
@@ -99,28 +108,70 @@ final class AppState {
         pythonServices.stopAll()
     }
 
-    /// Called by the setup wizard after first-time model selection/loading is done.
-    /// Triggers AppState's own transcriber to preload so it's ready for first recording.
-    func preloadCurrentModel() {
-        guard !hasPreloaded && isCurrentModelCached() else { return }
-        startPreloadTask()
+    /// Called by the setup wizard's onClose callback on first launch.
+    /// Creates the transcriber for the engine/model the user chose, then preloads it.
+    func finalizeFirstLaunchSetup() {
+        guard transcriber == nil else { return }
+        let model = config.model
+        let engine = model.transcriptionEngine
+        if engine == "whisper" {
+            transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
+            loadedEngine = "whisper"
+            loadedModel = model.whisperModel
+        } else {
+            transcriber = ParakeetTranscriber(modelName: model.parakeetModel, idleTimeout: model.whisperIdleTimeout)
+            loadedEngine = "parakeet"
+            loadedModel = model.parakeetModel
+        }
+        if isCurrentModelCached() {
+            startPreloadTask()
+        }
+    }
+
+    /// Hot-swaps the transcriber when the engine or model changes in Settings.
+    /// No-op if the engine and model already match the current transcriber.
+    func reloadTranscriber() {
+        let model = config.model
+        let engine = model.transcriptionEngine
+        let modelName = engine == "whisper" ? model.whisperModel : model.parakeetModel
+        guard engine != loadedEngine || modelName != loadedModel else { return }
+
+        let old = transcriber
+        if let old {
+            Task { await old.unload() }
+        }
+
+        transcriber = nil
+        hasPreloaded = false
+        loadedEngine = engine
+        loadedModel = modelName
+
+        if engine == "whisper" {
+            transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
+        } else {
+            transcriber = ParakeetTranscriber(modelName: model.parakeetModel, idleTimeout: model.whisperIdleTimeout)
+        }
+
+        if isCurrentModelCached() {
+            startPreloadTask()
+        }
     }
 
     private func startPreloadTask() {
-        guard !hasPreloaded else { return }
+        guard !hasPreloaded, let transcriber else { return }
         hasPreloaded = true
         isModelLoading = true
         NotificationCenter.default.post(name: Self.modelLoadingNotification, object: true)
         overlay.showLoadingModel()
-        Task.detached(priority: .utility) { [weak self] in
+        Task.detached(priority: .utility) { [weak self, transcriber] in
             do {
-                try await self?.transcriber.preload()
+                try await transcriber.preload()
                 await MainActor.run {
-                    self?.logger.info("WhisperKit model preloaded")
+                    self?.logger.info("Model preloaded")
                 }
             } catch {
                 await MainActor.run {
-                    self?.logger.error("WhisperKit preload failed: \(error.localizedDescription)")
+                    self?.logger.error("Model preload failed: \(error.localizedDescription)")
                 }
             }
             await MainActor.run {
@@ -236,6 +287,10 @@ final class AppState {
     }
 
     private func transcribe(audioData: Data, isLLM: Bool) async {
+        guard let transcriber else {
+            await MainActor.run { self.overlay.showError("No transcription model loaded") }
+            return
+        }
         do {
             let text = try await transcriber.transcribe(
                 audioData: audioData,

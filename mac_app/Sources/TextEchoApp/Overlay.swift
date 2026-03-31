@@ -263,15 +263,19 @@ struct OverlayView: View {
 
     private let width: CGFloat = 420
 
+    private static var engineBadge: String {
+        AppConfig.shared.model.transcriptionEngine == "whisper" ? "WHISPER" : "PARAKEET"
+    }
+
     /// Friendly model name for display
     private static var modelBadge: String {
         let config = AppConfig.shared.model
         if config.transcriptionEngine == "whisper" {
             let configName = config.whisperModel
             if let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == configName }) {
-                return "WHISPER • \(info.displayName.uppercased())"
+                return info.displayName.uppercased()
             }
-            return "WHISPER • " + configName
+            return configName
                 .replacingOccurrences(of: "openai_whisper-", with: "")
                 .replacingOccurrences(of: "_", with: " ")
                 .uppercased()
@@ -279,9 +283,9 @@ struct OverlayView: View {
 
         let configName = config.parakeetModel
         if let info = ParakeetTranscriber.availableModelList.first(where: { $0.name == configName }) {
-            return "PARAKEET • \(info.displayName.uppercased())"
+            return info.displayName.uppercased()
         }
-        return "PARAKEET • \(configName.replacingOccurrences(of: "-", with: " ").uppercased())"
+        return configName.replacingOccurrences(of: "-", with: " ").uppercased()
     }
 
     var body: some View {
@@ -350,7 +354,7 @@ struct OverlayView: View {
                 // Bottom bar: model badge
                 HStack(spacing: 0) {
                     Spacer()
-                    Text("WHISPER // \(Self.modelBadge)")
+                    Text("\(Self.engineBadge) // \(Self.modelBadge)")
                         .font(.system(size: 7, weight: .medium, design: .monospaced))
                         .foregroundColor(theme.success.opacity(0.3))
                         .tracking(1)

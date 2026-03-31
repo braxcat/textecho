@@ -54,7 +54,11 @@ final class AppState {
         inputMonitor.onEvent = { [weak self] event in
             self?.handleInputEvent(event)
         }
-        inputMonitor.start()
+        // Don't start the event tap during the first-launch wizard — hotkeys would fire
+        // mid-setup. restartInputMonitor() is called from the wizard's onClose callback.
+        if !config.model.firstLaunch {
+            inputMonitor.start()
+        }
 
         recorder.onWaveform = { [weak self] levels in
             self?.overlay.updateWaveform(levels)

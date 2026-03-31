@@ -163,10 +163,9 @@ struct SettingsView: View {
     @State private var trackpadMode: Int = AppConfig.shared.model.trackpadMode
 
     // LLM
+    // Legacy LLM fields (kept for save compatibility)
     @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
     @State private var llmModelPath: String = AppConfig.shared.model.llmModelPath
-    @State private var pythonPath: String = AppConfig.shared.model.pythonPath
-    @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
 
     // Permissions
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
@@ -175,7 +174,12 @@ struct SettingsView: View {
     // Dirty tracking
     @State private var isDirty = false
 
-    private let llmAvailable = AppConfig.shared.model.llmAvailable
+    // LLM (MLX)
+    @State private var llmEngine: String = AppConfig.shared.model.llmEngine
+    @State private var llmModelID: String = AppConfig.shared.model.llmModelID
+    @State private var llmMode: String = AppConfig.shared.model.llmMode
+    @State private var llmCustomPrompt: String = AppConfig.shared.model.llmCustomPrompt
+    @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
     let onUninstall: () -> Void
     let onOpenLogs: () -> Void
     let onOpenSetupWizard: () -> Void
@@ -824,32 +828,70 @@ struct SettingsView: View {
 
                 sectionDivider()
 
-                // MARK: - LLM (only if available)
-                if llmAvailable {
-                    sectionHeader("LLM")
-                    Toggle("Enable LLM", isOn: dirty($llmEnabled))
-                    HStack {
-                        Text("LLM Model Path")
-                        Spacer()
-                        TextField("/path/to/model.gguf", text: dirty($llmModelPath)).frame(width: 260)
-                    }
+                // MARK: - LLM (MLX Swift)
+                sectionHeader("LLM Processing")
 
-                    sectionDivider()
-
-                    sectionHeader("Python (LLM)")
-                    HStack {
-                        Text("Python Path")
-                        Spacer()
-                        TextField("/opt/homebrew/bin/python3", text: dirty($pythonPath)).frame(width: 260)
+                HStack {
+                    Text("LLM Engine")
+                    Spacer()
+                    Picker("", selection: dirty($llmEngine)) {
+                        Text("Disabled").tag("none")
+                        Text("MLX (Local)").tag("mlx")
                     }
-                    HStack {
-                        Text("Daemons Dir")
-                        Spacer()
-                        TextField("/path/to/scripts", text: dirty($scriptsDir)).frame(width: 260)
-                    }
-
-                    sectionDivider()
+                    .frame(maxWidth: 160)
                 }
+
+                if llmEngine == "mlx" {
+                    HStack {
+                        Text("Model")
+                        Spacer()
+                        Picker("", selection: dirty($llmModelID)) {
+                            ForEach(recommendedLLMModels, id: \.id) { model in
+                                Text("\(model.displayName) (~\(String(format: "%.0f", model.sizeGB))GB)")
+                                    .tag(model.id)
+                            }
+                        }
+                        .frame(maxWidth: 260)
+                    }
+
+                    if let modelInfo = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
+                        Text(modelInfo.description)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Mode")
+                        Spacer()
+                        Picker("", selection: dirty($llmMode)) {
+                            ForEach(LLMMode.allCases, id: \.rawValue) { mode in
+                                Text(mode.displayName).tag(mode.rawValue)
+                            }
+                        }
+                        .frame(maxWidth: 160)
+                    }
+
+                    if llmMode == "custom" {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Custom System Prompt")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            TextEditor(text: dirty($llmCustomPrompt))
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(height: 60)
+                                .border(Color.gray.opacity(0.3))
+                        }
+                    }
+
+                    Toggle("Auto-paste LLM result", isOn: dirty($llmAutoPaste))
+                        .font(.system(size: 12))
+
+                    Text("When disabled, LLM results display in the overlay without pasting. Use Ctrl+Shift+D or Shift+Middle-click to trigger LLM processing.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+
+                sectionDivider()
 
                 // MARK: - Permissions
                 sectionHeader("Permissions")
@@ -1108,11 +1150,14 @@ struct SettingsView: View {
             model.silenceDuration = silenceDuration
             model.silenceThreshold = Double(silenceThreshold) ?? model.silenceThreshold
             model.sampleRate = Double(sampleRate) ?? model.sampleRate
+            model.llmEngine = llmEngine
+            model.llmModelID = llmModelID
+            model.llmMode = llmMode
+            model.llmCustomPrompt = llmCustomPrompt
+            model.llmAutoPaste = llmAutoPaste
             model.llmEnabled = llmEnabled
             model.llmModelPath = llmModelPath
             model.showMenuBarIcon = showMenuBarIcon
-            model.pythonPath = pythonPath
-            model.daemonScriptsDir = scriptsDir
             model.transcriptionEngine = selectedEngine
             model.whisperModel = selectedWhisperModel
             model.parakeetModel = selectedParakeetModel

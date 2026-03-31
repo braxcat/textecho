@@ -79,13 +79,9 @@ final class AppConfig {
         var colorBgDark: String         // Hex color for dark background
         var colorBgLight: String        // Hex color for light background
 
-        /// Whether the LLM daemon script is bundled in the app.
+        /// Whether LLM processing is available (MLX engine enabled).
         var llmAvailable: Bool {
-            if let resourcePath = Bundle.main.resourcePath {
-                let path = (resourcePath as NSString).appendingPathComponent("llm_daemon.py")
-                if FileManager.default.fileExists(atPath: path) { return true }
-            }
-            return ScriptLocator.locate(name: "llm_daemon.py") != nil
+            llmEngine == "mlx"
         }
     }
 
@@ -175,16 +171,13 @@ final class AppConfig {
         if let v = obj["llm_engine"] as? String { updated.llmEngine = v }
         if let v = obj["llm_model_id"] as? String { updated.llmModelID = v }
         if let v = obj["llm_mode"] as? String { updated.llmMode = v }
-        if let v = obj["llm_custom_prompt"] as? String { updated.llmCustomPrompt = v }
+        if let v = obj["llm_custom_prompt"] as? String { updated.llmCustomPrompt = String(v.prefix(2000)) }
         if let v = obj["llm_auto_paste"] as? Bool { updated.llmAutoPaste = v }
         if let value = obj["llm_enabled"] as? Bool { updated.llmEnabled = value }
         if let value = obj["llm_model_path"] as? String { updated.llmModelPath = value }
         if let value = obj["show_menu_bar_icon"] as? Bool { updated.showMenuBarIcon = value }
         if let value = obj["first_launch"] as? Bool { updated.firstLaunch = value }
-        if let value = obj["python_path"] as? String { updated.pythonPath = value }
-        if let value = obj["daemon_scripts_dir"] as? String { updated.daemonScriptsDir = value }
-        if let value = obj["transcription_socket"] as? String { updated.transcriptionSocket = value }
-        if let value = obj["llm_socket"] as? String { updated.llmSocket = value }
+        // Legacy Python fields ignored (no longer used — MLX replaces Python LLM daemon)
         if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
         if let v = obj["trackpad_enabled"] as? Bool { updated.trackpadEnabled = v }
@@ -257,10 +250,7 @@ final class AppConfig {
         dict["llm_model_path"] = model.llmModelPath
         dict["show_menu_bar_icon"] = model.showMenuBarIcon
         dict["first_launch"] = model.firstLaunch
-        dict["python_path"] = model.pythonPath
-        dict["daemon_scripts_dir"] = model.daemonScriptsDir
-        dict["transcription_socket"] = model.transcriptionSocket
-        dict["llm_socket"] = model.llmSocket
+        // Legacy Python fields no longer saved (MLX replaces Python LLM daemon)
         dict["pedal_enabled"] = model.pedalEnabled
         dict["pedal_position"] = model.pedalPosition
         dict["trackpad_enabled"] = model.trackpadEnabled
@@ -293,31 +283,11 @@ final class AppConfig {
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL, options: .atomic)
+            // Restrict config file to owner-only (contains custom prompts, model preferences)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         }
     }
 
-    private static func defaultPythonPath() -> String {
-        if let resourcePath = Bundle.main.resourcePath {
-            let bundled = (resourcePath as NSString).appendingPathComponent("venv/bin/python3")
-            if FileManager.default.isExecutableFile(atPath: bundled) {
-                return bundled
-            }
-        }
-        // Fall back to specific Python versions known to work (3.13+ has tiktoken crashes)
-        for path in ["/opt/homebrew/bin/python3.12", "/opt/homebrew/bin/python3.11", "/usr/bin/python3"] {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                return path
-            }
-        }
-        return "/opt/homebrew/bin/python3"
-    }
-
-    private static func defaultDaemonsDir() -> String {
-        if let resourcePath = Bundle.main.resourcePath {
-            return resourcePath
-        }
-        return FileManager.default.currentDirectoryPath
-    }
 }
 
 extension Notification.Name {

@@ -72,9 +72,19 @@ actor MLXLLMProcessor {
 
     var isLoaded: Bool { _isLoaded }
 
+    /// Validates a model ID is from a trusted source.
+    private static func isModelIDTrusted(_ id: String) -> Bool {
+        let trustedPrefixes = ["mlx-community/"]
+        return trustedPrefixes.contains(where: { id.hasPrefix($0) })
+    }
+
     /// Load a model from HuggingFace (downloads on first use, cached after).
     func loadModel(id: String) async throws {
         if currentModelID == id && _isLoaded { return }
+
+        if !Self.isModelIDTrusted(id) {
+            AppLogger.shared.warn("LLM model ID '\(id)' is not from a trusted source (mlx-community/). Proceeding with caution.")
+        }
 
         AppLogger.shared.info("Loading LLM model: \(id)")
         let config = ModelConfiguration(id: id)
@@ -102,7 +112,7 @@ actor MLXLLMProcessor {
 
         let fullPrompt = buildPrompt(system: systemPrompt, context: context, user: prompt)
         let input = UserInput(prompt: fullPrompt)
-        let parameters = GenerateParameters(temperature: 0.7)
+        let parameters = GenerateParameters(temperature: 0.7, maxTokens: 2048)
 
         var fullResponse = ""
 

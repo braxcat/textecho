@@ -13,7 +13,12 @@ final class AppConfig {
         load()
     }
 
+    /// Current config schema version. Increment when fields are added/removed/renamed.
+    static let currentConfigVersion = 3
+
     struct Model: Codable {
+        // Config version — used for migration
+        var configVersion: Int
         // Mouse button number (0=left, 1=right, 2=middle)
         var triggerButton: Int
         // Keyboard shortcut
@@ -86,6 +91,7 @@ final class AppConfig {
     }
 
     private(set) var model = Model(
+        configVersion: AppConfig.currentConfigVersion,
         triggerButton: 2,
         dictationKeyCode: 6,  // Z key — default Ctrl+Opt+Z
         dictationModifiers: UInt(NSEvent.ModifierFlags.control.rawValue | NSEvent.ModifierFlags.option.rawValue),
@@ -158,6 +164,8 @@ final class AppConfig {
         }
 
         var updated = model
+        let savedVersion = obj["config_version"] as? Int ?? 1
+        updated.configVersion = Self.currentConfigVersion
         if let value = obj["trigger_button"] as? Int { updated.triggerButton = value }
         if let value = obj["dictation_keycode"] as? Int { updated.dictationKeyCode = value }
         if let value = obj["dictation_modifiers"] as? UInt { updated.dictationModifiers = value }
@@ -223,7 +231,30 @@ final class AppConfig {
             updated.keyboardMode = v == 1 ? 1 : 0
         }
 
+        // Migrate from older config versions
+        if savedVersion < 2 {
+            // v1→v2: Caps lock mode migration (already handled above)
+        }
+        if savedVersion < 3 {
+            // v2→v3: Python LLM → MLX migration
+            // If user had llm_enabled=true with Python, offer MLX as replacement
+            if updated.llmEnabled && updated.llmEngine == "none" {
+                updated.llmEngine = "mlx"
+                AppLogger.shared.info("Config migration: Python LLM was enabled, migrated to MLX engine")
+            }
+            // Default new users to Parakeet if no engine was set
+            if obj["transcription_engine"] == nil {
+                updated.transcriptionEngine = "parakeet"
+            }
+        }
+
         model = updated
+
+        // Re-save if migrated to a newer version (cleans up stale fields)
+        if savedVersion < Self.currentConfigVersion {
+            AppLogger.shared.info("Config migrated from v\(savedVersion) to v\(Self.currentConfigVersion)")
+            save()
+        }
     }
 
     private func save() {
@@ -233,6 +264,7 @@ final class AppConfig {
             dict = existing
         }
 
+        dict["config_version"] = Self.currentConfigVersion
         dict["trigger_button"] = model.triggerButton
         dict["dictation_keycode"] = model.dictationKeyCode
         dict["dictation_modifiers"] = model.dictationModifiers

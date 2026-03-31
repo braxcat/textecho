@@ -43,7 +43,7 @@ Voice-to-text dictation for macOS with native on-device transcription on Apple S
 
 ## Install from DMG
 
-Download the latest signed DMG from [GitHub Releases](https://github.com/braxcat/dictation-mac/releases). The app is Developer ID signed and Apple-notarized — no Gatekeeper warnings, no right-click workarounds.
+Download the latest signed DMG from [GitHub Releases](https://github.com/braxcat/textecho/releases). The app is Developer ID signed and Apple-notarized — no Gatekeeper warnings, no right-click workarounds.
 
 1. **Open the DMG** — double-click `TextEcho.dmg`
 2. **Drag TextEcho to Applications** — standard drag-and-drop install

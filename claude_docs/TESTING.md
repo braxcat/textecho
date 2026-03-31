@@ -26,8 +26,20 @@ Located in `tests/`:
 
 - **`swift-ci.yml`** — GitHub Actions workflow that runs `swift test` and `swift build -c release` on every PR targeting `main`. Uses macOS runners with Xcode.
 
+## MLX LLM Test Scenarios
+
+After LLM changes, verify:
+
+1. **Model loading:** Select each of the 6 curated models in Settings — verify download + load succeeds
+2. **Mode selection:** Test each mode (Grammar Fix, Rephrase, Answer, Custom) — verify correct prompt sent
+3. **Shift+Middle-click:** Hold Shift + middle-click → record → release → verify LLM processes result
+4. **Ctrl+Shift+D:** Same flow via keyboard shortcut
+5. **Auto-paste toggle:** With llmAutoPaste=false, verify result displays in overlay without pasting
+6. **Custom prompt:** Enter a custom prompt in Settings → verify it is used in Custom mode
+7. **Token limit:** Verify long responses are capped at 2048 tokens
+8. **Invalid model ID:** Attempt to set an unlisted model ID — verify rejection
+9. **Offline inference:** Disconnect network after model download — verify LLM still works
+
 ## Future Testing
 
-- Unit tests for UnixSocket protocol serialization
-- Integration tests for daemon IPC (mock socket server)
 - Audio processing tests (silence detection, RMS calculation)

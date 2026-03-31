@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-29 — Native MLX LLM Integration
+
+### MLX Swift LLM
+- **Replaced Python LLM daemon with native MLX Swift** — deleted PythonServiceManager.swift, LLMClient.swift, UnixSocket.swift; llm_daemon.py no longer needed
+- **MLXLLMProcessor.swift** — new actor using MLXLLM + MLXLMCommon for local inference on Apple Silicon GPU
+- **6 curated models:** Qwen 3.5 9B/4B, Gemma 3 12B/4B, Qwen 2.5 Coder 7B, Llama 3.3 8B
+- **4 LLM modes:** Grammar Fix, Rephrase, Answer, Custom prompt
+
+### Activation & UI
+- **Shift+Middle-click** triggers LLM mode (same as Ctrl+Shift+D)
+- **llmAutoPaste** option — display LLM result without auto-pasting
+- Settings UI: engine toggle, model picker, mode picker, custom prompt editor, auto-paste toggle
+
+### Security
+- maxTokens=2048 limit on LLM output
+- Model ID validation against curated list
+- Config file 0o600 permissions
+- Custom prompt length cap
+- No network after model download — fully offline inference
+
 ## v2.2.0 (2026-03-29) — Parakeet TDT Transcription Engine
 
 ### Dual-Engine Transcription

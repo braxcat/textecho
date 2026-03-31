@@ -1,6 +1,6 @@
 # TextEcho
 
-Native macOS menu bar app for voice-to-text dictation. Dual transcription engines: **Parakeet TDT** (default, via FluidAudio SDK) and **WhisperKit** — both run on Core ML / Apple Neural Engine. Fully native Swift, no Python needed. Optional local LLM processing via llama-cpp-python (build with `--with-llm`). No cloud, no network after model download, fully offline.
+Native macOS menu bar app for voice-to-text dictation. Dual transcription engines: **Parakeet TDT** (default, via FluidAudio SDK) and **WhisperKit** — both run on Core ML / Apple Neural Engine. Fully native Swift, no Python needed. Native local LLM processing via **MLX Swift** (MLXLLM + MLXLMCommon) with 6 curated models and 4 modes. No cloud, no network after model download, fully offline.
 
 ### Documentation Index
 
@@ -42,7 +42,7 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 | `./build_native_app.sh` | Release build — outputs to `dist/TextEcho.app` |
 | `./build_native_app.sh --debug` | Debug build — faster incremental rebuilds, outputs to `dist/TextEcho.app` |
 | `./build_native_app.sh --sign` | Release build with Developer ID signing + hardened runtime + notarization |
-| `./build_native_app.sh --with-llm` | Build with optional LLM module (requires Python 3.12) |
+| `./build_native_app.sh --with-llm` | Build with MLX LLM module |
 | `swift build -c release --package-path mac_app` | Build Swift only (no .app bundle) |
 | `./build_native_dmg.sh` | Create distributable DMG |
 
@@ -58,16 +58,13 @@ TextEcho.app (Swift)
 │   └── WhisperKitTranscriber (WhisperKit → Core ML, fallback)
 ├── StreamDeckPedalMonitor (IOKit HID, exponential backoff retry)
 ├── TrackpadMonitor (IOKit HID, disabled by default)
+├── MLXLLMProcessor (native MLX Swift LLM, 6 models, 4 modes)
 ├── Overlay (SwiftUI floating window)
 ├── TextInjector (clipboard + Cmd+V paste)
-├── HelpWindow (embedded user docs)
-└── PythonServiceManager (optional LLM daemon only)
-
-Optional (--with-llm build):
-└── llm_daemon.py → /tmp/textecho_llm.sock
+└── HelpWindow (embedded user docs)
 ```
 
-Transcription is fully native Swift — no IPC, no temp files, no Python process.
+Transcription and LLM processing are fully native Swift — no IPC, no temp files, no Python process.
 
 ## Key Configuration
 
@@ -82,8 +79,11 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 | `parakeet_model` | `parakeet-tdt-v3` | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
 | `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
 | `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
-| `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
-| `llm_model_path` | `""` | Path to GGUF model file |
+| `llm_enabled` | `false` | Enable MLX LLM processing |
+| `llm_model_id` | `""` | MLX model ID (e.g. `mlx-community/Qwen3.5-9B-4bit`) |
+| `llm_mode` | `grammar` | LLM mode: `grammar`, `rephrase`, `answer`, `custom` |
+| `llm_custom_prompt` | `""` | Custom prompt text (for `custom` mode) |
+| `llmAutoPaste` | `true` | Auto-paste LLM result (false = display only) |
 | `trackpad_enabled` | `false` | Enable Magic Trackpad as dictation trigger |
 | `trackpad_gesture` | `force_click` | Trackpad gesture: `force_click` or `right_click` |
 | `trackpad_mode` | `hold` | Trackpad mode: `hold` or `toggle` |
@@ -94,7 +94,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 |--------|--------|
 | Transcribe & paste (mouse) | Middle-click (hold to record) |
 | Transcribe & paste (keyboard) | Ctrl+D (hold to record) |
-| LLM prompt (mouse) | Ctrl + Middle-click |
+| LLM prompt (mouse) | Ctrl + Middle-click or Shift + Middle-click |
 | LLM prompt (keyboard) | Ctrl+Shift+D |
 | Save clipboard to register | Cmd+Option+[1-9] |
 | Clear all registers | Cmd+Option+0 |
@@ -105,8 +105,7 @@ Transcription is fully native Swift — no IPC, no temp files, no Python process
 ## Development Guidelines
 
 - **macOS 14+ only** — Apple Silicon (ARM64), required by WhisperKit and FluidAudio
-- **No Python needed** for default build — pure Swift + WhisperKit
-- **Python 3.12** only needed if building with `--with-llm`
+- **No Python needed** — pure Swift for transcription and LLM
 - **Do NOT auto-install deps** — no sudo, no pip install, no downloads
 - Lazy model loading, auto-unload after idle timeout
 - WhisperKit models cached at `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/`
@@ -127,8 +126,8 @@ WhisperKit requires macOS 14+ for Core ML Neural Engine support. All Apple Silic
 ### Model Download on First Launch
 First launch requires internet to download the WhisperKit Core ML model (~1.6GB for large-v3-turbo). After that, the app is fully offline.
 
-### Python Version Issue (LLM only)
-If building with `--with-llm`: **Python 3.13+ breaks tiktoken** — Rust/pyo3 segfault. Must use Python 3.12 or 3.11.
+### MLX LLM Model Download
+First LLM use requires internet to download the selected MLX model from HuggingFace. Models are cached locally at `~/.cache/huggingface/`. After download, LLM runs fully offline.
 
 ## Project Structure
 
@@ -144,9 +143,7 @@ dictation-mac/
 │       ├── Transcriber.swift         # Protocol for transcription backends
 │       ├── ParakeetTranscriber.swift   # Parakeet TDT transcription via FluidAudio (actor, default)
 │       ├── WhisperKitTranscriber.swift # Native WhisperKit transcription (actor, fallback)
-│       ├── PythonServiceManager.swift # Optional LLM daemon lifecycle
-│       ├── UnixSocket.swift          # Unix socket IPC (used by LLM only)
-│       ├── LLMClient.swift           # LLM socket client
+│       ├── MLXLLMProcessor.swift      # Native MLX Swift LLM (MLXLLM + MLXLMCommon)
 │       ├── InputMonitor.swift        # CGEventTap hotkey detection
 │       ├── AudioRecorder.swift       # AVAudioEngine recording
 │       ├── Overlay.swift             # SwiftUI floating overlay
@@ -164,13 +161,11 @@ dictation-mac/
 │       ├── TrackpadMonitor.swift      # IOKit HID Magic Trackpad monitor
 │       ├── TextEchoApp.swift         # @main SwiftUI app + menu bar
 │       └── AppLogger.swift           # File logging
-├── llm_daemon.py                     # Optional LLM daemon (llama-cpp)
 ├── .github/
 │   ├── workflows/release.yml        # Signed release pipeline (triggered by v* tags)
 │   └── CODEOWNERS                   # Require review on workflow/signing changes
 ├── build_native_app.sh               # Build script (--sign for signing, --with-llm for Python)
 ├── build_native_dmg.sh               # DMG creation script (--sign for signed DMG)
-├── pyproject.toml                    # Python deps (LLM optional only)
 ├── docs/SIGNING.md                  # Code signing architecture and secret rotation
 └── claude_docs/                      # Project documentation
 ```
@@ -178,7 +173,7 @@ dictation-mac/
 ## Conventions
 
 - Transcription logic lives in `ParakeetTranscriber` (default) and `WhisperKitTranscriber` (fallback), both actor-isolated
-- LLM is fully optional — guard all LLM code paths with `llmAvailable` check
+- LLM is optional — guard all LLM code paths with `llmAvailable` check
 - Config backward compatible — new fields have defaults, old fields preserved
 - No temp files for transcription — WhisperKit accepts float arrays directly
 - **Break all user requests into tracked tasks** using TodoWrite before starting work, so progress is visible and nothing is missed

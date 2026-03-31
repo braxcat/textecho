@@ -62,16 +62,24 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 - **Observer cleanup:** NotificationCenter observers stored and removed in `deinit`
 - **Memory cleanup:** WhisperKitTranscriber instances explicitly released after wizard/download use
 
+## MLX LLM Security Controls
+
+- **maxTokens=2048** — hard limit on LLM output to prevent runaway generation
+- **Model ID validation** — only curated models from the approved list can be loaded
+- **Config file permissions** — `~/.textecho_config` written with 0o600 (owner-only)
+- **Custom prompt length cap** — prevents excessively long custom prompts
+- **No network after download** — models cached locally at `~/.cache/huggingface/`, inference is fully offline
+- **Actor isolation** — MLXLLMProcessor is a Swift actor (no shared mutable state)
+
 ## Attack Surface
 
 - **Minimal** — no network listeners, no HTTP server, no external API calls
-- Unix sockets at `/tmp/textecho_*.sock` are local-only (LLM mode only, filesystem permissions)
 - CGEventTap requires Accessibility permission (user-granted)
-- Python daemons run as user process (no elevated privileges, LLM mode only)
+- LLM runs as native Swift actor in-process (no separate daemon, no IPC)
 
 ## Dependencies
 
 - **Swift:** FluidAudio (Parakeet TDT transcription, Apache 2.0) and WhisperKit (Whisper transcription) — two third-party Swift dependencies
 - **Model weights:** Parakeet TDT models are licensed CC-BY-4.0 (NVIDIA) — attribution required in distribution
-- **Optional:** llama-cpp-python (for LLM features, build with `--with-llm`)
+- **LLM:** MLXLLM + MLXLMCommon (native MLX Swift, GPU inference)
 - Dependabot monitors for known CVEs in all dependencies

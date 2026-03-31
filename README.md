@@ -33,7 +33,7 @@ Voice-to-text dictation for macOS with native on-device transcription on Apple S
 - **Fully offline** — no cloud, no accounts, audio never leaves your Mac
 - **Fast model loading** — lazy load on first use, auto-unload after idle
 - **Menu bar app** — settings, help, log viewer, setup wizard
-- **Optional LLM** — local llama-cpp-python processing (build with `--with-llm`)
+- **Native LLM** — local MLX Swift inference on GPU (6 curated models, 4 modes: grammar fix, rephrase, answer, custom)
 
 ## Requirements
 
@@ -97,7 +97,7 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 | `./build_native_app.sh` | Release build only (no deploy) |
 | `./build_native_app.sh --debug` | Debug build only (faster, no deploy) |
 | `./build_native_app.sh --sign` | Build with Developer ID signing + notarization |
-| `./build_native_app.sh --with-llm` | Build with optional LLM module |
+| `./build_native_app.sh --with-llm` | Build with MLX LLM module |
 
 ## Usage
 
@@ -116,7 +116,8 @@ Enable one or more in Settings or Setup Wizard:
 
 | Action | How |
 |--------|-----|
-| **LLM prompt** | Add LLM modifier to keyboard shortcut (requires `--with-llm` build) |
+| **LLM prompt (mouse)** | Ctrl + Middle-click or Shift + Middle-click |
+| **LLM prompt (keyboard)** | Ctrl+Shift+D |
 | **Paste (pedal)** | Left pedal |
 | **Enter (pedal)** | Right pedal |
 | **Save to register** | Cmd+Option+1-9 |
@@ -165,8 +166,8 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
                     │    │   WHISPER // LG V3 TURBO│      │
                     │    └────────────────────────┘       │
                     │                                     │
-                    │    Optional: llm_daemon.py           │
-                    │    (Unix socket IPC, --with-llm)     │
+                    │    MLXLLMProcessor (native MLX Swift) │
+                    │    6 models, 4 modes, GPU inference   │
                     └─────────────────────────────────────┘
 ```
 
@@ -187,7 +188,7 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 | Concurrency | Swift actor | No shared mutable state, no data races |
 | Audio start | DispatchQueue.main.async | IOKit HID callbacks block AVAudioEngine if started synchronously |
 | Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
-| LLM | Optional Python daemon | Rarely used, not worth native port complexity |
+| LLM | Native MLX Swift (MLXLLM) | On-device GPU inference, no Python, 6 curated models |
 | Pedal | IOKit HID (shared mode) | No kernel extension, no Elgato software needed |
 
 ## Transcription Engines & Models

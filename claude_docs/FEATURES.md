@@ -37,14 +37,15 @@
 - RMS silence detection (skip transcription if audio too quiet)
 - 30-second timeout on inference to prevent indefinite hangs
 
-## Local LLM Processing (Optional)
-- llama-cpp-python with Metal acceleration
-- Must build with `--with-llm` flag (not included in default build)
-- 9-register clipboard context system for multi-snippet LLM prompts
-- Auto-detection of prompt format (Gemma, Llama, Phi, ChatML)
-- Streaming response display in overlay
-- Configurable system prompt, temperature, repeat penalty, top-p/top-k
-- Reasoning tag stripping (<think>/<reasoning> blocks)
+## Native MLX LLM Processing
+- **Native MLX Swift** via MLXLLM + MLXLMCommon — GPU inference on Apple Silicon, no Python
+- **6 curated models:** Qwen 3.5 9B/4B, Gemma 3 12B/4B, Qwen 2.5 Coder 7B, Llama 3.3 8B
+- **4 modes:** Grammar Fix (correct grammar/spelling), Rephrase (reword), Answer (respond to question), Custom prompt
+- **Activation:** Shift+Middle-click or Ctrl+Shift+D (transcribe then process with LLM)
+- **llmAutoPaste** option — display result in overlay without auto-pasting
+- Settings UI: engine toggle, model picker, mode picker, custom prompt editor, auto-paste toggle
+- maxTokens=2048 limit, model ID validation, config file 0o600 permissions
+- Models cached locally after first download — fully offline after that
 
 ## Theme Customization
 - 5 built-in presets: TextEcho (original cyan-blue), Cyber, Classic, Ocean, Sunset
@@ -98,7 +99,7 @@
 - Transcription history: enable/disable, menu bar display, max entries
 - Overlay position: fixed or follow cursor
 - Stream Deck Pedal toggle + position picker
-- LLM configuration (enable, model path) — only visible when LLM module installed
+- LLM configuration: engine toggle, model picker (6 curated), mode picker (4 modes), custom prompt editor, auto-paste toggle
 - Dirty tracking with unsaved changes indicator
 - Confirm dialog on close with unsaved changes
 
@@ -119,7 +120,7 @@
 ## System Integration
 - Autostart via launchd plist management
 - Menu bar icon with daemon controls
-- Log viewer (app + Python daemon logs)
+- Log viewer (app logs)
 - CGEventTap for global input monitoring (30s health check timer, auto-recreates if macOS invalidates mach port)
 - Developer ID signed .app bundle (ad-hoc for dev builds)
 - `rebuild.sh` — one-command pull + build + deploy + launch

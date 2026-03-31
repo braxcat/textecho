@@ -2,7 +2,7 @@
 
 ## Overview
 
-TextEcho is a native macOS menu bar application written in Swift. Transcription runs natively via **Parakeet TDT** (default, FluidAudio SDK) or **WhisperKit** (fallback) — both use Core ML / Apple Neural Engine. No Python process needed. An optional Python LLM daemon can be bundled for local LLM processing.
+TextEcho is a native macOS menu bar application written in Swift. Transcription runs natively via **Parakeet TDT** (default, FluidAudio SDK) or **WhisperKit** (fallback) — both use Core ML / Apple Neural Engine. LLM processing runs natively via **MLX Swift** (MLXLLM + MLXLMCommon) on Apple Silicon GPU. No Python process needed. Fully offline after model download.
 
 ## Component Diagram
 
@@ -31,19 +31,11 @@ TextEcho is a native macOS menu bar application written in Swift. Transcription 
 │                │   │ Neural Engine│           │
 │                │   └─────────────┘           │
 │                │                             │
-│                PythonServiceManager           │
-│                │ (LLM only, optional)        │
-└────────────────┼─────────────────────────────┘
-                 │
-        Unix Socket IPC (optional)
-                 │
-        ┌────────┴─────────────┐
-        │   llm_daemon.py      │
-        │   (optional)         │
-        │   llama-cpp-python   │
-        │   /tmp/textecho_     │
-        │   llm.sock           │
-        └──────────────────────┘
+│                MLXLLMProcessor                │
+│                │ (native MLX Swift, optional) │
+│                │ MLXLLM + MLXLMCommon         │
+│                │ 6 models, 4 modes, GPU       │
+└────────────────┴─────────────────────────────┘
 ```
 
 ## Transcription Flow
@@ -62,11 +54,14 @@ No temp files, no IPC, no Python process involved in transcription. Engine selec
 
 ## LLM Flow (Optional)
 
-1. Swift sends: `{"command": "generate", "prompt": "...", "context": "..."}\n` via Unix socket
-2. Python loads model if needed, runs inference
-3. Responds: `{"success": true, "response": "...", "tokens": N}\n`
+1. User triggers LLM mode via Shift+Middle-click or Ctrl+Shift+D
+2. Audio recorded and transcribed (same as normal flow)
+3. Transcribed text passed to `MLXLLMProcessor` with selected mode (grammar fix, rephrase, answer, custom)
+4. MLXLLMProcessor loads model from HuggingFace cache (lazy, first use downloads)
+5. Runs inference on Apple Silicon GPU via MLXLLM + MLXLMCommon (maxTokens=2048)
+6. Result displayed in overlay; auto-pasted if `llmAutoPaste` is enabled
 
-LLM requires building with `--with-llm` flag. Not included in default builds.
+**Models:** Qwen 3.5 9B/4B, Gemma 3 12B/4B, Qwen 2.5 Coder 7B, Llama 3.3 8B. All native Swift, no Python.
 
 ## Build Pipeline
 
@@ -75,7 +70,7 @@ LLM requires building with `--with-llm` flag. Not included in default builds.
 1. `swift build -c release --package-path mac_app` — compile Swift + WhisperKit
 2. Create .app bundle structure (Contents/MacOS, Contents/Resources)
 3. Copy Swift binary to MacOS/TextEcho
-4. (Optional, `--with-llm`) Create Python venv with llama-cpp-python, copy to Resources/
+4. (Optional, `--with-llm`) Include MLXLLM + MLXLMCommon dependencies
 5. Write Info.plist (LSMinimumSystemVersion: 14.0)
 6. Ad-hoc code sign
 
@@ -88,7 +83,7 @@ Binary hash caching avoids re-signing when only resource files change (preserves
 3. **First transcription:** WhisperKit downloads Core ML model from HuggingFace (~1.6GB for large-v3-turbo), cached locally
 4. **Recording:** AVAudioEngine tap → PCM buffer → WhisperKitTranscriber.transcribe() → TextInjector.inject()
 5. **Idle:** WhisperKit model auto-unloads after configurable timeout (default: never — stays loaded) to free ~1.6GB RAM
-6. **App quit:** AppState.stop() → InputMonitor.stop(), PythonServiceManager.stopAll()
+6. **App quit:** AppState.stop() → InputMonitor.stop()
 
 ## CI/Release Pipeline
 
@@ -116,7 +111,7 @@ Tag push (v*) → GitHub Actions release.yml
 | Transcription | Parakeet TDT (default) / WhisperKit (fallback) | Parakeet: 2.1% WER, 3-6x faster; both run on Neural Engine, no Python |
 | Model loading | Lazy (on first use) | Avoids startup delay; model cached after first download |
 | RAM management | Auto-unload after idle | Frees Neural Engine/RAM when not in use |
-| LLM | Optional Python daemon | Not core feature, rarely used — keep simple |
+| LLM | Native MLX Swift (MLXLLM) | On-device GPU inference, no Python, 6 curated models, 4 modes |
 | Input monitoring | CGEventTap | System-wide hotkeys without extra frameworks; 30s health check auto-recreates tap |
 | Trackpad input | IOKit HID (TrackpadMonitor) | Matches Magic Trackpad by vendor/product ID; force click or right-click gestures |
 | Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |

@@ -50,6 +50,7 @@ struct LogsView: View {
                 Text(logText)
                     .font(.system(size: 11, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
             }
         }
         .padding(16)

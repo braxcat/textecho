@@ -110,15 +110,15 @@ echo "    2. System Settings → Privacy & Security → Microphone"
 echo "       - Find TextEcho or python and toggle OFF or remove"
 echo ""
 echo "    Alternatively, reset ALL permissions for TextEcho with:"
-echo "    tccutil reset All com.braxcat.textecho"
+echo "    tccutil reset All com.textecho.app"
 echo ""
 echo "    (This requires running in Terminal with appropriate permissions)"
 echo ""
 
 # Try to reset TCC permissions automatically (may fail without SIP disabled)
 echo "==> Attempting to reset TCC permissions..."
-tccutil reset Accessibility com.braxcat.textecho 2>/dev/null && echo "    Reset Accessibility permission" || echo "    Could not reset Accessibility (manual removal required)"
-tccutil reset Microphone com.braxcat.textecho 2>/dev/null && echo "    Reset Microphone permission" || echo "    Could not reset Microphone (manual removal required)"
+tccutil reset Accessibility com.textecho.app 2>/dev/null && echo "    Reset Accessibility permission" || echo "    Could not reset Accessibility (manual removal required)"
+tccutil reset Microphone com.textecho.app 2>/dev/null && echo "    Reset Microphone permission" || echo "    Could not reset Microphone (manual removal required)"
 echo ""
 
 echo "==> Uninstall complete!"

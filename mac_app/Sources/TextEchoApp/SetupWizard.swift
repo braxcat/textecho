@@ -69,10 +69,10 @@ struct SetupWizardView: View {
     @State private var pendingModelSelection: String = ""  // intermediate binding for model picker sheet
     @State private var loadingModelName: String? = nil   // being loaded into memory
     @State private var modelReadyByModel: [String: Bool] = [:]  // per-model load state
-    @State private var capsLockEnabled: Bool = AppConfig.shared.model.capsLockEnabled
-    @State private var mouseEnabled: Bool = AppConfig.shared.model.mouseEnabled
+    @State private var capsLockEnabled: Bool = Self.defaultActivationSelection(\.capsLockEnabled)
+    @State private var mouseEnabled: Bool = Self.defaultActivationSelection(\.mouseEnabled)
     @State private var mouseMode: Int = AppConfig.shared.model.mouseMode
-    @State private var keyboardEnabled: Bool = AppConfig.shared.model.keyboardEnabled
+    @State private var keyboardEnabled: Bool = Self.defaultActivationSelection(\.keyboardEnabled)
     @State private var keyboardMode: Int = AppConfig.shared.model.keyboardMode
     @State private var dictationKey: String = Self.keyName(for: AppConfig.shared.model.dictationKeyCode)
     @State private var dictationModCtrl: Bool = AppConfig.shared.model.dictationModifiers & UInt(NSEvent.ModifierFlags.control.rawValue) != 0
@@ -87,7 +87,7 @@ struct SetupWizardView: View {
         let b = AppConfig.shared.model.triggerButton
         return (b == 0 || b == 1 || b == 2) ? b : 2
     }()
-    @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
+    @State private var pedalEnabled: Bool = Self.defaultActivationSelection(\.pedalEnabled)
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
     @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
@@ -106,6 +106,9 @@ struct SetupWizardView: View {
     private let parakeetModels = ParakeetTranscriber.availableModelList
     private var curatedModels: [WhisperKitTranscriber.ModelInfo] {
         whisperModels // Used for Whisper-specific UI (model picker sheet)
+    }
+    private var hasSelectedActivationMethod: Bool {
+        capsLockEnabled || mouseEnabled || keyboardEnabled || pedalEnabled
     }
 
     var body: some View {
@@ -629,7 +632,7 @@ struct SetupWizardView: View {
                 }
             }
 
-            if !capsLockEnabled && !mouseEnabled && !keyboardEnabled && !pedalEnabled {
+            if !hasSelectedActivationMethod {
                 Text("Enable at least one activation method to use TextEcho.")
                     .font(.system(size: 11))
                     .foregroundColor(.orange)
@@ -849,7 +852,7 @@ struct SetupWizardView: View {
                     currentStep = .customize
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!capsLockEnabled && !mouseEnabled && !keyboardEnabled && !pedalEnabled)
+                .disabled(!hasSelectedActivationMethod)
 
             case .customize:
                 Button("Next") {
@@ -1062,7 +1065,7 @@ struct SetupWizardView: View {
     /// Start preloading into memory if the model is downloaded and not already loading/ready.
     private func maybeStartPreload(for modelName: String) {
         guard downloadedModels.contains(modelName) else { return }
-        guard !modelReady || selectedModel != modelName else { return }
+        guard !(modelReadyByModel[modelName] ?? false) else { return }
         guard loadingModelName == nil else { return }
         startModelPreload(modelName: modelName)
     }
@@ -1172,5 +1175,10 @@ struct SetupWizardView: View {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private static func defaultActivationSelection(_ keyPath: KeyPath<AppConfig.Model, Bool>) -> Bool {
+        let model = AppConfig.shared.model
+        return model.firstLaunch ? false : model[keyPath: keyPath]
     }
 }

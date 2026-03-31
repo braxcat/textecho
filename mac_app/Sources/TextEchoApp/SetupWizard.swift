@@ -73,13 +73,22 @@ struct SetupWizardView: View {
     @State private var mouseMode: Int = AppConfig.shared.model.mouseMode
     @State private var keyboardEnabled: Bool = AppConfig.shared.model.keyboardEnabled
     @State private var keyboardMode: Int = AppConfig.shared.model.keyboardMode
+    @State private var dictationKey: String = Self.keyName(for: AppConfig.shared.model.dictationKeyCode)
+    @State private var dictationModCtrl: Bool = AppConfig.shared.model.dictationModifiers & UInt(NSEvent.ModifierFlags.control.rawValue) != 0
+    @State private var dictationModOpt: Bool = AppConfig.shared.model.dictationModifiers & UInt(NSEvent.ModifierFlags.option.rawValue) != 0
+    @State private var dictationModCmd: Bool = AppConfig.shared.model.dictationModifiers & UInt(NSEvent.ModifierFlags.command.rawValue) != 0
+    @State private var dictationModShift: Bool = AppConfig.shared.model.dictationModifiers & UInt(NSEvent.ModifierFlags.shift.rawValue) != 0
+    @State private var llmModShift: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.shift.rawValue) != 0
+    @State private var llmModCtrl: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.control.rawValue) != 0
+    @State private var llmModOpt: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.option.rawValue) != 0
+    @State private var llmModCmd: Bool = AppConfig.shared.model.dictationLLMModifier & UInt(NSEvent.ModifierFlags.command.rawValue) != 0
     @State private var triggerButtonChoice: Int = {
         let b = AppConfig.shared.model.triggerButton
         return (b == 0 || b == 1 || b == 2) ? b : 2
     }()
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
-    @State private var themePreset: String = AppConfig.shared.model.themePreset
+    @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
     @State private var idleTimeoutPreset: Int = {
         let t = AppConfig.shared.model.whisperIdleTimeout
@@ -538,10 +547,31 @@ struct SetupWizardView: View {
             activationOptionCard(
                 icon: "keyboard",
                 title: "Keyboard Shortcut",
-                detail: "Use a keyboard shortcut (configurable in Settings — default ⌃⌥Z).",
+                detail: "Press a keyboard shortcut to start recording.",
                 enabled: $keyboardEnabled
             ) {
                 if keyboardEnabled {
+                    HStack {
+                        Text("Key")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        TextField("Z", text: $dictationKey)
+                            .frame(width: 44)
+                            .multilineTextAlignment(.center)
+                    }
+                    HStack {
+                        Text("Modifiers")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Toggle("⌃", isOn: $dictationModCtrl)
+                            Toggle("⌥", isOn: $dictationModOpt)
+                            Toggle("⌘", isOn: $dictationModCmd)
+                            Toggle("⇧", isOn: $dictationModShift)
+                        }
+                    }
                     HStack {
                         Text("Mode")
                             .font(.system(size: 12))
@@ -554,6 +584,21 @@ struct SetupWizardView: View {
                         .pickerStyle(.segmented)
                         .frame(width: 180)
                     }
+                    HStack {
+                        Text("LLM Extra Modifier")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Toggle("⌃", isOn: $llmModCtrl)
+                            Toggle("⌥", isOn: $llmModOpt)
+                            Toggle("⌘", isOn: $llmModCmd)
+                            Toggle("⇧", isOn: $llmModShift)
+                        }
+                    }
+                    Text("LLM modifier is added on top of the main shortcut to trigger LLM mode.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                 }
             }
 
@@ -597,59 +642,50 @@ struct SetupWizardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Customize")
                     .font(.system(size: 20, weight: .bold))
-                Text("Set your preferred theme, silence timeout, and model memory. You can always change these later in Settings.")
+                Text("Set your recording behavior and model memory. You can always change these later in Settings.")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Theme
             VStack(alignment: .leading, spacing: 8) {
-                Text("Overlay Theme")
+                Toggle("Stop on silence", isOn: $silenceEnabled)
                     .font(.system(size: 14, weight: .semibold))
-                Text("Choose how the recording overlay looks.")
+                Text("Automatically stop recording after a period of silence.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                let allPresets = ["textecho", "cyber", "classic", "ocean", "sunset"]
-                ForEach(allPresets, id: \.self) { name in
-                    themeOptionRow(name: name, selected: themePreset == name) {
-                        themePreset = name
+                if silenceEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Silence Timeout")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("How long to wait after you stop speaking before recording auto-stops and transcription begins.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        HStack(spacing: 12) {
+                            Slider(value: $silenceDuration, in: 0.5...10.0, step: 0.5)
+                            Text(String(format: "%.1fs", silenceDuration))
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .frame(width: 40)
+                        }
+
+                        Text(silenceDuration <= 1.5
+                             ? "Short — good for quick commands and single sentences."
+                             : silenceDuration <= 3.0
+                                 ? "Default — works well for most dictation."
+                                 : "Long — good for pausing to think mid-sentence.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
 
             Divider()
 
-            // Silence Duration
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Silence Timeout")
-                    .font(.system(size: 14, weight: .semibold))
-                Text("How long to wait after you stop speaking before recording auto-stops and transcription begins.")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 12) {
-                    Slider(value: $silenceDuration, in: 0.5...10.0, step: 0.5)
-                    Text(String(format: "%.1fs", silenceDuration))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .frame(width: 40)
-                }
-
-                Text(silenceDuration <= 1.5
-                    ? "Short — good for quick commands and single sentences."
-                    : silenceDuration <= 3.0
-                        ? "Default — works well for most dictation."
-                        : "Long — good for pausing to think mid-sentence.")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Divider()
-
-            // Idle Timeout
             VStack(alignment: .leading, spacing: 8) {
                 Text("Model Memory")
                     .font(.system(size: 14, weight: .semibold))
@@ -685,54 +721,6 @@ struct SetupWizardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private func themeOptionRow(name: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        let descriptions: [String: String] = [
-            "textecho": "Bright cyan-blue — the original look",
-            "cyber": "Teal-green cyberpunk",
-            "classic": "Clean grey",
-            "ocean": "Deep blue",
-            "sunset": "Warm orange-red"
-        ]
-        let colors = OverlayTheme.presets[name] ?? [:]
-        return Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: selected ? "circle.inset.filled" : "circle")
-                    .font(.system(size: 14))
-                    .foregroundColor(selected ? .accentColor : .secondary)
-                // Color swatches
-                HStack(spacing: 3) {
-                    themeColorDot(hex: colors["colorBgDark"])
-                    themeColorDot(hex: colors["colorRecording"])
-                    themeColorDot(hex: colors["colorSuccess"])
-                    themeColorDot(hex: colors["colorWaveform"])
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name.capitalized)
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(descriptions[name] ?? "")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-            .padding(8)
-            .background(selected ? Color.accentColor.opacity(0.06) : Color.clear)
-            .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(selected ? Color.accentColor.opacity(0.35) : Color.gray.opacity(0.15), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func themeColorDot(hex: String?) -> some View {
-        Circle()
-            .fill(hex.flatMap { Color(hex: $0) } ?? Color.gray)
-            .frame(width: 12, height: 12)
-            .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -792,7 +780,7 @@ struct SetupWizardView: View {
                 Text("Recording")
                     .font(.system(size: 12, weight: .semibold))
                 if keyboardEnabled {
-                    hotkeyRow(keys: "⌃⌥Z", action: "Keyboard shortcut (configurable in Settings)")
+                    hotkeyRow(keys: formattedMainShortcut(), action: "Keyboard shortcut")
                 }
                 if mouseEnabled {
                     let buttonName = triggerButtonChoice == 0 ? "Left click" : triggerButtonChoice == 1 ? "Right click" : "Middle click"
@@ -899,6 +887,18 @@ struct SetupWizardView: View {
     }
 
     private func saveActivationConfig() {
+        let dictationMods = buildModifierMask(
+            ctrl: dictationModCtrl,
+            opt: dictationModOpt,
+            cmd: dictationModCmd,
+            shift: dictationModShift
+        )
+        let llmMods = buildModifierMask(
+            ctrl: llmModCtrl,
+            opt: llmModOpt,
+            cmd: llmModCmd,
+            shift: llmModShift
+        )
         AppConfig.shared.update { model in
             model.capsLockEnabled = capsLockEnabled
             model.mouseEnabled = mouseEnabled
@@ -908,6 +908,11 @@ struct SetupWizardView: View {
             model.triggerButton = triggerButtonChoice
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
+            if let keyCode = Self.keyCode(for: dictationKey) {
+                model.dictationKeyCode = keyCode
+            }
+            model.dictationModifiers = dictationMods
+            model.dictationLLMModifier = llmMods
         }
     }
 
@@ -919,10 +924,65 @@ struct SetupWizardView: View {
             timeout = idleTimeoutPreset
         }
         AppConfig.shared.update { model in
-            model.themePreset = themePreset
+            model.silenceEnabled = silenceEnabled
             model.silenceDuration = silenceDuration
             model.whisperIdleTimeout = timeout
         }
+    }
+
+    private func buildModifierMask(ctrl: Bool, opt: Bool, cmd: Bool, shift: Bool) -> UInt {
+        var mask: UInt = 0
+        if ctrl { mask |= UInt(NSEvent.ModifierFlags.control.rawValue) }
+        if opt { mask |= UInt(NSEvent.ModifierFlags.option.rawValue) }
+        if cmd { mask |= UInt(NSEvent.ModifierFlags.command.rawValue) }
+        if shift { mask |= UInt(NSEvent.ModifierFlags.shift.rawValue) }
+        return mask
+    }
+
+    private func formattedMainShortcut() -> String {
+        let modifiers: [(Bool, String)] = [
+            (dictationModCtrl, "⌃"),
+            (dictationModOpt, "⌥"),
+            (dictationModCmd, "⌘"),
+            (dictationModShift, "⇧"),
+        ]
+        let symbols = modifiers.filter { $0.0 }.map { $0.1 }.joined()
+        let key = dictationKey.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if key.isEmpty { return symbols.isEmpty ? "No shortcut set" : symbols }
+        return symbols + key
+    }
+
+    private static func keyCode(for input: String) -> Int? {
+        guard let char = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().first else {
+            return nil
+        }
+        let map: [Character: Int] = [
+            "A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5,
+            "Z": 6, "X": 7, "C": 8, "V": 9, "B": 11,
+            "Q": 12, "W": 13, "E": 14, "R": 15, "Y": 16, "T": 17,
+            "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23,
+            "=": 24, "9": 25, "7": 26, "-": 27, "8": 28, "0": 29,
+            "]": 30, "O": 31, "U": 32, "[": 33, "I": 34, "P": 35,
+            "L": 37, "J": 38, "'": 39, "K": 40, ";": 41,
+            "\\": 42, ",": 43, "/": 44, "N": 45, "M": 46,
+            ".": 47, "`": 50
+        ]
+        return map[char]
+    }
+
+    private static func keyName(for keyCode: Int) -> String {
+        let map: [Int: String] = [
+            0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G",
+            6: "Z", 7: "X", 8: "C", 9: "V", 11: "B",
+            12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T",
+            18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5",
+            24: "=", 25: "9", 26: "7", 27: "-", 28: "8", 29: "0",
+            30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P",
+            37: "L", 38: "J", 39: "'", 40: "K", 41: ";",
+            42: "\\", 43: ",", 44: "/", 45: "N", 46: "M",
+            47: ".", 50: "`"
+        ]
+        return map[keyCode] ?? "Z"
     }
 
     // MARK: - Shared components

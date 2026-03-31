@@ -33,9 +33,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                 onOpenLogs: onOpenLogs,
                 onOpenSetupWizard: onOpenSetupWizard,
                 onClose: { [weak self] in
-                    self?.isDirty = false
-                    self?.window?.isDocumentEdited = false
-                    self?.window?.close()
+                    self?.window?.performClose(nil)
                 },
                 onDirtyChanged: { [weak self] dirty in
                     self?.isDirty = dirty
@@ -67,8 +65,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let alert = NSAlert()
         alert.messageText = "Unsaved Changes"
         alert.informativeText = "You have settings changes that haven't been applied yet."
-        alert.addButton(withTitle: "Apply & Close")
-        alert.addButton(withTitle: "Discard Changes")
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         let response = alert.runModal()
@@ -917,17 +915,15 @@ struct SettingsView: View {
                         }
                     }
                     Spacer()
+                    Button("Close") {
+                        onClose()
+                    }
+                    .buttonStyle(.bordered)
                     Button("Save") {
                         save()
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(!isDirty)
-                    Button("Save & Close") {
-                        save()
-                        onClose()
-                    }
                     .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: [])
+                    .disabled(!isDirty)
                 }
             }
             .padding(20)

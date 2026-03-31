@@ -509,7 +509,7 @@ struct CyberWaveformView: View {
     let levels: [Double]
     var waveformColor: Color = Color(red: 0.3, green: 0.6, blue: 0.9)
     var recordingColor: Color = Color(red: 0.0, green: 0.9, blue: 1.0)
-    private let silenceThreshold: Double = 0.05
+    private let silenceThreshold: Double = 0.005
     @State private var pulseOpacity: Double = 0.4
 
     var body: some View {
@@ -586,7 +586,7 @@ struct CyberWaveformView: View {
         guard active else { return 3 }
         let maxHeight: CGFloat = 60
         let minActive: CGFloat = 6
-        let amplifiedLevel = min(level * 2.5, 1.0) // amplify quiet audio so waveform is visible
+        let amplifiedLevel = min(level * 5.0, 1.0) // keep quiet-but-valid speech visibly active
         let normalized = min(max(amplifiedLevel, 0.0), 1.0)
         let scaled = pow(normalized, 0.5) // more responsive to quiet sounds
         return minActive + (maxHeight - minActive) * CGFloat(scaled)

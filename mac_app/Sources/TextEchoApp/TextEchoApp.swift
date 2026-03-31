@@ -105,7 +105,7 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             self.showSetupWizardIfNeeded()
-            let shouldShowRestore = AppConfig.shared.model.firstLaunch || !self.menuBarVisible
+            let shouldShowRestore = !self.menuBarVisible
             if shouldShowRestore {
                 self.showRestoreWindow()
             }

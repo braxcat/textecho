@@ -238,7 +238,7 @@ final class AudioRecorder {
         let rms = computeRMS(samples: samples)
         os_unfair_lock_lock(lock)
         waveformLevels.removeFirst()
-        waveformLevels.append(min(max(rms * 5.0, 0.0), 1.0))
+        waveformLevels.append(min(max(rms * 3.2, 0.0), 1.0))
         let levels = waveformLevels
         os_unfair_lock_unlock(lock)
         onWaveform?(levels)

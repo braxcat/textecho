@@ -16,12 +16,25 @@ enum InputEvent {
 }
 
 final class InputMonitor {
-    var onEvent: ((InputEvent) -> Void)?
+    /// Setting this property wraps the closure so every call dispatches to the main thread.
+    /// CGEventTap callbacks fire on the dedicated background thread — this keeps
+    /// @MainActor callers (AppState.handleInputEvent) safe without any call-site changes.
+    private var _onEvent: ((InputEvent) -> Void)?
+    var onEvent: ((InputEvent) -> Void)? {
+        get { _onEvent }
+        set {
+            guard let newValue else { _onEvent = nil; return }
+            _onEvent = { event in
+                DispatchQueue.main.async { newValue(event) }
+            }
+        }
+    }
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var tapThread: Thread?
+    private var tapRunLoop: CFRunLoop?
     private var configObserver: NSObjectProtocol?
-    private var healthCheckTimer: Timer?
 
     private var triggerButton: Int { AppConfig.shared.triggerButton }
     private var dictationKeyCode: Int { AppConfig.shared.dictationKeyCode }
@@ -65,28 +78,46 @@ final class InputMonitor {
             return
         }
 
-        AppLogger.shared.info("Input monitor started (event tap active)")
-
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        if let source = runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
-        }
+        guard let source = runLoopSource else { return }
+
         CGEvent.tapEnable(tap: eventTap, enable: true)
 
-        startHealthCheckTimer()
+        // Run the tap on a dedicated background thread with its own run loop.
+        // A CGEventTap is a synchronous kernel-level filter: the kernel holds every
+        // keyboard/mouse event until our callback returns. On the main run loop, any
+        // main-thread work (timers, UI, etc.) delays the callback and causes macOS to
+        // disable the tap (kCGEventTapDisableByTimeout), dropping input system-wide.
+        // On a background thread only TextEcho's processing is affected.
+        let sem = DispatchSemaphore(value: 0)
+        tapThread = Thread { [weak self] in
+            guard let self else { sem.signal(); return }
+            let rl = CFRunLoopGetCurrent()
+            CFRunLoopAddSource(rl, source, .commonModes)
+            self.tapRunLoop = rl   // written before sem.signal(); main thread reads after wait()
+            sem.signal()
+            CFRunLoopRun()
+        }
+        tapThread?.name = "com.textecho.eventtap"
+        tapThread?.qualityOfService = .userInteractive
+        tapThread?.start()
+        sem.wait()
+
+        AppLogger.shared.info("Input monitor started (event tap active)")
         setupConfigObserverIfNeeded()
         syncCapsLockStateIfNeeded()
     }
 
     func stop() {
-        healthCheckTimer?.invalidate()
-        healthCheckTimer = nil
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+        if let source = runLoopSource, let rl = tapRunLoop {
+            CFRunLoopRemoveSource(rl, source, .commonModes)
+            CFRunLoopStop(rl)
         }
+        tapRunLoop = nil
+        tapThread = nil
         runLoopSource = nil
         eventTap = nil
         if let observer = configObserver {
@@ -155,9 +186,9 @@ final class InputMonitor {
         if button == triggerButton {
             AppLogger.shared.info("Mouse trigger \(down ? "down" : "up") (button=\(button))")
             if down {
-                onEvent?(.triggerDown)
+                _onEvent?(.triggerDown)
             } else {
-                onEvent?(.triggerUp)
+                _onEvent?(.triggerUp)
             }
         }
     }
@@ -167,7 +198,7 @@ final class InputMonitor {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
         if keyCode == 53 { // ESC
-            onEvent?(.escape)
+            _onEvent?(.escape)
             return
         }
 
@@ -176,17 +207,17 @@ final class InputMonitor {
 
         if cmd && opt {
             switch keyCode {
-            case 18: onEvent?(.register(1))
-            case 19: onEvent?(.register(2))
-            case 20: onEvent?(.register(3))
-            case 21: onEvent?(.register(4))
-            case 23: onEvent?(.register(5))
-            case 22: onEvent?(.register(6))
-            case 26: onEvent?(.register(7))
-            case 28: onEvent?(.register(8))
-            case 25: onEvent?(.register(9))
-            case 29: onEvent?(.clearRegisters)
-            case 49: onEvent?(.settingsHotkey) // space
+            case 18: _onEvent?(.register(1))
+            case 19: _onEvent?(.register(2))
+            case 20: _onEvent?(.register(3))
+            case 21: _onEvent?(.register(4))
+            case 23: _onEvent?(.register(5))
+            case 22: _onEvent?(.register(6))
+            case 26: _onEvent?(.register(7))
+            case 28: _onEvent?(.register(8))
+            case 25: _onEvent?(.register(9))
+            case 29: _onEvent?(.clearRegisters)
+            case 49: _onEvent?(.settingsHotkey) // space
             default: break
             }
         }
@@ -202,10 +233,10 @@ final class InputMonitor {
                 dictationActive = true
                 if llmSet {
                     dictationLLM = true
-                    onEvent?(.dictateLLMDown)
+                    _onEvent?(.dictateLLMDown)
                 } else {
                     dictationLLM = false
-                    onEvent?(.dictateDown)
+                    _onEvent?(.dictateDown)
                 }
             }
         }
@@ -217,9 +248,9 @@ final class InputMonitor {
         if dictationActive && keyCode == dictationKeyCode {
             dictationActive = false
             if dictationLLM {
-                onEvent?(.dictateLLMUp)
+                _onEvent?(.dictateLLMUp)
             } else {
-                onEvent?(.dictateUp)
+                _onEvent?(.dictateUp)
             }
         }
     }
@@ -230,7 +261,7 @@ final class InputMonitor {
         guard keyCode == 57 else { return } // Caps Lock
         let isOn = event.flags.contains(.maskAlphaShift)
         AppLogger.shared.info("Caps Lock changed: \(isOn ? "ON" : "OFF")")
-        onEvent?(.capsLockChanged(isOn))
+        _onEvent?(.capsLockChanged(isOn))
     }
 
     private func setupConfigObserverIfNeeded() {
@@ -246,38 +277,7 @@ final class InputMonitor {
 
     private func syncCapsLockStateIfNeeded() {
         guard AppConfig.shared.model.capsLockEnabled else { return }
-        onEvent?(.capsLockChanged(NSEvent.modifierFlags.contains(.capsLock)))
-    }
-
-    // MARK: - Health check
-
-    private func startHealthCheckTimer() {
-        healthCheckTimer?.invalidate()
-        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.checkTapHealth()
-        }
-    }
-
-    private func checkTapHealth() {
-        guard let tap = eventTap else {
-            AppLogger.shared.error("Health check: event tap is nil — recreating")
-            restart()
-            return
-        }
-        if !CFMachPortIsValid(tap) {
-            AppLogger.shared.error("Health check: mach port invalidated by macOS — recreating tap")
-            restart()
-            return
-        }
-        if !CGEvent.tapIsEnabled(tap: tap) {
-            AppLogger.shared.warn("Health check: event tap disabled — recreating tap (re-enable insufficient)")
-            restart()
-        }
-    }
-
-    private func restart() {
-        stop()
-        start()
+        _onEvent?(.capsLockChanged(NSEvent.modifierFlags.contains(.capsLock)))
     }
 
     private func modifierFlags(from stored: UInt) -> CGEventFlags {

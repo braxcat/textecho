@@ -27,8 +27,8 @@ actor ParakeetTranscriber: Transcriber {
     }
 
     static let availableModelList: [ModelInfo] = [
-        ModelInfo(version: .v3, name: "parakeet-tdt-v3", displayName: "Parakeet V3 (25 langs)", description: "Best accuracy, 25 European languages (Recommended)"),
-        ModelInfo(version: .v2, name: "parakeet-tdt-v2", displayName: "Parakeet V2 (English)", description: "Fast, English only — 2.1% WER"),
+        ModelInfo(version: .v2, name: "parakeet-tdt-v2", displayName: "Parakeet V2 (English, Recommended)", description: "Best choice if you only need English."),
+        ModelInfo(version: .v3, name: "parakeet-tdt-v3", displayName: "Parakeet V3 (25 langs)", description: "Coverage for 25 European languages."),
     ]
 
     /// Maps config string to AsrModelVersion.
@@ -36,7 +36,7 @@ actor ParakeetTranscriber: Transcriber {
         switch name {
         case "parakeet-tdt-v2": return .v2
         case "parakeet-tdt-v3": return .v3
-        default: return .v3
+        default: return .v2
         }
     }
 
@@ -46,7 +46,7 @@ actor ParakeetTranscriber: Transcriber {
         case .v2: return "parakeet-tdt-v2"
         case .v3: return "parakeet-tdt-v3"
         case .tdtCtc110m: return "parakeet-tdt-ctc-110m"
-        @unknown default: return "parakeet-tdt-v3"
+        @unknown default: return "parakeet-tdt-v2"
         }
     }
 
@@ -137,12 +137,12 @@ actor ParakeetTranscriber: Transcriber {
         try await initParakeet()
     }
 
-    private func performUnload() async {
+    func unload() async {
         idleTask?.cancel()
         await asrManager?.cleanup()
         asrManager = nil
         _isModelLoaded = false
-        AppLogger.shared.info("Parakeet model unloaded (idle)")
+        AppLogger.shared.info("Parakeet model unloaded")
     }
 
     /// Checks if Parakeet models are cached locally.
@@ -191,7 +191,7 @@ actor ParakeetTranscriber: Transcriber {
         idleTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(self?.idleTimeout ?? 3600) * 1_000_000_000)
-                await self?.performUnload()
+                await self?.unload()
             } catch {
                 // Task cancelled — fine
             }

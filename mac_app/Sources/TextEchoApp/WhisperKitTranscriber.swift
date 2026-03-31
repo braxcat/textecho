@@ -157,11 +157,11 @@ actor WhisperKitTranscriber: Transcriber {
         try await initWhisperKit()
     }
 
-    func unloadModel() {
+    func unload() {
         idleTask?.cancel()
         whisperKit = nil
         _isModelLoaded = false
-        AppLogger.shared.info("WhisperKit model unloaded (idle)")
+        AppLogger.shared.info("WhisperKit model unloaded")
     }
 
     /// WhisperKit downloads models via HuggingFace Hub to ~/Documents/huggingface/models/...
@@ -374,7 +374,7 @@ actor WhisperKitTranscriber: Transcriber {
         idleTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: UInt64(self?.idleTimeout ?? 3600) * 1_000_000_000)
-                await self?.unloadModel()
+                await self?.unload()
             } catch {
                 // Task cancelled — that's fine
             }

@@ -263,17 +263,29 @@ struct OverlayView: View {
 
     private let width: CGFloat = 420
 
+    private static var engineBadge: String {
+        AppConfig.shared.model.transcriptionEngine == "whisper" ? "WHISPER" : "PARAKEET"
+    }
+
     /// Friendly model name for display
     private static var modelBadge: String {
-        let configName = AppConfig.shared.model.whisperModel
-        if let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == configName }) {
+        let config = AppConfig.shared.model
+        if config.transcriptionEngine == "whisper" {
+            let configName = config.whisperModel
+            if let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == configName }) {
+                return info.displayName.uppercased()
+            }
+            return configName
+                .replacingOccurrences(of: "openai_whisper-", with: "")
+                .replacingOccurrences(of: "_", with: " ")
+                .uppercased()
+        }
+
+        let configName = config.parakeetModel
+        if let info = ParakeetTranscriber.availableModelList.first(where: { $0.name == configName }) {
             return info.displayName.uppercased()
         }
-        // Fallback: strip prefix and clean up
-        return configName
-            .replacingOccurrences(of: "openai_whisper-", with: "")
-            .replacingOccurrences(of: "_", with: " ")
-            .uppercased()
+        return configName.replacingOccurrences(of: "-", with: " ").uppercased()
     }
 
     var body: some View {
@@ -342,7 +354,7 @@ struct OverlayView: View {
                 // Bottom bar: model badge
                 HStack(spacing: 0) {
                     Spacer()
-                    Text("WHISPER // \(Self.modelBadge)")
+                    Text("\(Self.engineBadge) // \(Self.modelBadge)")
                         .font(.system(size: 7, weight: .medium, design: .monospaced))
                         .foregroundColor(theme.success.opacity(0.3))
                         .tracking(1)
@@ -509,7 +521,7 @@ struct CyberWaveformView: View {
     let levels: [Double]
     var waveformColor: Color = Color(red: 0.3, green: 0.6, blue: 0.9)
     var recordingColor: Color = Color(red: 0.0, green: 0.9, blue: 1.0)
-    private let silenceThreshold: Double = 0.05
+    private let silenceThreshold: Double = 0.005
     @State private var pulseOpacity: Double = 0.4
 
     var body: some View {
@@ -586,9 +598,8 @@ struct CyberWaveformView: View {
         guard active else { return 3 }
         let maxHeight: CGFloat = 60
         let minActive: CGFloat = 6
-        let amplifiedLevel = min(level * 2.5, 1.0) // amplify quiet audio so waveform is visible
-        let normalized = min(max(amplifiedLevel, 0.0), 1.0)
-        let scaled = pow(normalized, 0.5) // more responsive to quiet sounds
+        let normalized = min(max(level, 0.0), 1.0)
+        let scaled = pow(normalized, 0.7) // still favors quieter speech, but less aggressively
         return minActive + (maxHeight - minActive) * CGFloat(scaled)
     }
 }

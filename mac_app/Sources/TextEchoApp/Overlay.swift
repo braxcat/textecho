@@ -265,15 +265,23 @@ struct OverlayView: View {
 
     /// Friendly model name for display
     private static var modelBadge: String {
-        let configName = AppConfig.shared.model.whisperModel
-        if let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == configName }) {
-            return info.displayName.uppercased()
+        let config = AppConfig.shared.model
+        if config.transcriptionEngine == "whisper" {
+            let configName = config.whisperModel
+            if let info = WhisperKitTranscriber.availableModelList.first(where: { $0.name == configName }) {
+                return "WHISPER • \(info.displayName.uppercased())"
+            }
+            return "WHISPER • " + configName
+                .replacingOccurrences(of: "openai_whisper-", with: "")
+                .replacingOccurrences(of: "_", with: " ")
+                .uppercased()
         }
-        // Fallback: strip prefix and clean up
-        return configName
-            .replacingOccurrences(of: "openai_whisper-", with: "")
-            .replacingOccurrences(of: "_", with: " ")
-            .uppercased()
+
+        let configName = config.parakeetModel
+        if let info = ParakeetTranscriber.availableModelList.first(where: { $0.name == configName }) {
+            return "PARAKEET • \(info.displayName.uppercased())"
+        }
+        return "PARAKEET • \(configName.replacingOccurrences(of: "-", with: " ").uppercased())"
     }
 
     var body: some View {
@@ -586,9 +594,8 @@ struct CyberWaveformView: View {
         guard active else { return 3 }
         let maxHeight: CGFloat = 60
         let minActive: CGFloat = 6
-        let amplifiedLevel = min(level * 5.0, 1.0) // keep quiet-but-valid speech visibly active
-        let normalized = min(max(amplifiedLevel, 0.0), 1.0)
-        let scaled = pow(normalized, 0.5) // more responsive to quiet sounds
+        let normalized = min(max(level, 0.0), 1.0)
+        let scaled = pow(normalized, 0.7) // still favors quieter speech, but less aggressively
         return minActive + (maxHeight - minActive) * CGFloat(scaled)
     }
 }

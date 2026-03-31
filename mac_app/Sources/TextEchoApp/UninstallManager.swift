@@ -132,7 +132,7 @@ final class UninstallManager {
 
     /// Returns the list of existing cache directories and a human-readable combined size string.
     /// Returns nil for the size string if no cache directories exist.
-    private static func fetchCacheInfo() async -> ([URL], String?) {
+    private nonisolated static func fetchCacheInfo() async -> ([URL], String?) {
         return await Task.detached(priority: .utility) {
             let fm = FileManager.default
             var urls: [URL] = []
@@ -156,7 +156,7 @@ final class UninstallManager {
         }.value
     }
 
-    private static func directorySize(at url: URL) -> Int64 {
+    private nonisolated static func directorySize(at url: URL) -> Int64 {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: url,
@@ -172,7 +172,7 @@ final class UninstallManager {
         return size
     }
 
-    private static func formatBytes(_ bytes: Int64) -> String {
+    private nonisolated static func formatBytes(_ bytes: Int64) -> String {
         let gb = Double(bytes) / (1024 * 1024 * 1024)
         if gb >= 0.1 {
             return String(format: "%.1f GB", gb)

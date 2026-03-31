@@ -74,7 +74,10 @@ final class TrackpadMonitor {
         let sem = DispatchSemaphore(value: 0)
         monitorThread = Thread { [weak self] in
             guard let self else { sem.signal(); return }
-            let runLoop = CFRunLoopGetCurrent()
+            guard let runLoop = CFRunLoopGetCurrent() else {
+                sem.signal()
+                return
+            }
             self.monitorRunLoop = runLoop
             self.startManager(on: runLoop)
             sem.signal()

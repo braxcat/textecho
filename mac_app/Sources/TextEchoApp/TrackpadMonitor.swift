@@ -20,15 +20,44 @@ final class TrackpadMonitor {
     static let productID = 0x0265 // Magic Trackpad
 
     var gesture: TrackpadGesture = .forceClick
-    var onTriggerDown: (() -> Void)?
-    var onTriggerUp: (() -> Void)?
-    var onConnectionChanged: ((Bool) -> Void)?
+    private var _onTriggerDown: (() -> Void)?
+    var onTriggerDown: (() -> Void)? {
+        get { _onTriggerDown }
+        set {
+            guard let newValue else { _onTriggerDown = nil; return }
+            _onTriggerDown = {
+                DispatchQueue.main.async { newValue() }
+            }
+        }
+    }
+    private var _onTriggerUp: (() -> Void)?
+    var onTriggerUp: (() -> Void)? {
+        get { _onTriggerUp }
+        set {
+            guard let newValue else { _onTriggerUp = nil; return }
+            _onTriggerUp = {
+                DispatchQueue.main.async { newValue() }
+            }
+        }
+    }
+    private var _onConnectionChanged: ((Bool) -> Void)?
+    var onConnectionChanged: ((Bool) -> Void)? {
+        get { _onConnectionChanged }
+        set {
+            guard let newValue else { _onConnectionChanged = nil; return }
+            _onConnectionChanged = { connected in
+                DispatchQueue.main.async { newValue(connected) }
+            }
+        }
+    }
 
     private var manager: IOHIDManager?
     private var connectedDevices: Set<IOHIDDevice> = []
     private var retryTimer: Timer?
     private var retryInterval: TimeInterval = 3.0
     private var retryCount: Int = 0
+    private var monitorThread: Thread?
+    private var monitorRunLoop: CFRunLoop?
 
     // Force click state tracking
     private var clickStage: Int = 0   // 0=none, 1=normal click, 2=force click
@@ -40,10 +69,51 @@ final class TrackpadMonitor {
     var isConnected: Bool { !connectedDevices.isEmpty }
 
     func start() {
+        guard manager == nil, monitorThread == nil else { return }
+
+        let sem = DispatchSemaphore(value: 0)
+        monitorThread = Thread { [weak self] in
+            guard let self else { sem.signal(); return }
+            let runLoop = CFRunLoopGetCurrent()
+            self.monitorRunLoop = runLoop
+            self.startManager(on: runLoop)
+            sem.signal()
+            CFRunLoopRun()
+        }
+        monitorThread?.name = "com.textecho.trackpad"
+        monitorThread?.qualityOfService = .userInteractive
+        monitorThread?.start()
+        sem.wait()
+    }
+
+    func stop() {
+        stopManager()
+    }
+
+    private func stopFromMonitorThread() {
+        stopRetryTimer()
+
+        if let manager, let runLoop = monitorRunLoop {
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+            IOHIDManagerUnscheduleFromRunLoop(manager, runLoop, CFRunLoopMode.defaultMode.rawValue)
+        }
+
+        manager = nil
+        connectedDevices.removeAll()
+        clickStage = 0
+        triggerActive = false
+        rightButtonDown = false
+
+        if let runLoop = monitorRunLoop {
+            CFRunLoopStop(runLoop)
+        }
+    }
+
+    private func startManager(on runLoop: CFRunLoop) {
         guard manager == nil else { return }
 
-        manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        guard let manager else { return }
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        self.manager = manager
 
         // Match Apple Magic Trackpad over Bluetooth only — skip built-in trackpad (SPI)
         let matchDict: [String: Any] = [
@@ -67,7 +137,7 @@ final class TrackpadMonitor {
             monitor.deviceDisconnected(device)
         }, selfPtr)
 
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerScheduleWithRunLoop(manager, runLoop, CFRunLoopMode.defaultMode.rawValue)
         let result = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         if result == kIOReturnSuccess {
             AppLogger.shared.info("Magic Trackpad monitor started")
@@ -78,16 +148,18 @@ final class TrackpadMonitor {
         startRetryTimer()
     }
 
-    func stop() {
-        stopRetryTimer()
-        guard let manager else { return }
-        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-        self.manager = nil
-        connectedDevices.removeAll()
-        clickStage = 0
-        triggerActive = false
-        rightButtonDown = false
+    private func stopManager() {
+        guard monitorThread != nil, let runLoop = monitorRunLoop else { return }
+
+        let sem = DispatchSemaphore(value: 0)
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+            stopFromMonitorThread()
+            sem.signal()
+        }
+        CFRunLoopWakeUp(runLoop)
+        sem.wait()
+        self.monitorThread = nil
+        self.monitorRunLoop = nil
     }
 
     deinit {
@@ -117,7 +189,7 @@ final class TrackpadMonitor {
         retryInterval = 3.0
         retryCount = 0
         AppLogger.shared.info("Magic Trackpad connected (devices: \(connectedDevices.count))")
-        onConnectionChanged?(true)
+        _onConnectionChanged?(true)
 
         // Filter to button + digitizer pages (skip generic desktop / touch coordinates)
         // Using multiple match via array of dicts
@@ -143,10 +215,10 @@ final class TrackpadMonitor {
             clickStage = 0
             if triggerActive {
                 triggerActive = false
-                onTriggerUp?()
+                _onTriggerUp?()
             }
             rightButtonDown = false
-            onConnectionChanged?(false)
+            _onConnectionChanged?(false)
             startRetryTimer()
         }
     }
@@ -186,11 +258,11 @@ final class TrackpadMonitor {
         if pressed && !triggerActive {
             triggerActive = true
             AppLogger.shared.info("Trackpad force click DOWN")
-            onTriggerDown?()
+            _onTriggerDown?()
         } else if !pressed && triggerActive {
             triggerActive = false
             AppLogger.shared.info("Trackpad force click UP")
-            onTriggerUp?()
+            _onTriggerUp?()
         }
     }
 
@@ -204,10 +276,10 @@ final class TrackpadMonitor {
             rightButtonDown = pressed
             if pressed {
                 AppLogger.shared.info("Trackpad right-click DOWN")
-                onTriggerDown?()
+                _onTriggerDown?()
             } else {
                 AppLogger.shared.info("Trackpad right-click UP")
-                onTriggerUp?()
+                _onTriggerUp?()
             }
         }
     }

@@ -66,8 +66,9 @@ struct SetupWizardView: View {
     @State private var downloadedModels: Set<String> = []
     @State private var downloadError: String? = nil
     @State private var showModelPicker: Bool = false
+    @State private var pendingModelSelection: String = ""  // intermediate binding for model picker sheet
     @State private var loadingModelName: String? = nil   // being loaded into memory
-    @State private var modelReady: Bool = false           // selected model is loaded & ready
+    @State private var modelReadyByModel: [String: Bool] = [:]  // per-model load state
     @State private var capsLockEnabled: Bool = AppConfig.shared.model.capsLockEnabled
     @State private var mouseEnabled: Bool = AppConfig.shared.model.mouseEnabled
     @State private var mouseMode: Int = AppConfig.shared.model.mouseMode
@@ -142,13 +143,18 @@ struct SetupWizardView: View {
         }
         .frame(minWidth: 500, minHeight: 540)
         .sheet(isPresented: $showModelPicker, onDismiss: {
-            // Re-check cache status for all curated models plus any non-curated
-            // model that may have been downloaded inside ModelPickerView.
+            // Only commit the selection if the user explicitly tapped Select/Download inside the sheet.
+            // Tapping Done without any action leaves selectedModel unchanged.
+            if !pendingModelSelection.isEmpty && pendingModelSelection != selectedModel {
+                selectedModel = pendingModelSelection
+                startModelPreload(modelName: pendingModelSelection)
+            }
+            pendingModelSelection = ""
             var names = curatedModels.map(\.name)
             if !names.contains(selectedModel) { names.append(selectedModel) }
             checkCacheStatus(for: names)
         }) {
-            ModelPickerView(selectedModel: $selectedModel)
+            ModelPickerView(selectedModel: $pendingModelSelection)
         }
         .onAppear {
             determineInitialStep()
@@ -166,11 +172,6 @@ struct SetupWizardView: View {
                 checkCacheStatus(for: names)
                 maybeStartPreload(for: selectedModel)
             }
-        }
-        .onChange(of: selectedModel) { _ in
-            // Reset ready state when selection changes.
-            // Preload is triggered explicitly by the "Select" button.
-            modelReady = false
         }
         .onDisappear {
             timer?.invalidate()
@@ -328,7 +329,6 @@ struct SetupWizardView: View {
                 } else {
                     selectedModel = AppConfig.shared.model.whisperModel
                 }
-                modelReady = false
                 downloadError = nil
             }
 
@@ -395,7 +395,7 @@ struct SetupWizardView: View {
                 .buttonStyle(.plain)
             }
 
-            if !modelReady {
+            if !(modelReadyByModel[selectedModel] ?? false) {
                 Text(downloadingModel != nil
                      ? "Downloading model…"
                      : !validatingModels.isEmpty
@@ -417,7 +417,7 @@ struct SetupWizardView: View {
         let isValidating = validatingModels.contains(name)
         let isDownloaded = downloadedModels.contains(name)
         let isLoadingThis = loadingModelName == name
-        let isReadyThis = modelReady && selectedModel == name
+        let isReadyThis = modelReadyByModel[name] ?? false
 
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
@@ -841,7 +841,7 @@ struct SetupWizardView: View {
                     currentStep = .activation
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!modelReady)
+                .disabled(!(modelReadyByModel[selectedModel] ?? false))
 
             case .activation:
                 Button("Next") {
@@ -1088,7 +1088,7 @@ struct SetupWizardView: View {
                 }
                 await MainActor.run {
                     loadingModelName = nil
-                    if selectedModel == modelName { modelReady = true }
+                    modelReadyByModel[modelName] = true
                 }
             } catch {
                 await MainActor.run {
@@ -1134,9 +1134,7 @@ struct SetupWizardView: View {
                     await MainActor.run {
                         self.downloadingModel = nil
                         self.downloadedModels.insert(modelName)
-                        if modelName == self.selectedModel {
-                            self.modelReady = true
-                        }
+                        self.modelReadyByModel[modelName] = true
                     }
                 } else {
                     var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
@@ -1154,9 +1152,7 @@ struct SetupWizardView: View {
                         self.validatingModels.remove(modelName)
                         if isValid {
                             self.downloadedModels.insert(modelName)
-                            if modelName == self.selectedModel {
-                                self.modelReady = true
-                            }
+                            self.modelReadyByModel[modelName] = true
                         } else {
                             self.downloadError = "Download completed but validation failed. Try again."
                         }

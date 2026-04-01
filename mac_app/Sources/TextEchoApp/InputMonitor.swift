@@ -182,17 +182,27 @@ final class InputMonitor {
 
     private func handleOtherMouse(event: CGEvent, down: Bool) {
         let buttonNumber = Int(event.getIntegerValueField(.mouseEventButtonNumber))
-        handleMouseButton(button: buttonNumber, down: down)
+        let shiftHeld = event.flags.contains(.maskShift)
+        handleMouseButton(button: buttonNumber, down: down, llmMode: shiftHeld)
     }
 
-    private func handleMouseButton(button: Int, down: Bool) {
+    private func handleMouseButton(button: Int, down: Bool, llmMode: Bool = false) {
         guard AppConfig.shared.model.mouseEnabled else { return }
         if button == triggerButton {
-            AppLogger.shared.info("Mouse trigger \(down ? "down" : "up") (button=\(button))")
-            if down {
-                _onEvent?(.triggerDown)
+            if llmMode {
+                AppLogger.shared.info("Mouse LLM trigger \(down ? "down" : "up") (button=\(button), shift=true)")
+                if down {
+                    _onEvent?(.dictateLLMDown)
+                } else {
+                    _onEvent?(.dictateLLMUp)
+                }
             } else {
-                _onEvent?(.triggerUp)
+                AppLogger.shared.info("Mouse trigger \(down ? "down" : "up") (button=\(button))")
+                if down {
+                    _onEvent?(.triggerDown)
+                } else {
+                    _onEvent?(.triggerUp)
+                }
             }
         }
     }

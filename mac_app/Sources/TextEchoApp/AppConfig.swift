@@ -25,7 +25,13 @@ final class AppConfig {
         var silenceThreshold: Double
         var sampleRate: Double
         var silenceEnabled: Bool      // Auto-stop on silence
-        // LLM
+        // LLM (MLX Swift)
+        var llmEngine: String          // "mlx" or "none"
+        var llmModelID: String         // HuggingFace model ID
+        var llmMode: String            // "grammar", "rephrase", "answer", "custom"
+        var llmCustomPrompt: String    // User-defined system prompt (when mode=custom)
+        var llmAutoPaste: Bool         // Auto-paste LLM result (false = display only)
+        // Legacy LLM fields (kept for config migration)
         var llmEnabled: Bool
         var llmModelPath: String
         // App
@@ -78,13 +84,9 @@ final class AppConfig {
         var colorBgDark: String         // Hex color for dark background
         var colorBgLight: String        // Hex color for light background
 
-        /// Whether the LLM daemon script is bundled in the app.
+        /// Whether LLM processing is available (MLX engine enabled).
         var llmAvailable: Bool {
-            if let resourcePath = Bundle.main.resourcePath {
-                let path = (resourcePath as NSString).appendingPathComponent("llm_daemon.py")
-                if FileManager.default.fileExists(atPath: path) { return true }
-            }
-            return ScriptLocator.locate(name: "llm_daemon.py") != nil
+            llmEngine == "mlx"
         }
     }
 
@@ -97,6 +99,11 @@ final class AppConfig {
         silenceThreshold: 0.015,
         sampleRate: 16000,
         silenceEnabled: false,
+        llmEngine: "none",
+        llmModelID: "mlx-community/Qwen3.5-9B-4bit",
+        llmMode: "grammar",
+        llmCustomPrompt: "",
+        llmAutoPaste: true,
         llmEnabled: false,
         llmModelPath: "",
         showMenuBarIcon: true,
@@ -171,6 +178,11 @@ final class AppConfig {
         if let value = obj["silence_threshold"] as? Double { updated.silenceThreshold = value }
         if let value = obj["sample_rate"] as? Double { updated.sampleRate = value }
         if let v = obj["silence_enabled"] as? Bool { updated.silenceEnabled = v }
+        if let v = obj["llm_engine"] as? String { updated.llmEngine = v }
+        if let v = obj["llm_model_id"] as? String { updated.llmModelID = v }
+        if let v = obj["llm_mode"] as? String { updated.llmMode = v }
+        if let v = obj["llm_custom_prompt"] as? String { updated.llmCustomPrompt = String(v.prefix(2000)) }
+        if let v = obj["llm_auto_paste"] as? Bool { updated.llmAutoPaste = v }
         if let value = obj["llm_enabled"] as? Bool { updated.llmEnabled = value }
         if let value = obj["llm_model_path"] as? String { updated.llmModelPath = value }
         if let value = obj["show_menu_bar_icon"] as? Bool { updated.showMenuBarIcon = value }
@@ -243,6 +255,11 @@ final class AppConfig {
         dict["silence_threshold"] = model.silenceThreshold
         dict["sample_rate"] = model.sampleRate
         dict["silence_enabled"] = model.silenceEnabled
+        dict["llm_engine"] = model.llmEngine
+        dict["llm_model_id"] = model.llmModelID
+        dict["llm_mode"] = model.llmMode
+        dict["llm_custom_prompt"] = model.llmCustomPrompt
+        dict["llm_auto_paste"] = model.llmAutoPaste
         dict["llm_enabled"] = model.llmEnabled
         dict["llm_model_path"] = model.llmModelPath
         dict["show_menu_bar_icon"] = model.showMenuBarIcon
@@ -284,6 +301,7 @@ final class AppConfig {
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
             try? data.write(to: fileURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         }
     }
 

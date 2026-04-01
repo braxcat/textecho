@@ -75,6 +75,10 @@ final class InputMonitor {
 
         guard let eventTap else {
             AppLogger.shared.error("Failed to create event tap. Accessibility permission likely missing.")
+            // Notify the app to show a user-facing alert
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .textechoAccessibilityFailed, object: nil)
+            }
             return
         }
 

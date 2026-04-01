@@ -154,6 +154,7 @@ struct SettingsView: View {
     // Pedal
     @State private var pedalEnabled: Bool = AppConfig.shared.model.pedalEnabled
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
+    @State private var pedalInputMode: Int = AppConfig.shared.model.pedalInputMode
 
     // Magic Trackpad
     @State private var trackpadEnabled: Bool = AppConfig.shared.model.trackpadEnabled
@@ -396,22 +397,41 @@ struct SettingsView: View {
                         }
                         if pedalEnabled {
                             HStack {
-                                Text("Push-to-talk pedal")
+                                Text("Input mode")
                                     .font(.system(size: 12)).foregroundColor(.secondary)
                                 Spacer()
-                                Picker("", selection: dirty($pedalPosition)) {
-                                    Text("Left").tag(0)
-                                    Text("Center").tag(1)
-                                    Text("Right").tag(2)
+                                Picker("", selection: dirty($pedalInputMode)) {
+                                    Text("Direct HID").tag(0)
+                                    Text("Keyboard Shortcut").tag(1)
                                 }
                                 .pickerStyle(.segmented)
-                                .frame(width: 200)
+                                .frame(width: 220)
                             }
                             .padding(.leading, 30)
-                            Text("Left pedal = Paste, Center = Push-to-talk, Right = Enter. Quit Elgato Stream Deck app if not detected.")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+                            if pedalInputMode == 0 {
+                                HStack {
+                                    Text("Push-to-talk pedal")
+                                        .font(.system(size: 12)).foregroundColor(.secondary)
+                                    Spacer()
+                                    Picker("", selection: dirty($pedalPosition)) {
+                                        Text("Left").tag(0)
+                                        Text("Center").tag(1)
+                                        Text("Right").tag(2)
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .frame(width: 200)
+                                }
                                 .padding(.leading, 30)
+                                Text("Left pedal = Paste, Center = Push-to-talk, Right = Enter. Quit Elgato Stream Deck app if not detected.")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 30)
+                            } else {
+                                Text("Configure your pedal to emit a keyboard shortcut (e.g. Ctrl+D), then set that shortcut above in Keyboard settings.")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 30)
+                            }
                         }
                     }
                 }
@@ -1115,6 +1135,7 @@ struct SettingsView: View {
             model.inputDeviceUID = selectedDeviceUID
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
+            model.pedalInputMode = pedalInputMode
             model.trackpadEnabled = trackpadEnabled
             model.trackpadGesture = trackpadGesture
             model.trackpadMode = trackpadMode

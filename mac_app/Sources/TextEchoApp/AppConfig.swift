@@ -38,6 +38,7 @@ final class AppConfig {
         // Stream Deck Pedal
         var pedalEnabled: Bool
         var pedalPosition: Int // 0=left, 1=center, 2=right
+        var pedalInputMode: Int // 0=direct HID (IOKit), 1=keyboard shortcut (configure externally)
         // Magic Trackpad
         var trackpadEnabled: Bool
         var trackpadGesture: Int    // 0=forceClick, 1=rightClick
@@ -106,6 +107,7 @@ final class AppConfig {
         llmSocket: "/tmp/textecho_llm.sock",
         pedalEnabled: false,
         pedalPosition: 1,
+        pedalInputMode: 0,
         trackpadEnabled: false,
         trackpadGesture: 0,
         trackpadMode: 1,
@@ -179,6 +181,7 @@ final class AppConfig {
         if let value = obj["llm_socket"] as? String { updated.llmSocket = value }
         if let value = obj["pedal_enabled"] as? Bool { updated.pedalEnabled = value }
         if let value = obj["pedal_position"] as? Int { updated.pedalPosition = value }
+        if let v = obj["pedal_input_mode"] as? Int { updated.pedalInputMode = max(0, min(v, 1)) }
         if let v = obj["trackpad_enabled"] as? Bool { updated.trackpadEnabled = v }
         if let v = obj["trackpad_gesture"] as? Int { updated.trackpadGesture = max(0, min(v, 1)) }
         if let v = obj["trackpad_mode"] as? Int { updated.trackpadMode = max(0, min(v, 1)) }
@@ -250,6 +253,7 @@ final class AppConfig {
         dict["llm_socket"] = model.llmSocket
         dict["pedal_enabled"] = model.pedalEnabled
         dict["pedal_position"] = model.pedalPosition
+        dict["pedal_input_mode"] = model.pedalInputMode
         dict["trackpad_enabled"] = model.trackpadEnabled
         dict["trackpad_gesture"] = model.trackpadGesture
         dict["trackpad_mode"] = model.trackpadMode
@@ -309,4 +313,5 @@ final class AppConfig {
 
 extension Notification.Name {
     static let textechoConfigChanged = Notification.Name("TextEchoConfigChanged")
+    static let textechoAccessibilityFailed = Notification.Name("TextEchoAccessibilityFailed")
 }

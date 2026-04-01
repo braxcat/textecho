@@ -63,6 +63,12 @@ final class AppState {
         inputMonitor.onEvent = { [weak self] event in
             self?.handleInputEvent(event)
         }
+
+        // Show alert if Accessibility permission is missing or stale after an app update
+        NotificationCenter.default.addObserver(forName: .textechoAccessibilityFailed, object: nil, queue: .main) { [weak self] _ in
+            self?.showAccessibilityAlert()
+        }
+
         // Don't start the event tap during the first-launch wizard — hotkeys would fire
         // mid-setup. restartInputMonitor() is called from the wizard's onClose callback.
         if !config.model.firstLaunch {
@@ -76,8 +82,8 @@ final class AppState {
             self?.endRecording(userInitiated: false)
         }
 
-        // Stream Deck Pedal — push-to-talk
-        if config.model.pedalEnabled {
+        // Stream Deck Pedal — push-to-talk (only in Direct HID mode)
+        if config.model.pedalEnabled && config.model.pedalInputMode == 0 {
             startPedalMonitor()
         }
 
@@ -453,6 +459,21 @@ final class AppState {
         if !UnixSocket.ping(socketPath: path, command: "status") {
             try? FileManager.default.removeItem(atPath: path)
             logger.info("Removed stale socket at startup: \(path)")
+        }
+    }
+
+    private func showAccessibilityAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Accessibility Permission Required"
+        alert.informativeText = "TextEcho needs Accessibility access to detect hotkeys.\n\nAfter updating the app, you may need to remove and re-add TextEcho in:\nSystem Settings → Privacy & Security → Accessibility\n\n1. Remove TextEcho from the list\n2. Click '+' and add TextEcho from /Applications\n3. Restart TextEcho"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Dismiss")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 }

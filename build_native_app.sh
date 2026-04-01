@@ -229,8 +229,4 @@ else
 fi
 
 echo "==> Build complete: $APP_DIR"
-if [ "$WITH_LLM" = true ]; then
-    echo "    LLM module: included"
-else
-    echo "    LLM module: not included (rebuild with --with-llm to add)"
-fi
+echo "    LLM: native MLX (built-in, enable in Settings)"

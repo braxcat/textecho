@@ -17,7 +17,12 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "TextEchoApp",
-            dependencies: ["WhisperKit", "FluidAudio", "MLXLLM", "MLXLMCommon"],
+            dependencies: [
+                "WhisperKit",
+                "FluidAudio",
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+            ],
             path: "Sources/TextEchoApp"
         ),
         .testTarget(

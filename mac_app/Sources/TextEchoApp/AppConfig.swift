@@ -309,4 +309,5 @@ final class AppConfig {
 
 extension Notification.Name {
     static let textechoConfigChanged = Notification.Name("TextEchoConfigChanged")
+    static let textechoAccessibilityFailed = Notification.Name("TextEchoAccessibilityFailed")
 }

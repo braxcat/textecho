@@ -522,8 +522,6 @@ struct CyberWaveformView: View {
     var waveformColor: Color = Color(red: 0.3, green: 0.6, blue: 0.9)
     var recordingColor: Color = Color(red: 0.0, green: 0.9, blue: 1.0)
     private let silenceThreshold: Double = 0.005
-    @State private var pulseOpacity: Double = 0.4
-
     var body: some View {
         ZStack(alignment: .center) {
             HStack(alignment: .center, spacing: 2) {
@@ -540,33 +538,11 @@ struct CyberWaveformView: View {
                 }
             }
 
-            // Vertical force-field line at center
-            GeometryReader { geo in
-                let lineX = geo.size.width / 2
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                recordingColor.opacity(0),
-                                recordingColor.opacity(pulseOpacity),
-                                recordingColor,
-                                recordingColor.opacity(pulseOpacity),
-                                recordingColor.opacity(0),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(width: 2)
-                    .shadow(color: recordingColor.opacity(0.8), radius: 6)
-                    .position(x: lineX, y: geo.size.height / 2)
-            }
-            .allowsHitTesting(false)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                    pulseOpacity = 1.0
-                }
-            }
+            // Subtle baseline glow (decorative, not a threshold indicator)
+            Rectangle()
+                .fill(recordingColor.opacity(0.15))
+                .frame(height: 1)
+                .allowsHitTesting(false)
         }
     }
 

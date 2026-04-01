@@ -211,14 +211,10 @@ final class AppState {
             guard config.model.keyboardEnabled, config.model.keyboardMode == 1 else { return }
             endRecording(userInitiated: true)
         case .dictateLLMDown:
-            guard config.model.keyboardEnabled else { return }
-            if config.model.keyboardMode == 0 {
-                isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .llm)
-            } else {
-                beginRecording(mode: .llm)
-            }
+            // LLM mode can be triggered by keyboard (Ctrl+Shift+D) or mouse (Shift+Middle-click)
+            // The input source already validated enablement, so just start recording
+            beginRecording(mode: .llm)
         case .dictateLLMUp:
-            guard config.model.keyboardEnabled, config.model.keyboardMode == 1 else { return }
             endRecording(userInitiated: true)
         case .capsLockChanged(let isOn):
             guard config.model.capsLockEnabled else { return }

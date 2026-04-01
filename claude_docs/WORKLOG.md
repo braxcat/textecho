@@ -1,5 +1,31 @@
 # Worklog
 
+## 2026-03-29 — v2.4.0: Native MLX LLM, Security Hardening, Bug Fixes
+
+**Focus:** Replace Python LLM daemon with native MLX, fix force unwraps, config file permissions, document merged bug fixes
+
+### Native MLX LLM
+- Created MLXLLMProcessor.swift — native Swift LLM via MLX framework
+- 6 models (HuggingFace MLX Community), 4 modes (clean, fix, expand, custom)
+- Shift+Middle-click hotkey for transcribe+LLM workflow
+- Deleted Python files: PythonServiceManager.swift, LLMClient.swift, UnixSocket.swift, llm_daemon.py, pyproject.toml
+- Eliminates Unix socket IPC, Python runtime, and external process
+
+### Security Hardening
+- Replaced force unwraps (`!`) with safe unwrapping in AudioRecorder.swift, WhisperKitTranscriber.swift, ParakeetTranscriber.swift
+- Config file `~/.textecho_config` now written with 0o600 permissions (owner-only)
+
+### Bug Fixes (merged)
+- #15 waveform visualization, #16 pedal input mode, #30 obsolete scripts (all reported by @MachinationsContinued)
+- Accessibility alert improvement
+
+### Documentation
+- Updated CLAUDE.md, README.md, CHANGELOG, ARCHITECTURE, FEATURES, SECURITY, WORKLOG for v2.4.0
+
+### Credits
+- Issues: @MachinationsContinued
+- Code: @braxcat & Claude
+
 ## 2026-03-29 — Parakeet TDT Transcription Engine
 
 **Focus:** Add Parakeet TDT as default transcription engine via FluidAudio SDK, dual-engine support

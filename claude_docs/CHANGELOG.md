@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.4.0 (2026-03-29) — Native MLX LLM, Security Hardening, Bug Fixes
+
+### Native MLX LLM (replaces Python daemon)
+- **MLXLLMProcessor.swift** — fully native Swift LLM processing via MLX framework, replacing Python llama-cpp-python daemon
+- **6 models** supported (HuggingFace MLX Community repos, downloaded on first use)
+- **4 modes:** `clean` (cleanup transcription), `fix` (grammar/spelling), `expand` (elaborate), `custom` (user system prompt)
+- **Shift+Middle-click** hotkey for transcribe-then-LLM-process workflow
+- **Deleted Python files:** PythonServiceManager.swift, LLMClient.swift, UnixSocket.swift, llm_daemon.py, pyproject.toml
+- No Python runtime, no Unix socket IPC, no external process — pure Swift
+
+### Security Fixes
+- **Force unwrap elimination** — replaced `!` force unwraps with safe unwrapping in AudioRecorder.swift, WhisperKitTranscriber.swift, ParakeetTranscriber.swift
+- **Config file permissions** — `~/.textecho_config` now written with 0o600 (owner-only) permissions, matching history file
+- MLX LLM runs in-process with no IPC surface (eliminates Unix socket attack vector)
+
+### Bug Fixes (previously merged)
+- **#15** — Waveform visualization fix (reported by @MachinationsContinued)
+- **#16** — Pedal input mode fix (reported by @MachinationsContinued)
+- **#30** — Obsolete scripts removed (reported by @MachinationsContinued)
+- **Accessibility alert** — improved permission prompt handling
+
+### Credits
+- Issues filed by [@MachinationsContinued](https://github.com/MachinationsContinued)
+- Code by [@braxcat](https://github.com/braxcat) & Claude
+
 ## v2.2.0 (2026-03-29) — Parakeet TDT Transcription Engine
 
 ### Dual-Engine Transcription

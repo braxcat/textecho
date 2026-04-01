@@ -37,14 +37,16 @@
 - RMS silence detection (skip transcription if audio too quiet)
 - 30-second timeout on inference to prevent indefinite hangs
 
-## Local LLM Processing (Optional)
-- llama-cpp-python with Metal acceleration
+## Native LLM Processing (Optional)
+- **MLXLLMProcessor** — fully native Swift via MLX framework (no Python, no external daemon)
 - Must build with `--with-llm` flag (not included in default build)
+- **6 models** supported (HuggingFace MLX Community repos, auto-downloaded on first use)
+- **4 modes:** clean (cleanup transcription), fix (grammar/spelling), expand (elaborate), custom (user system prompt)
+- **Shift+Middle-click** or Ctrl+Shift+D to transcribe then LLM-process
 - 9-register clipboard context system for multi-snippet LLM prompts
-- Auto-detection of prompt format (Gemma, Llama, Phi, ChatML)
 - Streaming response display in overlay
-- Configurable system prompt, temperature, repeat penalty, top-p/top-k
 - Reasoning tag stripping (<think>/<reasoning> blocks)
+- Runs in-process — no Unix socket, no IPC, no external process
 
 ## Theme Customization
 - 5 built-in presets: TextEcho (original cyan-blue), Cyber, Classic, Ocean, Sunset
@@ -98,7 +100,7 @@
 - Transcription history: enable/disable, menu bar display, max entries
 - Overlay position: fixed or follow cursor
 - Stream Deck Pedal toggle + position picker
-- LLM configuration (enable, model path) — only visible when LLM module installed
+- LLM configuration (enable, model selector, mode picker) — only visible when LLM module installed
 - Dirty tracking with unsaved changes indicator
 - Confirm dialog on close with unsaved changes
 

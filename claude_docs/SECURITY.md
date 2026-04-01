@@ -45,7 +45,7 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 
 - **Fully local** — no network calls after model download, no cloud services, no telemetry
 - **No credentials or API keys** — all models run locally on-device
-- **Config file:** `~/.textecho_config` (plaintext JSON, no secrets, atomic writes)
+- **Config file:** `~/.textecho_config` (plaintext JSON, no secrets, atomic writes, 0600 permissions)
 - **History file:** `~/.textecho_history.json` (0600 permissions, atomic writes)
 - **Registers file:** `~/.textecho_registers.json` (plaintext, user clipboard snippets)
 - **Logs:** `~/Library/Logs/TextEcho/` (app.log, python.log)
@@ -55,23 +55,24 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 
 - **Shell injection prevention:** `restartApp()` uses `Process` directly with arguments array — no bash `-c` string interpolation
 - **Thread safety:** `AppState` is `@MainActor`; `WhisperKitTranscriber` is an actor; background work via `Task.detached`
+- **Force unwrap elimination (v2.4.0):** replaced `!` force unwraps with safe unwrapping (`guard let`, `if let`) in AudioRecorder.swift, WhisperKitTranscriber.swift, ParakeetTranscriber.swift — prevents unexpected crashes on nil values
 - **Path traversal prevention:** `deleteModel()` rejects names containing `..` or `/`
 - **Model name validation:** `switchModel()` validates against allowed character set
 - **Atomic writes:** Config and history files use `.atomic` option to prevent corruption
-- **File permissions:** History file set to 0600 (owner read/write only)
+- **File permissions:** Config file (0600) and history file (0600) — owner read/write only
 - **Observer cleanup:** NotificationCenter observers stored and removed in `deinit`
 - **Memory cleanup:** WhisperKitTranscriber instances explicitly released after wizard/download use
+- **LLM runs in-process (v2.4.0):** MLXLLMProcessor replaces Python daemon — eliminates Unix socket IPC surface, no external process, no `/tmp/textecho_*.sock` files
 
 ## Attack Surface
 
-- **Minimal** — no network listeners, no HTTP server, no external API calls
-- Unix sockets at `/tmp/textecho_*.sock` are local-only (LLM mode only, filesystem permissions)
+- **Minimal** — no network listeners, no HTTP server, no external API calls, no Unix sockets, no external processes
 - CGEventTap requires Accessibility permission (user-granted)
-- Python daemons run as user process (no elevated privileges, LLM mode only)
+- LLM runs in-process via MLX (no IPC surface)
 
 ## Dependencies
 
-- **Swift:** FluidAudio (Parakeet TDT transcription, Apache 2.0) and WhisperKit (Whisper transcription) — two third-party Swift dependencies
+- **Swift:** FluidAudio (Parakeet TDT transcription, Apache 2.0), WhisperKit (Whisper transcription), MLX (LLM inference, optional) — Swift dependencies
 - **Model weights:** Parakeet TDT models are licensed CC-BY-4.0 (NVIDIA) — attribution required in distribution
-- **Optional:** llama-cpp-python (for LLM features, build with `--with-llm`)
+- **No Python dependencies** — LLM is native Swift via MLX (replaced llama-cpp-python)
 - Dependabot monitors for known CVEs in all dependencies

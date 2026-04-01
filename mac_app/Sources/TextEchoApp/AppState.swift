@@ -338,8 +338,13 @@ final class AppState {
         Task(priority: .userInitiated) {
             do {
                 if !(await llmProcessor.isLoaded) {
-                    await MainActor.run { self.overlay.showLoadingModel() }
-                    try await llmProcessor.loadModel(id: config.model.llmModelID)
+                    await MainActor.run { self.overlay.showLoadingModel(detail: "Preparing model...") }
+                    try await llmProcessor.loadModel(id: config.model.llmModelID) { [weak self] fraction in
+                        let pct = Int(fraction * 100)
+                        Task { @MainActor in
+                            self?.overlay.showLoadingModel(detail: "Downloading model... \(pct)%")
+                        }
+                    }
                 }
 
                 let response = try await llmProcessor.generate(

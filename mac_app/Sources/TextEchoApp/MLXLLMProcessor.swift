@@ -79,7 +79,10 @@ actor MLXLLMProcessor {
     }
 
     /// Load a model from HuggingFace (downloads on first use, cached after).
-    func loadModel(id: String) async throws {
+    /// - Parameters:
+    ///   - id: HuggingFace model ID (e.g. "mlx-community/Qwen3.5-9B-4bit")
+    ///   - onProgress: Called with download progress (0.0 to 1.0) during model download
+    func loadModel(id: String, onProgress: ((Double) -> Void)? = nil) async throws {
         if currentModelID == id && _isLoaded { return }
 
         if !Self.isModelIDTrusted(id) {
@@ -88,7 +91,11 @@ actor MLXLLMProcessor {
 
         AppLogger.shared.info("Loading LLM model: \(id)")
         let config = ModelConfiguration(id: id)
-        modelContainer = try await LLMModelFactory.shared.loadContainer(configuration: config)
+        modelContainer = try await LLMModelFactory.shared.loadContainer(
+            configuration: config
+        ) { progress in
+            onProgress?(progress.fractionCompleted)
+        }
         currentModelID = id
         _isLoaded = true
         AppLogger.shared.info("LLM model loaded: \(id)")

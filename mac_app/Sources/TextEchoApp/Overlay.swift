@@ -48,10 +48,10 @@ final class OverlayViewModel: ObservableObject {
         resultText = text
     }
 
-    func showLoadingModel() {
+    func showLoadingModel(detail: String = "") {
         state = .loadingModel
         statusText = "LOADING MODEL"
-        resultText = ""
+        resultText = detail
     }
 
     func showDownloading() {
@@ -653,10 +653,10 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
     }
 
     // Show at the same bottom-middle position as recording/processing overlays.
-    func showLoadingModel() {
+    func showLoadingModel(detail: String = "") {
         DispatchQueue.main.async {
             self.cancelAutoHide()
-            self.viewModel.showLoadingModel()
+            self.viewModel.showLoadingModel(detail: detail)
             self.show()
         }
     }

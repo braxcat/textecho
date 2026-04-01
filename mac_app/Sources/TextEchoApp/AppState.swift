@@ -82,8 +82,8 @@ final class AppState {
             self?.endRecording(userInitiated: false)
         }
 
-        // Stream Deck Pedal — push-to-talk
-        if config.model.pedalEnabled {
+        // Stream Deck Pedal — push-to-talk (only in Direct HID mode)
+        if config.model.pedalEnabled && config.model.pedalInputMode == 0 {
             startPedalMonitor()
         }
 

@@ -178,7 +178,7 @@ actor WhisperKitTranscriber: Transcriber {
             .appendingPathComponent("whisperkit-coreml", isDirectory: true)
         dirs.append(hfDir)
         // Fallback: old cache location (in case WhisperKit changes behavior)
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return dirs }
         dirs.append(caches.appendingPathComponent("com.argmaxinc.WhisperKit", isDirectory: true))
         return dirs
     }

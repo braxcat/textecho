@@ -172,9 +172,9 @@ final class AudioRecorder {
             guard let self else { return }
             guard let converter else { return }
 
-            let pcmBuffer = AVAudioPCMBuffer(pcmFormat: desiredFormat, frameCapacity: AVAudioFrameCount(sampleRate / 10))
+            guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: desiredFormat, frameCapacity: AVAudioFrameCount(sampleRate / 10)) else { return }
             var error: NSError?
-            converter.convert(to: pcmBuffer!, error: &error) { _, outStatus in
+            converter.convert(to: pcmBuffer, error: &error) { _, outStatus in
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -184,11 +184,12 @@ final class AudioRecorder {
                 return
             }
 
-            guard let channelData = pcmBuffer?.int16ChannelData else { return }
-            let frameLength = Int(pcmBuffer?.frameLength ?? 0)
+            guard let channelData = pcmBuffer.int16ChannelData else { return }
+            let frameLength = Int(pcmBuffer.frameLength)
             let samples = UnsafeBufferPointer(start: channelData[0], count: frameLength)
 
-            let data = Data(bytes: samples.baseAddress!, count: frameLength * MemoryLayout<Int16>.size)
+            guard let baseAddress = samples.baseAddress else { return }
+            let data = Data(bytes: baseAddress, count: frameLength * MemoryLayout<Int16>.size)
             os_unfair_lock_lock(self.lock)
             self.bufferData.append(data)
             os_unfair_lock_unlock(self.lock)

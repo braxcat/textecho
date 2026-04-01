@@ -112,7 +112,7 @@ actor MLXLLMProcessor {
 
         let fullPrompt = buildPrompt(system: systemPrompt, context: context, user: prompt)
         let input = UserInput(prompt: fullPrompt)
-        let parameters = GenerateParameters(temperature: 0.7, maxTokens: 2048)
+        let parameters = GenerateParameters(maxTokens: 2048, temperature: 0.7)
 
         var fullResponse = ""
 

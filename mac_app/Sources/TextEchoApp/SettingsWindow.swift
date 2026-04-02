@@ -1,5 +1,7 @@
 import AppKit
 import AVFoundation
+import MLXLLM
+import MLXLMCommon
 import SwiftUI
 
 // MARK: - SettingsSaveCallbacks (bridges save callbacks from SwiftUI struct to NSWindowDelegate)
@@ -1176,20 +1178,32 @@ struct SettingsView: View {
         llmDownloadProgress = 0.0
         llmDownloadError = nil
         llmModelReady = false
-        Task {
-            let processor = MLXLLMProcessor()
+
+        let modelID = llmModelID
+        Task.detached(priority: .utility) {
+            // Use LLMModelFactory directly — loadContainer downloads + compiles.
+            // Rate-limit progress updates to prevent SwiftUI callback flood.
+            var lastReportedPct = -1
             do {
-                try await processor.loadModel(id: llmModelID) { [self] fraction in
+                let config = ModelConfiguration(id: modelID)
+                let container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: config
+                ) { progress in
+                    let pct = Int(progress.fractionCompleted * 100)
+                    guard pct != lastReportedPct else { return }
+                    lastReportedPct = pct
                     Task { @MainActor in
-                        self.llmDownloadProgress = fraction
+                        self.llmDownloadProgress = progress.fractionCompleted
                     }
                 }
+                // Model downloaded + compiled. Release immediately — the app's
+                // MLXLLMProcessor will re-load on first Shift+Middle-click (fast from cache).
+                _ = container
                 await MainActor.run {
                     self.llmDownloadProgress = nil
                     self.llmModelReady = true
                 }
-                // Release the processor — the actual app's processor will load on first use
-                await processor.unload()
+                AppLogger.shared.info("LLM model downloaded and verified: \(modelID)")
             } catch {
                 await MainActor.run {
                     self.llmDownloadProgress = nil

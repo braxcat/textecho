@@ -41,23 +41,23 @@ struct LLMModelInfo {
 }
 
 /// Curated list of recommended models — all from mlx-community with 4-bit quantization.
-/// Only includes architectures confirmed supported by mlx-swift-lm (Qwen2, Qwen3, Llama, Gemma).
-/// Note: Qwen 3.5 (qwen3_5 arch) is NOT yet supported by mlx-swift-lm — use Qwen 3 instead.
+/// Only includes architectures confirmed supported by mlx-swift-lm MLXLLM library.
+/// Tested: llama, qwen2, qwen3. NOT supported: qwen3_5, gemma3 (needs MLXVLM).
 let recommendedLLMModels: [LLMModelInfo] = [
-    LLMModelInfo(id: "mlx-community/Qwen3-8B-4bit", displayName: "Qwen 3 8B (Recommended)",
-                 description: "Best overall — strong reasoning, multilingual, /think mode (36GB+ Macs)",
+    LLMModelInfo(id: "mlx-community/Llama-3.2-3B-Instruct-4bit", displayName: "Llama 3.2 3B (Recommended)",
+                 description: "Fast, reliable — great for grammar and Q&A (8GB+ Macs)",
+                 sizeGB: 2.0),
+    LLMModelInfo(id: "mlx-community/Qwen3-8B-4bit", displayName: "Qwen 3 8B",
+                 description: "Strong reasoning, multilingual, /think mode (36GB+ Macs)",
                  sizeGB: 5.5),
     LLMModelInfo(id: "mlx-community/Llama-3.3-8B-Instruct-4bit", displayName: "Llama 3.3 8B",
-                 description: "Well-rounded — good balance of speed and quality",
+                 description: "Well-rounded — good balance of speed and quality (36GB+ Macs)",
                  sizeGB: 5.0),
     LLMModelInfo(id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", displayName: "Qwen 2.5 Coder 7B",
-                 description: "Best for code — generation, review, debugging",
+                 description: "Best for code — generation, review, debugging (36GB+ Macs)",
                  sizeGB: 5.0),
-    LLMModelInfo(id: "mlx-community/gemma-3-4b-it-4bit", displayName: "Gemma 3 4B",
-                 description: "Google's lightweight — fast, good for grammar (8GB+ Macs)",
-                 sizeGB: 3.0),
     LLMModelInfo(id: "mlx-community/Qwen3-4B-4bit", displayName: "Qwen 3 4B",
-                 description: "Fast and light — good for grammar fixes (8GB+ Macs)",
+                 description: "Fast and light — good for grammar, multilingual (8GB+ Macs)",
                  sizeGB: 2.5),
 ]
 

@@ -1180,36 +1180,51 @@ struct SettingsView: View {
         llmModelReady = false
 
         let modelID = llmModelID
+        let modelSize = recommendedLLMModels.first(where: { $0.id == modelID })?.sizeGB ?? 0
+        AppLogger.shared.info("LLM download starting: \(modelID) (~\(String(format: "%.1f", modelSize))GB)")
+
         Task.detached(priority: .utility) {
-            // Use LLMModelFactory directly — loadContainer downloads + compiles.
-            // Rate-limit progress updates to prevent SwiftUI callback flood.
             var lastReportedPct = -1
+            var phaseLogged = false
             do {
+                AppLogger.shared.info("LLM: creating ModelConfiguration for \(modelID)")
                 let config = ModelConfiguration(id: modelID)
+
+                AppLogger.shared.info("LLM: calling loadContainer (download + compile)")
                 let container = try await LLMModelFactory.shared.loadContainer(
                     configuration: config
                 ) { progress in
                     let pct = Int(progress.fractionCompleted * 100)
                     guard pct != lastReportedPct else { return }
                     lastReportedPct = pct
+
+                    // Log phase transitions
+                    if pct <= 50 && pct % 10 == 0 {
+                        AppLogger.shared.info("LLM download: \(pct)%")
+                    } else if pct > 50 && !phaseLogged {
+                        phaseLogged = true
+                        AppLogger.shared.info("LLM: download complete, entering compile/load phase")
+                    } else if pct > 50 && pct % 5 == 0 {
+                        AppLogger.shared.info("LLM compile/load: \(pct)%")
+                    }
+
                     Task { @MainActor in
                         self.llmDownloadProgress = progress.fractionCompleted
                     }
                 }
-                // Model downloaded + compiled. Release immediately — the app's
-                // MLXLLMProcessor will re-load on first Shift+Middle-click (fast from cache).
                 _ = container
+                AppLogger.shared.info("LLM model ready: \(modelID)")
                 await MainActor.run {
                     self.llmDownloadProgress = nil
                     self.llmModelReady = true
                 }
-                AppLogger.shared.info("LLM model downloaded and verified: \(modelID)")
             } catch {
+                AppLogger.shared.error("LLM download failed at \(lastReportedPct)%: \(error)")
+                AppLogger.shared.error("LLM error detail: \(String(describing: error))")
                 await MainActor.run {
                     self.llmDownloadProgress = nil
-                    self.llmDownloadError = "Download failed: \(error.localizedDescription)"
+                    self.llmDownloadError = "Failed at \(lastReportedPct)%: \(error.localizedDescription)"
                 }
-                AppLogger.shared.error("LLM model download failed: \(error)")
             }
         }
     }

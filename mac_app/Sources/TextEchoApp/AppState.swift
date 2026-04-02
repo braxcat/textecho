@@ -338,19 +338,17 @@ final class AppState {
         Task(priority: .userInitiated) {
             do {
                 if !(await llmProcessor.isLoaded) {
-                    await MainActor.run { self.overlay.showLoadingModel(detail: "Preparing model...") }
-                    var lastPct = 0
-                    try await llmProcessor.loadModel(id: config.model.llmModelID) { [weak self] fraction in
-                        let pct = Int(fraction * 100)
-                        // Only update UI when percentage actually changes (reduces overhead)
-                        guard pct != lastPct else { return }
-                        lastPct = pct
-                        let detail = pct < 100
-                            ? "Downloading LLM... \(pct)%"
-                            : "Compiling model (this may take a minute)..."
-                        Task { @MainActor in
-                            self?.overlay.showLoadingModel(detail: detail)
+                    // Try to load — if the model is already cached this is fast.
+                    // If not cached, show a message directing user to Settings.
+                    await MainActor.run { self.overlay.showLoadingModel(detail: "Loading LLM...") }
+                    do {
+                        try await llmProcessor.loadModel(id: config.model.llmModelID) { _ in }
+                    } catch {
+                        await MainActor.run {
+                            self.overlay.showError("LLM model not downloaded.\nGo to Settings → LLM Processing → Download & Load Model")
                         }
+                        AppLogger.shared.error("LLM model not available: \(error)")
+                        return
                     }
                 }
 

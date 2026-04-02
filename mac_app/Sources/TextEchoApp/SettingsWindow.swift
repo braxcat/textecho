@@ -167,6 +167,9 @@ struct SettingsView: View {
     @State private var llmMode: String = AppConfig.shared.model.llmMode
     @State private var llmCustomPrompt: String = AppConfig.shared.model.llmCustomPrompt
     @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
+    @State private var llmDownloadProgress: Double? = nil  // nil=idle, 0-1=downloading
+    @State private var llmDownloadError: String? = nil
+    @State private var llmModelReady: Bool = false
 
     // Permissions
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
@@ -858,7 +861,17 @@ struct SettingsView: View {
                     HStack {
                         Text("Model")
                         Spacer()
-                        Picker("", selection: dirty($llmModelID)) {
+                        Picker("", selection: Binding(
+                            get: { llmModelID },
+                            set: { newValue in
+                                llmModelID = newValue
+                                llmModelReady = false
+                                llmDownloadProgress = nil
+                                llmDownloadError = nil
+                                isDirty = true
+                                onDirtyChanged(true)
+                            }
+                        )) {
                             ForEach(recommendedLLMModels, id: \.id) { model in
                                 Text("\(model.displayName) (~\(String(format: "%.0f", model.sizeGB))GB)")
                                     .tag(model.id)
@@ -871,6 +884,44 @@ struct SettingsView: View {
                         Text(modelInfo.description)
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
+                    }
+
+                    // Download / status
+                    if let progress = llmDownloadProgress {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(progress < 1.0 ? "Downloading..." : "Compiling model...")
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                if progress < 1.0 {
+                                    Text("\(Int(progress * 100))%")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            ProgressView(value: min(progress, 1.0))
+                                .progressViewStyle(.linear)
+                        }
+                        .padding(.vertical, 4)
+                    } else if llmModelReady {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Model ready")
+                                .font(.system(size: 12))
+                                .foregroundColor(.green)
+                        }
+                    } else {
+                        Button("Download & Load Model") {
+                            startLLMDownload()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    if let error = llmDownloadError {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
                     }
 
                     HStack {
@@ -1117,6 +1168,36 @@ struct SettingsView: View {
     private func refreshUserPresets() {
         UserThemePresets.shared.load()
         userPresetNames = Array(UserThemePresets.shared.presets.keys).sorted()
+    }
+
+    // MARK: - LLM Download
+
+    private func startLLMDownload() {
+        llmDownloadProgress = 0.0
+        llmDownloadError = nil
+        llmModelReady = false
+        Task {
+            let processor = MLXLLMProcessor()
+            do {
+                try await processor.loadModel(id: llmModelID) { [self] fraction in
+                    Task { @MainActor in
+                        self.llmDownloadProgress = fraction
+                    }
+                }
+                await MainActor.run {
+                    self.llmDownloadProgress = nil
+                    self.llmModelReady = true
+                }
+                // Release the processor — the actual app's processor will load on first use
+                await processor.unload()
+            } catch {
+                await MainActor.run {
+                    self.llmDownloadProgress = nil
+                    self.llmDownloadError = "Download failed: \(error.localizedDescription)"
+                }
+                AppLogger.shared.error("LLM model download failed: \(error)")
+            }
+        }
     }
 
     // MARK: - Logic

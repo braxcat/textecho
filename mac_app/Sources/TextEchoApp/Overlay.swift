@@ -653,11 +653,16 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
     }
 
     // Show at the same bottom-middle position as recording/processing overlays.
+    // If already visible in loadingModel state, just updates the detail text without re-showing
+    // (prevents blinking during download progress updates).
     func showLoadingModel(detail: String = "") {
         DispatchQueue.main.async {
+            let alreadyShowingLoader = self.viewModel.state == .loadingModel && self.window?.isVisible == true
             self.cancelAutoHide()
             self.viewModel.showLoadingModel(detail: detail)
-            self.show()
+            if !alreadyShowingLoader {
+                self.show()
+            }
         }
     }
 

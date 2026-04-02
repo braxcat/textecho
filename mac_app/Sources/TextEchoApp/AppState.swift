@@ -339,10 +339,17 @@ final class AppState {
             do {
                 if !(await llmProcessor.isLoaded) {
                     await MainActor.run { self.overlay.showLoadingModel(detail: "Preparing model...") }
+                    var lastPct = 0
                     try await llmProcessor.loadModel(id: config.model.llmModelID) { [weak self] fraction in
                         let pct = Int(fraction * 100)
+                        // Only update UI when percentage actually changes (reduces overhead)
+                        guard pct != lastPct else { return }
+                        lastPct = pct
+                        let detail = pct < 100
+                            ? "Downloading LLM... \(pct)%"
+                            : "Compiling model (this may take a minute)..."
                         Task { @MainActor in
-                            self?.overlay.showLoadingModel(detail: "Downloading model... \(pct)%")
+                            self?.overlay.showLoadingModel(detail: detail)
                         }
                     }
                 }

@@ -41,25 +41,24 @@ struct LLMModelInfo {
 }
 
 /// Curated list of recommended models — all from mlx-community with 4-bit quantization.
+/// Only includes architectures confirmed supported by mlx-swift-lm (Qwen2, Qwen3, Llama, Gemma).
+/// Note: Qwen 3.5 (qwen3_5 arch) is NOT yet supported by mlx-swift-lm — use Qwen 3 instead.
 let recommendedLLMModels: [LLMModelInfo] = [
-    LLMModelInfo(id: "mlx-community/Qwen3.5-9B-4bit", displayName: "Qwen 3.5 9B",
-                 description: "Best overall — strong reasoning, 25 languages (Recommended for 36GB+ Macs)",
-                 sizeGB: 6.6),
-    LLMModelInfo(id: "mlx-community/gemma-3-12b-it-4bit", displayName: "Gemma 3 12B",
-                 description: "Google's best small model — multilingual, strong instruction following",
-                 sizeGB: 8.0),
-    LLMModelInfo(id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", displayName: "Qwen 2.5 Coder 7B",
-                 description: "Best for code — generation, review, debugging",
-                 sizeGB: 5.0),
+    LLMModelInfo(id: "mlx-community/Qwen3-8B-4bit", displayName: "Qwen 3 8B (Recommended)",
+                 description: "Best overall — strong reasoning, multilingual, /think mode (36GB+ Macs)",
+                 sizeGB: 5.5),
     LLMModelInfo(id: "mlx-community/Llama-3.3-8B-Instruct-4bit", displayName: "Llama 3.3 8B",
                  description: "Well-rounded — good balance of speed and quality",
                  sizeGB: 5.0),
-    LLMModelInfo(id: "mlx-community/Qwen3.5-4B-4bit", displayName: "Qwen 3.5 4B",
-                 description: "Fast and light — good for grammar fixes (8GB+ Macs)",
-                 sizeGB: 3.0),
+    LLMModelInfo(id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", displayName: "Qwen 2.5 Coder 7B",
+                 description: "Best for code — generation, review, debugging",
+                 sizeGB: 5.0),
     LLMModelInfo(id: "mlx-community/gemma-3-4b-it-4bit", displayName: "Gemma 3 4B",
-                 description: "Google's lightweight model — fast, good for grammar (8GB+ Macs)",
+                 description: "Google's lightweight — fast, good for grammar (8GB+ Macs)",
                  sizeGB: 3.0),
+    LLMModelInfo(id: "mlx-community/Qwen3-4B-4bit", displayName: "Qwen 3 4B",
+                 description: "Fast and light — good for grammar fixes (8GB+ Macs)",
+                 sizeGB: 2.5),
 ]
 
 /// Native LLM processor using Apple's MLX framework.

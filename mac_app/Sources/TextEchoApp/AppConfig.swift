@@ -100,7 +100,7 @@ final class AppConfig {
         sampleRate: 16000,
         silenceEnabled: false,
         llmEngine: "none",
-        llmModelID: "mlx-community/Qwen3.5-9B-4bit",
+        llmModelID: "mlx-community/Qwen3-8B-4bit",
         llmMode: "grammar",
         llmCustomPrompt: "",
         llmAutoPaste: true,

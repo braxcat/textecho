@@ -184,7 +184,7 @@ struct HelpView: View {
                 // Model Selection
                 helpSection(title: "Model Selection") {
                     VStack(alignment: .leading, spacing: 6) {
-                        modelRow(name: "Large V3 Turbo", size: "~1.6 GB", desc: "Best balance of speed and quality. Recommended for most users.")
+                        modelRow(name: "Large V3 Turbo", size: "~1.6 GB", desc: "Best balance of speed and quality for most users.")
                         modelRow(name: "Large V3", size: "~3 GB", desc: "Highest transcription quality, but slower. Use when accuracy matters most.")
                         modelRow(name: "Base (English)", size: "~140 MB", desc: "Very fast, smallest download. Good for clear speech in quiet environments.")
                     }

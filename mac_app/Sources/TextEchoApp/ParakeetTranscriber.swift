@@ -27,7 +27,7 @@ actor ParakeetTranscriber: Transcriber {
     }
 
     static let availableModelList: [ModelInfo] = [
-        ModelInfo(version: .v2, name: "parakeet-tdt-v2", displayName: "Parakeet V2 (English, Recommended)", description: "Best choice if you only need English."),
+        ModelInfo(version: .v2, name: "parakeet-tdt-v2", displayName: "Parakeet V2 (English)", description: "Recommended choice if you only need English transcription."),
         ModelInfo(version: .v3, name: "parakeet-tdt-v3", displayName: "Parakeet V3 (25 langs)", description: "Coverage for 25 European languages."),
     ]
 

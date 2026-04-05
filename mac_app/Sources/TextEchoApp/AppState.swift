@@ -338,18 +338,11 @@ final class AppState {
         Task(priority: .userInitiated) {
             do {
                 if !(await llmProcessor.isLoaded) {
-                    // Try to load — if the model is already cached this is fast.
-                    // If not cached, show a message directing user to Settings.
-                    await MainActor.run { self.overlay.showLoadingModel(detail: "Loading LLM...") }
-                    do {
-                        try await llmProcessor.loadModel(id: config.model.llmModelID) { _ in }
-                    } catch {
-                        await MainActor.run {
-                            self.overlay.showError("LLM model not downloaded.\nGo to Settings → LLM Processing → Download & Load Model")
-                        }
-                        AppLogger.shared.error("LLM model not available: \(error)")
-                        return
+                    await MainActor.run {
+                        self.overlay.showError("LLM model not loaded.\nOpen Settings (Cmd+Opt+Space) →\nLLM Processing → Download & Load Model")
                     }
+                    AppLogger.shared.info("LLM trigger ignored — model not loaded. User needs to download via Settings.")
+                    return
                 }
 
                 let response = try await llmProcessor.generate(

@@ -111,6 +111,7 @@ struct HistoryView: View {
 private struct HistoryEntryRow: View {
     let entry: HistoryEntry
     @State private var copied = false
+    @State private var expanded = false
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -143,10 +144,20 @@ private struct HistoryEntryRow: View {
             }
             Text(entry.text)
                 .font(.system(size: 12))
-                .lineLimit(4)
+                .lineLimit(expanded ? nil : 4)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+            if entry.text.count > 200 || entry.text.filter({ $0 == "\n" }).count > 3 {
+                Button(expanded ? "Show less" : "Show more…") {
+                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                }
+                .font(.system(size: 10))
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+            }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { if entry.text.count > 200 { expanded.toggle() } }
     }
 }

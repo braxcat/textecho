@@ -72,6 +72,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/asc"
           echo "$ASC_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
 
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Build signed app
         env:
           DEVELOPER_ID: ${{ secrets.SIGNING_IDENTITY }}

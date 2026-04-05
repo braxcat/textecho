@@ -28,6 +28,7 @@ final class AppState {
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
+    nonisolated static let llmModelReadyNotification = Notification.Name("TextEchoLLMModelReady")
 
     init() {
         let model = AppConfig.shared.model
@@ -97,6 +98,16 @@ final class AppState {
             startPreloadTask()
         } else {
             logger.info("WhisperKit model not downloaded yet, skipping auto-preload")
+        }
+
+        // Auto-load LLM model if enabled
+        if config.model.llmAvailable {
+            loadLLMModel()
+        }
+
+        // Listen for Settings telling us a new LLM model was downloaded
+        NotificationCenter.default.addObserver(forName: Self.llmModelReadyNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.loadLLMModel()
         }
     }
 
@@ -184,6 +195,20 @@ final class AppState {
                 self?.isModelLoading = false
                 NotificationCenter.default.post(name: AppState.modelLoadingNotification, object: false)
                 self?.overlay.hide()
+            }
+        }
+    }
+
+    private func loadLLMModel() {
+        let modelID = config.model.llmModelID
+        logger.info("Loading LLM model: \(modelID)")
+        Task.detached(priority: .utility) { [weak self] in
+            guard let processor = self?.llmProcessor else { return }
+            do {
+                try await processor.loadModel(id: modelID)
+                AppLogger.shared.info("LLM model loaded and ready: \(modelID)")
+            } catch {
+                AppLogger.shared.error("LLM model load failed: \(error.localizedDescription)")
             }
         }
     }

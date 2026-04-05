@@ -1217,6 +1217,13 @@ struct SettingsView: View {
                 await MainActor.run {
                     self.llmDownloadProgress = nil
                     self.llmModelReady = true
+                    // Save the model ID + enable MLX before notifying AppState
+                    AppConfig.shared.update { model in
+                        model.llmEngine = "mlx"
+                        model.llmModelID = modelID
+                    }
+                    // Tell AppState to load the model into its LLM processor
+                    NotificationCenter.default.post(name: AppState.llmModelReadyNotification, object: nil)
                 }
             } catch {
                 AppLogger.shared.error("LLM download failed at \(lastReportedPct)%: \(error)")

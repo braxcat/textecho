@@ -10,7 +10,7 @@ permissions: {}
 
 jobs:
   build-sign-release:
-    runs-on: macos-latest
+    runs-on: macos-15
     environment: release  # Requires manual approval before secrets are accessible
     permissions:
       contents: write       # For creating GitHub Release
@@ -72,8 +72,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/asc"
           echo "$ASC_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
 
-      - name: Install Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Install Metal Toolchain (if needed)
+        run: |
+          if xcrun metal --version 2>/dev/null; then
+            echo "Metal compiler already available"
+          else
+            echo "Metal toolchain not found, downloading..."
+            xcodebuild -downloadComponent MetalToolchain
+          fi
 
       - name: Build signed app
         env:

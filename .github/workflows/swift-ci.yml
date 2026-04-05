@@ -5,11 +5,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6.0.2
-      - name: Install Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
       - name: Run tests
         run: swift test --package-path mac_app
       - name: Build (release, xcodebuild)

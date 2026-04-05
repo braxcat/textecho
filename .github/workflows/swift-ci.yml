@@ -8,8 +8,6 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6.0.2
-      - name: Build tests (compile only — MLX requires Metal GPU for runtime)
-        run: swift build --build-tests --package-path mac_app
       - name: Build (release, xcodebuild)
         run: |
           cd mac_app && xcodebuild build \

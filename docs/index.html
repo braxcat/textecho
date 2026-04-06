@@ -97,7 +97,28 @@
       .tagline {
         font-size: 1.4rem;
         color: var(--text-dim);
-        margin-bottom: 48px;
+        margin-bottom: 20px;
+      }
+      .version-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+        color: var(--mint);
+        border: 1px solid rgba(77, 217, 166, 0.25);
+        background: rgba(77, 217, 166, 0.07);
+        margin-bottom: 40px;
+      }
+      .version-badge .v-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--mint);
+        opacity: 0.6;
       }
 
       /* waveform */
@@ -234,6 +255,21 @@
         color: var(--text-dim);
         font-size: 0.9rem;
       }
+      .card-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .badge-beta {
+        background: rgba(138, 92, 246, 0.15);
+        color: var(--purple);
+        border: 1px solid rgba(138, 92, 246, 0.3);
+      }
 
       /* ── Themes ── */
       .themes-grid {
@@ -296,7 +332,7 @@
 
       /* ── Overlay Demo ── */
       .demo-container {
-        max-width: 380px;
+        max-width: 420px;
         margin: 0 auto;
       }
       .demo-overlay {
@@ -354,6 +390,7 @@
         justify-content: center;
         gap: 8px;
         margin-bottom: 24px;
+        flex-wrap: wrap;
       }
       .demo-tab {
         padding: 8px 18px;
@@ -371,6 +408,12 @@
         background: rgba(0, 230, 255, 0.1);
         border-color: var(--cyan);
         color: var(--cyan);
+      }
+      .demo-tab[data-state="streaming"].active,
+      .demo-tab[data-state="streaming"]:hover {
+        background: rgba(77, 217, 166, 0.1);
+        border-color: var(--mint);
+        color: var(--mint);
       }
 
       /* demo states */
@@ -397,6 +440,23 @@
       .demo-overlay[data-state="done"] .demo-text {
         color: var(--text);
       }
+      .demo-overlay[data-state="streaming"] .demo-status {
+        color: #4dd9a6;
+      }
+      .demo-overlay[data-state="streaming"] .demo-waveform {
+        opacity: 0.5;
+      }
+      .demo-overlay[data-state="streaming"] .demo-waveform .bar {
+        background: linear-gradient(
+          180deg,
+          #4dd9a6,
+          rgba(77, 217, 166, 0.3)
+        ) !important;
+      }
+      .demo-overlay[data-state="streaming"] .demo-text {
+        color: #4dd9a6;
+        font-style: italic;
+      }
       @keyframes pulse-purple {
         0%,
         100% {
@@ -407,6 +467,247 @@
           height: 60%;
           opacity: 0.8;
         }
+      }
+      @keyframes ghost-type {
+        0% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 0.9;
+        }
+        100% {
+          opacity: 0.4;
+        }
+      }
+      .ghost-text {
+        animation: ghost-type 1.8s ease-in-out infinite;
+      }
+
+      /* ── Architecture Diagram ── */
+      .arch-section {
+        padding: 80px 0;
+      }
+      .arch-diagram {
+        max-width: 700px;
+        margin: 0 auto;
+        position: relative;
+      }
+      .arch-row {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 0;
+      }
+      .arch-box {
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-align: center;
+        white-space: nowrap;
+        position: relative;
+      }
+      .arch-box-cyan {
+        background: rgba(0, 230, 255, 0.1);
+        border: 1px solid rgba(0, 230, 255, 0.4);
+        color: var(--cyan);
+      }
+      .arch-box-blue {
+        background: rgba(96, 165, 250, 0.1);
+        border: 1px solid rgba(96, 165, 250, 0.4);
+        color: #60a5fa;
+      }
+      .arch-box-green {
+        background: rgba(77, 217, 166, 0.1);
+        border: 1px solid rgba(77, 217, 166, 0.4);
+        color: #4dd9a6;
+      }
+      .arch-box-sub {
+        font-size: 0.72rem;
+        font-weight: 400;
+        opacity: 0.75;
+        margin-top: 3px;
+      }
+      .arch-arrow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+      }
+      .arch-arrow-line {
+        width: 2px;
+        height: 22px;
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .arch-arrow-head {
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-top: 8px solid rgba(255, 255, 255, 0.2);
+      }
+      .arch-split {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 0;
+        position: relative;
+        margin: 0;
+      }
+      .arch-split-label {
+        text-align: center;
+        font-size: 0.72rem;
+        color: var(--text-dim);
+        padding: 6px 0 10px;
+      }
+      .arch-branch {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+      }
+      .arch-branch-line {
+        width: 2px;
+        height: 22px;
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .arch-h-line {
+        height: 2px;
+        background: rgba(255, 255, 255, 0.15);
+        flex: 1;
+      }
+      .arch-connector-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 340px;
+        margin: 0 auto;
+      }
+      .arch-connector-left {
+        flex: 1;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .arch-connector-right {
+        flex: 1;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .arch-legend {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        margin-top: 32px;
+        flex-wrap: wrap;
+      }
+      .arch-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        color: var(--text-dim);
+      }
+      .arch-legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+
+      /* ── Models Section ── */
+      .models-section {
+        padding: 80px 0;
+      }
+      .models-group-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 16px;
+        margin-top: 40px;
+      }
+      .models-group-title:first-of-type {
+        margin-top: 0;
+      }
+      .models-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+        margin-bottom: 8px;
+      }
+      .model-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        padding: 18px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        transition:
+          border-color 0.2s,
+          transform 0.2s;
+      }
+      .model-card:hover {
+        border-color: rgba(0, 230, 255, 0.3);
+        transform: translateY(-2px);
+      }
+      .model-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .model-name {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .model-badges {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .model-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .badge-default {
+        background: rgba(0, 230, 255, 0.12);
+        color: var(--cyan);
+        border: 1px solid rgba(0, 230, 255, 0.3);
+      }
+      .badge-beta {
+        background: rgba(138, 92, 246, 0.12);
+        color: var(--purple);
+        border: 1px solid rgba(138, 92, 246, 0.3);
+      }
+      .badge-fallback {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-dim);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .model-meta {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .model-meta-item {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+      }
+      .model-meta-item span {
+        color: var(--silver);
+      }
+      .model-desc {
+        font-size: 0.82rem;
+        color: var(--text-dim);
       }
 
       /* ── Download ── */
@@ -536,6 +837,14 @@
         section {
           padding: 56px 0;
         }
+        .models-grid {
+          grid-template-columns: 1fr;
+        }
+        .arch-box {
+          font-size: 0.75rem;
+          padding: 8px 12px;
+          white-space: normal;
+        }
       }
       @media (max-width: 480px) {
         .themes-grid {
@@ -557,6 +866,10 @@
       <p class="tagline">
         Voice-to-text. Local. Instant. 3.7x more accurate than Whisper.
       </p>
+      <div class="version-badge">
+        <div class="v-dot"></div>
+        v2.5.0 &nbsp;&middot;&nbsp; Last updated April 6, 2026
+      </div>
       <div class="waveform" id="heroWaveform"></div>
       <div class="btn-row">
         <a
@@ -587,8 +900,9 @@
             <div class="step-num">2</div>
             <h3>Speak</h3>
             <p>
-              Talk naturally. Parakeet TDT transcribes locally on
-              Apple&nbsp;Silicon — nothing leaves your Mac.
+              Talk naturally. With streaming enabled, text appears live as you
+              speak. Parakeet TDT transcribes locally on Apple&nbsp;Silicon —
+              nothing leaves your Mac.
             </p>
           </div>
           <div class="step">
@@ -615,6 +929,25 @@
               NVIDIA Parakeet TDT v3 — 2.1% word error rate, 3-6x faster than
               Whisper. Runs on Apple Neural Engine via Core ML. Whisper
               available as fallback.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">⚡</div>
+            <span class="card-badge badge-beta">Beta</span>
+            <h3>Streaming Transcription</h3>
+            <p>
+              Real-time partial results while you speak. Text appears live in
+              the overlay as you dictate, powered by FluidAudio's EOU 120M
+              streaming model. Enable in Settings.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🤫</div>
+            <h3>Whisper-quiet speech</h3>
+            <p>
+              No more missed whispers. The pre-model silence gate has been
+              removed — quiet and whispered speech now reaches the transcription
+              engine.
             </p>
           </div>
           <div class="card">
@@ -653,9 +986,11 @@
             <div class="card-icon">💬</div>
             <h3>On-Device LLM</h3>
             <p>
-              Native MLX language models — grammar fix, rephrase, answer
-              questions, or custom prompts. Shift+Middle-click to transcribe
-              &amp; process. Runs on GPU, fully offline.
+              6 curated MLX models: Llama&nbsp;3.2&nbsp;3B, Qwen&nbsp;3&nbsp;8B,
+              Llama&nbsp;3.3&nbsp;8B, Qwen&nbsp;2.5&nbsp;Coder&nbsp;7B,
+              Qwen&nbsp;3&nbsp;4B. 4 modes: Grammar Fix, Rephrase, Answer,
+              Custom. Shift+Middle-click or Ctrl+Shift+D. Runs on GPU — separate
+              from transcription on Neural Engine.
             </p>
           </div>
           <div class="card">
@@ -665,6 +1000,265 @@
               Guided first-launch wizard handles permissions, model download,
               and pedal setup in under two minutes.
             </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ Architecture ════ -->
+    <section class="arch-section">
+      <div class="container">
+        <h2><span class="accent">Architecture</span></h2>
+        <div class="arch-diagram">
+          <!-- Trigger -->
+          <div class="arch-row">
+            <div class="arch-box arch-box-cyan">
+              User Trigger
+              <div class="arch-box-sub">middle-click / Ctrl+D / pedal</div>
+            </div>
+          </div>
+          <div class="arch-arrow">
+            <div class="arch-arrow-line"></div>
+            <div class="arch-arrow-head"></div>
+          </div>
+
+          <!-- InputMonitor -->
+          <div class="arch-row">
+            <div class="arch-box arch-box-cyan">
+              InputMonitor
+              <div class="arch-box-sub">CGEventTap</div>
+            </div>
+          </div>
+          <div class="arch-arrow">
+            <div class="arch-arrow-line"></div>
+            <div class="arch-arrow-head"></div>
+          </div>
+
+          <!-- AudioRecorder -->
+          <div class="arch-row">
+            <div class="arch-box arch-box-cyan">
+              AudioRecorder
+              <div class="arch-box-sub">AVAudioEngine</div>
+            </div>
+          </div>
+          <div class="arch-arrow">
+            <div class="arch-arrow-line"></div>
+            <div class="arch-arrow-head"></div>
+          </div>
+
+          <!-- Split label -->
+          <div
+            style="
+              text-align: center;
+              font-size: 0.72rem;
+              color: var(--text-dim);
+              padding: 4px 0 10px;
+            "
+          >
+            streaming_enabled?
+          </div>
+
+          <!-- Branch row -->
+          <div
+            style="
+              display: flex;
+              justify-content: center;
+              align-items: flex-start;
+              max-width: 420px;
+              margin: 0 auto;
+            "
+          >
+            <!-- Left branch: NO -->
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                flex: 1;
+              "
+            >
+              <div
+                style="
+                  width: 2px;
+                  height: 16px;
+                  background: rgba(96, 165, 250, 0.4);
+                "
+              ></div>
+              <div
+                class="arch-box arch-box-blue"
+                style="width: 100%; max-width: 170px; text-align: center"
+              >
+                Parakeet TDT V3
+                <div class="arch-box-sub">600M · batch</div>
+              </div>
+              <div
+                style="
+                  width: 2px;
+                  height: 16px;
+                  background: rgba(96, 165, 250, 0.4);
+                "
+              ></div>
+            </div>
+            <!-- H-line left -->
+            <div
+              style="
+                height: 2px;
+                width: 20px;
+                background: rgba(255, 255, 255, 0.1);
+                margin-top: 16px;
+              "
+            ></div>
+            <!-- Label -->
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 0 6px;
+                font-size: 0.68rem;
+                color: var(--text-dim);
+                margin-top: 10px;
+                min-width: 44px;
+                text-align: center;
+              "
+            >
+              <span>NO</span>
+              <div style="height: 4px"></div>
+              <span>YES</span>
+            </div>
+            <!-- H-line right -->
+            <div
+              style="
+                height: 2px;
+                width: 20px;
+                background: rgba(255, 255, 255, 0.1);
+                margin-top: 16px;
+              "
+            ></div>
+            <!-- Right branch: YES -->
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                flex: 1;
+              "
+            >
+              <div
+                style="
+                  width: 2px;
+                  height: 16px;
+                  background: rgba(77, 217, 166, 0.4);
+                "
+              ></div>
+              <div
+                class="arch-box arch-box-green"
+                style="width: 100%; max-width: 170px; text-align: center"
+              >
+                EOU 120M
+                <div class="arch-box-sub">streaming · 160ms chunks</div>
+              </div>
+              <div
+                style="
+                  width: 2px;
+                  height: 16px;
+                  background: rgba(77, 217, 166, 0.4);
+                "
+              ></div>
+              <div
+                style="
+                  font-size: 0.68rem;
+                  color: #4dd9a6;
+                  opacity: 0.7;
+                  margin-bottom: 4px;
+                "
+              >
+                partial text
+              </div>
+            </div>
+          </div>
+
+          <!-- Merge arrow -->
+          <div
+            style="
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              max-width: 420px;
+              margin: 0 auto;
+            "
+          >
+            <div
+              style="flex: 1; height: 2px; background: rgba(255, 255, 255, 0.1)"
+            ></div>
+            <div
+              style="
+                width: 2px;
+                height: 18px;
+                background: rgba(255, 255, 255, 0.15);
+              "
+            ></div>
+            <div
+              style="flex: 1; height: 2px; background: rgba(255, 255, 255, 0.1)"
+            ></div>
+          </div>
+          <div class="arch-arrow">
+            <div class="arch-arrow-line"></div>
+            <div class="arch-arrow-head"></div>
+          </div>
+
+          <!-- Overlay -->
+          <div class="arch-row">
+            <div class="arch-box arch-box-cyan">
+              Overlay
+              <div class="arch-box-sub">SwiftUI floating window</div>
+            </div>
+          </div>
+          <div class="arch-arrow">
+            <div class="arch-arrow-line"></div>
+            <div class="arch-arrow-head"></div>
+          </div>
+
+          <!-- TextInjector -->
+          <div class="arch-row">
+            <div class="arch-box arch-box-cyan">
+              TextInjector
+              <div class="arch-box-sub">Cmd+V paste</div>
+            </div>
+          </div>
+
+          <!-- Legend -->
+          <div class="arch-legend">
+            <div class="arch-legend-item">
+              <div
+                class="arch-legend-dot"
+                style="
+                  background: rgba(0, 230, 255, 0.5);
+                  border: 1px solid #00e6ff;
+                "
+              ></div>
+              Shared components
+            </div>
+            <div class="arch-legend-item">
+              <div
+                class="arch-legend-dot"
+                style="
+                  background: rgba(96, 165, 250, 0.5);
+                  border: 1px solid #60a5fa;
+                "
+              ></div>
+              Batch path
+            </div>
+            <div class="arch-legend-item">
+              <div
+                class="arch-legend-dot"
+                style="
+                  background: rgba(77, 217, 166, 0.5);
+                  border: 1px solid #4dd9a6;
+                "
+              ></div>
+              Streaming path
+            </div>
           </div>
         </div>
       </div>
@@ -893,6 +1487,7 @@
             <button class="demo-tab active" data-state="recording">
               Recording
             </button>
+            <button class="demo-tab" data-state="streaming">Streaming</button>
             <button class="demo-tab" data-state="processing">Processing</button>
             <button class="demo-tab" data-state="done">Done</button>
           </div>
@@ -900,6 +1495,154 @@
             <div class="demo-status">Recording</div>
             <div class="demo-waveform" id="demoWaveform"></div>
             <div class="demo-text">Listening...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ Models ════ -->
+    <section class="models-section" id="models">
+      <div class="container">
+        <h2>Available <span class="accent">Models</span></h2>
+
+        <div class="models-group-title">Transcription Models</div>
+        <div class="models-grid">
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Parakeet TDT V3</div>
+              <div class="model-badges">
+                <span class="model-badge badge-default">Default</span>
+              </div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Mode: <span>Batch</span></div>
+              <div class="model-meta-item">Params: <span>~600M</span></div>
+              <div class="model-meta-item">Languages: <span>25</span></div>
+            </div>
+            <div class="model-desc">
+              NVIDIA Parakeet TDT v3 via FluidAudio SDK. 2.1% WER, runs on Apple
+              Neural Engine.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Parakeet TDT V2</div>
+              <div class="model-badges"></div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Mode: <span>Batch</span></div>
+              <div class="model-meta-item">Params: <span>~600M</span></div>
+              <div class="model-meta-item">Languages: <span>English</span></div>
+            </div>
+            <div class="model-desc">
+              Previous generation Parakeet. English-only, well-tested.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">EOU 120M</div>
+              <div class="model-badges">
+                <span class="model-badge badge-beta">Beta</span>
+              </div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Mode: <span>Streaming</span></div>
+              <div class="model-meta-item">Params: <span>~120M</span></div>
+              <div class="model-meta-item">Languages: <span>English</span></div>
+            </div>
+            <div class="model-desc">
+              FluidAudio streaming model. 160ms chunks, partial results live in
+              the overlay as you speak.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">WhisperKit Large V3 Turbo</div>
+              <div class="model-badges">
+                <span class="model-badge badge-fallback">Fallback</span>
+              </div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Mode: <span>Batch</span></div>
+              <div class="model-meta-item">Size: <span>~1.6GB</span></div>
+              <div class="model-meta-item">Languages: <span>99</span></div>
+            </div>
+            <div class="model-desc">
+              OpenAI Whisper via WhisperKit. Best for multilingual or
+              non-English dictation.
+            </div>
+          </div>
+        </div>
+
+        <div class="models-group-title">LLM Models (on-device MLX)</div>
+        <div class="models-grid">
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Llama 3.2 3B</div>
+              <div class="model-badges">
+                <span class="model-badge badge-default">Default LLM</span>
+              </div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Size: <span>~2GB</span></div>
+              <div class="model-meta-item">RAM: <span>8GB+ Macs</span></div>
+            </div>
+            <div class="model-desc">
+              Grammar fix and Q&amp;A. Fastest LLM option, works on base
+              M-series Macs.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Qwen 3 8B</div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Size: <span>~5.5GB</span></div>
+              <div class="model-meta-item">RAM: <span>36GB+</span></div>
+            </div>
+            <div class="model-desc">
+              Strong reasoning and multilingual capabilities. Best overall
+              quality at 8B scale.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Llama 3.3 8B</div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Size: <span>~5GB</span></div>
+              <div class="model-meta-item">RAM: <span>36GB+</span></div>
+            </div>
+            <div class="model-desc">
+              General-purpose instruction following. Reliable all-rounder for
+              grammar and rephrase tasks.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Qwen 2.5 Coder 7B</div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Size: <span>~5GB</span></div>
+              <div class="model-meta-item">RAM: <span>36GB+</span></div>
+            </div>
+            <div class="model-desc">
+              Optimised for code generation, editing, and technical dictation
+              clean-up.
+            </div>
+          </div>
+          <div class="model-card">
+            <div class="model-card-header">
+              <div class="model-name">Qwen 3 4B</div>
+            </div>
+            <div class="model-meta">
+              <div class="model-meta-item">Size: <span>~2.5GB</span></div>
+              <div class="model-meta-item">RAM: <span>8GB+</span></div>
+            </div>
+            <div class="model-desc">
+              Fast multilingual model. Good balance of speed and quality for 8GB
+              Macs.
+            </div>
           </div>
         </div>
       </div>
@@ -957,7 +1700,8 @@
       <div class="container">
         <p>
           <a href="https://github.com/braxcat/textecho">GitHub</a> &middot; MIT
-          License &middot; Made in Australia
+          License &middot; Made in Australia &middot; v2.5.0 &middot; Last
+          updated April 2026
         </p>
       </div>
     </footer>
@@ -981,10 +1725,12 @@
       const overlay = document.querySelector(".demo-overlay");
       const statusEl = overlay.querySelector(".demo-status");
       const textEl = overlay.querySelector(".demo-text");
+      const waveformEl = overlay.querySelector(".demo-waveform");
       const tabs = document.querySelectorAll(".demo-tab");
 
       const states = {
         recording: { status: "Recording", text: "Listening..." },
+        streaming: { status: "Streaming", text: null }, // handled with ghost text
         processing: {
           status: "Processing",
           text: "Transcribing with Parakeet TDT...",
@@ -992,14 +1738,68 @@
         done: { status: "Done", text: '"Voice-to-text that just works."' },
       };
 
+      let ghostInterval = null;
+
+      function startGhostText() {
+        const words = [
+          "The",
+          "quick",
+          "brown",
+          "fox",
+          "jumps",
+          "over",
+          "the",
+          "lazy",
+          "dog",
+        ];
+        let idx = 0;
+        textEl.classList.add("ghost-text");
+        textEl.textContent = words.slice(0, 3).join(" ") + "...";
+
+        ghostInterval = setInterval(() => {
+          idx = (idx + 1) % (words.length - 2);
+          textEl.textContent = words.slice(idx, idx + 3).join(" ") + "...";
+        }, 900);
+      }
+
+      function stopGhostText() {
+        textEl.classList.remove("ghost-text");
+        if (ghostInterval) {
+          clearInterval(ghostInterval);
+          ghostInterval = null;
+        }
+      }
+
       tabs.forEach((tab) => {
         tab.addEventListener("click", () => {
           const state = tab.dataset.state;
+          stopGhostText();
+
           tabs.forEach((t) => t.classList.remove("active"));
           tab.classList.add("active");
           overlay.dataset.state = state;
           statusEl.textContent = states[state].status;
-          textEl.textContent = states[state].text;
+
+          if (state === "streaming") {
+            // restore waveform display (in case coming from done)
+            waveformEl.style.display = "";
+            // re-init bars with green color
+            waveformEl.innerHTML = "";
+            createBars(waveformEl, 24, "#4dd9a6");
+            startGhostText();
+          } else {
+            // restore cyan bars if coming from streaming
+            if (
+              overlay.querySelector(".demo-waveform .bar") &&
+              overlay
+                .querySelector(".demo-waveform .bar")
+                .style.background.includes("4dd9a6")
+            ) {
+              waveformEl.innerHTML = "";
+              createBars(waveformEl, 24, "#00E6FF");
+            }
+            textEl.textContent = states[state].text;
+          }
         });
       });
     </script>

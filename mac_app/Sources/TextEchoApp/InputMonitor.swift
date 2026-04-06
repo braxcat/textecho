@@ -169,8 +169,8 @@ final class InputMonitor {
             }
             // Number keys 1-4 during LLM recording to switch mode
             if shouldCaptureLLMMode {
-                // macOS keycodes: 18=1, 19=2, 20=3, 21=4
-                let modes: [Int64: LLMMode] = [18: .grammar, 19: .rephrase, 20: .answer, 21: .custom]
+                // macOS keycodes: 18=1, 19=2, 20=3
+                let modes: [Int64: LLMMode] = [18: .grammar, 19: .rephrase, 20: .answer]
                 if let mode = modes[keyCode] {
                     _onEvent?(.selectLLMMode(mode))
                     return nil // consume the keypress

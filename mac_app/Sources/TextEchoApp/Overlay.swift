@@ -51,6 +51,8 @@ final class OverlayViewModel: ObservableObject {
     func showRecordingLLMMode(mode: String, hint: String) {
         state = .recording
         statusText = "RECORDING // \(mode.uppercased())"
+        resultText = ""
+        promptText = ""
         llmModeHint = hint
         waveform = waveform.isEmpty ? Array(repeating: 0.0, count: 40) : waveform
     }
@@ -431,16 +433,24 @@ struct OverlayView: View {
                         .transition(.opacity)
                 }
 
-                // Result text — scrollable with max height to prevent overlay growing off-screen
+                // Result text — auto-scrolls to bottom, capped height
                 if !viewModel.resultText.isEmpty {
-                    ScrollView {
-                        Text(viewModel.resultText)
-                            .font(.system(size: 12, weight: .regular, design: .monospaced))
-                            .foregroundColor(resultTextColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            Text(viewModel.resultText)
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundColor(resultTextColor)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id("resultBottom")
+                        }
+                        .frame(maxHeight: 300)
+                        .onChange(of: viewModel.resultText) {
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                proxy.scrollTo("resultBottom", anchor: .bottom)
+                            }
+                        }
                     }
-                    .frame(maxHeight: 300)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 

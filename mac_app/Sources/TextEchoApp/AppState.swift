@@ -483,7 +483,7 @@ final class AppState {
     func handleCycleLLMMode() { cycleLLMMode() }
 
     private func cycleLLMMode() {
-        let allModes: [LLMMode] = [.grammar, .rephrase, .answer, .custom]
+        let allModes: [LLMMode] = [.grammar, .rephrase, .answer]
         let current = LLMMode(rawValue: config.model.llmMode) ?? .grammar
         let currentIndex = allModes.firstIndex(of: current) ?? 0
         let nextMode = allModes[(currentIndex + 1) % allModes.count]

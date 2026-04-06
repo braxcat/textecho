@@ -91,6 +91,9 @@ struct SetupWizardView: View {
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
     @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
+    @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
+    @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
+    @State private var llmModelID: String = AppConfig.shared.model.llmModelID
     @State private var idleTimeoutPreset: Int = {
         let t = AppConfig.shared.model.whisperIdleTimeout
         return [0, 3600, 14400, 28800].contains(t) ? t : -1
@@ -723,6 +726,71 @@ struct SetupWizardView: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Divider()
+
+            // MARK: - LLM (AI Assistant)
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Enable AI Assistant (LLM)", isOn: $llmEnabled)
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Ask questions by voice — hold Shift while recording. TextEcho transcribes your question, sends it to a local AI model, and shows the answer. Everything runs on your Mac, nothing leaves your device.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if llmEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("AI Model")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Choose a model based on your Mac's RAM. Larger models give better answers but need more memory. The model downloads on first use (~2-5 GB).")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Picker("Model", selection: $llmModelID) {
+                            ForEach(recommendedLLMModels, id: \.id) { model in
+                                VStack(alignment: .leading) {
+                                    Text(model.displayName)
+                                }
+                                .tag(model.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+
+                        if let selected = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
+                            Text("\(selected.description) — ~\(String(format: "%.1f", selected.sizeGB)) GB download")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Divider().padding(.vertical, 4)
+
+                        Text("After Recording")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("When the AI responds, should TextEcho paste it automatically or let you review it first?")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Picker("", selection: $llmAutoPaste) {
+                            Text("Auto-paste — response is pasted immediately").tag(true)
+                            Text("Review first — press Enter to paste, Esc to dismiss").tag(false)
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+
+                        Text(llmAutoPaste
+                            ? "The AI response will be pasted into the active app right away."
+                            : "You'll see the response in a floating overlay. Press Enter to paste it, or Esc to dismiss.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.leading, 4)
+                }
+            }
         }
     }
 
@@ -796,6 +864,19 @@ struct SetupWizardView: View {
                 if pedalEnabled {
                     let pedalName = pedalPosition == 0 ? "Left pedal" : pedalPosition == 2 ? "Right pedal" : "Center pedal"
                     hotkeyRow(keys: pedalName, action: "Stream Deck Pedal (push-to-talk)")
+                }
+            }
+
+            if llmEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AI Assistant")
+                        .font(.system(size: 12, weight: .semibold))
+                    if let model = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
+                        hotkeyRow(keys: "Shift + trigger", action: "Ask AI (\(model.displayName))")
+                    } else {
+                        hotkeyRow(keys: "Shift + trigger", action: "Ask AI")
+                    }
+                    hotkeyRow(keys: llmAutoPaste ? "Auto-paste" : "Enter / Esc", action: llmAutoPaste ? "Response pasted automatically" : "Review before pasting")
                 }
             }
 
@@ -930,6 +1011,9 @@ struct SetupWizardView: View {
             model.silenceEnabled = silenceEnabled
             model.silenceDuration = silenceDuration
             model.whisperIdleTimeout = timeout
+            model.llmEnabled = llmEnabled
+            model.llmAutoPaste = llmAutoPaste
+            model.llmModelID = llmModelID
         }
     }
 

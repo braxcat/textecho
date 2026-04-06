@@ -1,10 +1,58 @@
 # Worklog
 
+## 2026-04-06 — v2.6.0: LLM Review Mode + Dynamic Overlay
+
+**Focus:** LLM pre-send review workflow, mode cycling, ESC cancellation, dynamic overlay sizing, post-wizard race fix
+
+### LLM Review Mode
+
+- Pre-send review: transcribe → show text + mode → Enter to send, Ctrl+Shift+M to cycle, ESC to cancel
+- Mode cycling: Grammar Fix → Rephrase → Answer (Custom mode removed)
+- Menu bar LLM mode indicator (click to cycle)
+- ESC cancels LLM generation mid-stream via CancellationFlag (NSLock, nonisolated)
+- Thinking/responding labels: "THINKING..." (purple) → "RESPONDING" (green) → "LLM READY"
+
+### Dynamic Overlay
+
+- NSWindow resizes to fit SwiftUI content via resizeWindowToFit() + NSHostingView.fittingSize
+- 560px wide for LLM content (vs 420px normal), 300px max height with auto-scroll
+- Called on show() + every LLM state transition (processing, partial, review, pre-send)
+
+### Bug Fixes
+
+- **Post-wizard race condition**: config change notification triggered reloadTranscriber() before onClose callback, setting transcriber non-nil. finalizeFirstLaunchSetup() guard bailed early, skipping LLM model loading. Fixed by making finalization idempotent.
+- Stale text in overlay cleared on new recording
+- clean_test.sh: fixed set -e silently exiting, fixed arg parsing for --force --debug
+
+### Security
+
+- Log file + register files written with 0600 permissions
+- No verbatim transcription text in logs
+- GitHub Actions CI SHA-pinned
+
+### Cleanup
+
+- Archived 7 completed/obsolete plan files to plans/archive/
+- Updated all claude_docs (CHANGELOG, FEATURES, ROADMAP, WORKLOG)
+- Updated README.md and CLAUDE.md with LLM review workflow + clean_test.sh
+
+## 2026-04-06 — v2.5.0: Streaming Transcription + Silence Skip Removal
+
+**Focus:** Real-time streaming transcription via EOU 120M, silence gate removal
+
+- Dual-pass streaming: EOU 120M partials during recording, TDT V3 batch for final paste
+- StreamingTranscriber protocol + StreamingEouAsrManager
+- .streamingPartial overlay state with ghost text
+- Removed RMS silence gate — quiet/whispered speech reaches model
+- Setup wizard: LLM enable/model/auto-paste, streaming toggle+download
+- Updated all docs for v2.5.0
+
 ## 2026-03-29 — v2.4.0: Native MLX LLM, Security Hardening, Bug Fixes
 
 **Focus:** Replace Python LLM daemon with native MLX, fix force unwraps, config file permissions, document merged bug fixes
 
 ### Native MLX LLM
+
 - Created MLXLLMProcessor.swift — native Swift LLM via MLX framework
 - 6 models (HuggingFace MLX Community), 4 modes (clean, fix, expand, custom)
 - Shift+Middle-click hotkey for transcribe+LLM workflow
@@ -12,17 +60,21 @@
 - Eliminates Unix socket IPC, Python runtime, and external process
 
 ### Security Hardening
+
 - Replaced force unwraps (`!`) with safe unwrapping in AudioRecorder.swift, WhisperKitTranscriber.swift, ParakeetTranscriber.swift
 - Config file `~/.textecho_config` now written with 0o600 permissions (owner-only)
 
 ### Bug Fixes (merged)
+
 - #15 waveform visualization, #16 pedal input mode, #30 obsolete scripts (all reported by @MachinationsContinued)
 - Accessibility alert improvement
 
 ### Documentation
+
 - Updated CLAUDE.md, README.md, CHANGELOG, ARCHITECTURE, FEATURES, SECURITY, WORKLOG for v2.4.0
 
 ### Credits
+
 - Issues: @MachinationsContinued
 - Code: @braxcat & Claude
 
@@ -31,18 +83,21 @@
 **Focus:** Add Parakeet TDT as default transcription engine via FluidAudio SDK, dual-engine support
 
 ### Parakeet Integration
+
 - Added FluidAudio dependency to Package.swift
 - Created ParakeetTranscriber.swift — actor conforming to Transcriber protocol
 - Parakeet TDT v3: 2.1% WER, 600M params, 3-6x faster than Whisper, 25 European languages
 - Runs on Apple Neural Engine via Core ML on all Apple Silicon Macs (M1-M4)
 
 ### Config & UI Updates
+
 - Added `transcription_engine` and `parakeet_model` fields to AppConfig
 - AppState selects transcriber based on config engine field
 - Setup Wizard: engine picker (Parakeet recommended, Whisper fallback)
 - Settings: engine picker and Parakeet model selector
 
 ### Licensing
+
 - Parakeet model weights: CC-BY-4.0 (NVIDIA attribution required)
 - FluidAudio SDK: Apache 2.0
 
@@ -51,18 +106,21 @@
 **Focus:** Developer ID code signing, notarization, GitHub Actions release workflow, security hardening
 
 ### Code Signing
+
 - Created `mac_app/TextEcho.entitlements` (non-sandboxed + disable-library-validation)
 - Updated `build_native_app.sh` — `--sign` flag for Developer ID signing with hardened runtime
 - Updated `build_native_dmg.sh` — `--sign` flag for signed + notarized DMG
 - Notarization via App Store Connect API key (not app-specific password)
 
 ### Release Workflow
+
 - Created `.github/workflows/release.yml` — triggered by `v*` tags
 - Full pipeline: build → sign → notarize → staple → DMG → GitHub Release → Sigstore attestation
 - Ephemeral keychain for certificate handling (created and destroyed in workflow)
 - All third-party actions SHA-pinned
 
 ### Security Hardening
+
 - GitHub Environment with required approval before release jobs
 - Tag protection rules for `v*` tags
 - `.github/CODEOWNERS` — require review on workflow and signing file changes
@@ -73,15 +131,18 @@
 **Focus:** CGEventTap health monitoring, pedal retry improvements, Magic Trackpad as new activation method
 
 ### Event Tap Health Check
+
 - Added 30-second health check timer in InputMonitor.swift
 - Detects macOS invalidating the CGEventTap mach port during long idle periods
 - Automatically recreates the tap (previously required app restart)
 
 ### Pedal Retry Backoff
+
 - Changed StreamDeckPedalMonitor from constant 3s polling to exponential backoff (3s → 60s cap)
 - Reduced log noise: first scan + every 10th attempt only
 
 ### Magic Trackpad Support
+
 - New TrackpadMonitor.swift — IOKit HID monitor for Apple Magic Trackpad
 - Supports force click and right-click gestures, toggle and hold modes
 - Matches all Magic Trackpad models by vendor/product ID
@@ -94,6 +155,7 @@
 **Focus:** Theme presets, custom color picker, CI workflow, dependency updates
 
 ### Theme System (PR #7)
+
 - 5 built-in presets: TextEcho, Cyber, Classic, Ocean, Sunset
 - Full color picker UI in Settings for custom themes
 - Save/load/delete user presets (~/.textecho_themes.json)
@@ -103,13 +165,16 @@
 - CodeQL fix: @MainActor on TextEchoApp deinit
 
 ### Swift CI
+
 - Created `.github/workflows/swift-ci.yml` — `swift test` + `swift build -c release` on PRs to main
 - Uses macos-latest + actions/checkout@v6
 
 ### Dependency Updates
+
 - Merged Dependabot PRs #4 (actions/checkout v6) and #5 (codeql-action v4)
 
 ### GitHub Security
+
 - Enabled Dependency graph, Dependabot alerts, Dependabot security updates, Code scanning
 
 ## 2026-03-20 — UX Polish & Cyberpunk Overlay
@@ -117,6 +182,7 @@
 **Focus:** Per-pedal actions, auto-detect, Settings persistence, overlay redesign, setup wizard
 
 ### Stream Deck Pedal
+
 - Added per-pedal callbacks: center=push-to-talk, left=paste, right=enter
 - Fixed audio capture from pedal: deferred engine.start() via DispatchQueue.main.async (IOKit HID callback was blocking AVAudioEngine)
 - Added 3-second auto-detect retry timer — no unplug/replug needed
@@ -125,6 +191,7 @@
 - Pedal toggle + position picker in Settings UI, persists across saves
 
 ### Overlay Redesign
+
 - Cyberpunk aesthetic: deep blue-black glassmorphic background
 - Color flow: Pink (magenta) → Electric Purple → Neon Green (matrix #33FF33)
 - Waveform: magenta-to-green gradient, 60pt bars, green glow shadows
@@ -135,17 +202,20 @@
 - Fixed overlay drop-out: proper auto-hide cancellation, orderFrontRegardless(), canJoinAllSpaces
 
 ### Setup Wizard Redesign
+
 - 6 steps: Welcome → Accessibility → Microphone → Model → Pedal → Ready
 - Progress dots, back buttons, restart helper
 - Pedal detection step with auto-scan
 
 ### Model & Config Fixes
+
 - Fixed model names: HF repo uses `openai_whisper-large-v3_turbo` (underscore, not hyphen)
 - Fixed cache detection: models at `~/Documents/huggingface/models/` not `~/Library/Caches/`
 - Model name migration on config load (old short names auto-fix)
 - Error display in Settings manage models + Setup Wizard
 
 ### Scripts
+
 - Created `rebuild.sh` — one-command pull + build + deploy + launch
 - Added `--clean` flag to `build_native_app.sh`
 - Updated `uninstall.sh` — removes WhisperKit models + registers
@@ -155,12 +225,14 @@
 **Focus:** Replace Python MLX Whisper daemon with native Swift WhisperKit for transcription
 
 ### Phase 1: Foundation
+
 - Created `Transcriber.swift` protocol for swappable backends
 - Created `WhisperKitTranscriber.swift` actor — PCM conversion, silence detection, hallucination filter, resampling, model lifecycle, 30s timeout
 - Updated `Package.swift` — added WhisperKit 0.9.0+ dependency, bumped macOS 13 → 14
 - Ported all transcription logic from Python to Swift (audio conversion, RMS, hallucination phrases, resampling)
 
 ### Phase 2: Integration
+
 - Rewrote `AppState.swift` — replaced socket IPC with async/await WhisperKit calls, pre-warms model on start
 - Slimmed `PythonServiceManager.swift` — LLM-only, removed transcription process management
 - Added `whisperModel` and `whisperIdleTimeout` to `AppConfig.swift` with `llmAvailable` computed property
@@ -169,6 +241,7 @@
 - Added downloading state to `Overlay.swift`
 
 ### Phase 3: Cleanup
+
 - Deleted `transcription_daemon_mlx.py` (436 lines Python)
 - Renamed `TranscriptionClient.swift` → `UnixSocket.swift`, deleted TranscriptionClient class
 - Updated `build_native_app.sh` — pure Swift default, `--with-llm` flag for optional Python/LLM
@@ -178,6 +251,7 @@
 - Updated all claude_docs, CLAUDE.md, README.md
 
 ### Key decisions
+
 - WhisperKit actor isolation for thread safety (no shared mutable state)
 - 30s timeout wrapper on transcribe() to prevent infinite hangs
 - Model name sanitization (alphanumeric + hyphens/dots/slashes only)
@@ -189,6 +263,7 @@
 **Focus:** Replace unmaintained lightning-whisper-mlx with mlx-whisper, upgrade to large-v3-turbo model
 
 ### Library Swap
+
 - Researched MLX whisper ecosystem: lightning-whisper-mlx (dead, April 2024), mlx-whisper (active, v0.4.3), mlx-audio (active, broader)
 - Chose mlx-whisper — drop-in Whisper replacement, actively maintained, supports large-v3-turbo
 - Updated pyproject.toml: `lightning-whisper-mlx` → `mlx-whisper>=0.4.0`
@@ -196,6 +271,7 @@
 - Updated PythonServiceManager.swift comment
 
 ### Daemon Rewrite
+
 - Rewrote transcription_daemon_mlx.py to use `mlx_whisper.transcribe()` API
 - New default models: `mlx-community/whisper-large-v3-turbo` (single/fast), `mlx-community/whisper-large-v3-mlx` (accurate)
 - Removed LightningWhisperMLX class instantiation — mlx-whisper uses a functional API
@@ -204,6 +280,7 @@
 - Preserved all existing features: hallucination filtering, silence detection, IPC protocol, idle unload
 
 ### Deployment
+
 - Created feature branch `feature/mlx-whisper-turbo`, pushed to GitHub
 - Merged via PR #1, cleaned up branch
 - Tested on M4 Max 36GB — model downloads ~1.6GB on first use
@@ -213,10 +290,12 @@
 **Focus:** App icon bundling, DMG rebuild, fix critical runtime bugs (ffmpeg PATH, CGEventTap timeout)
 
 ### Bug Fix: ffmpeg not found
+
 - Root cause: lightning-whisper-mlx calls `ffmpeg` as subprocess; .app bundles from Finder have minimal PATH excluding /opt/homebrew/bin
 - Fix: PythonServiceManager.launchPython() prepends Homebrew paths to PATH env var
 
 ### Bug Fix: Input dies after first recording
+
 - Root cause: recorder.stop() calls completion synchronously on main run loop → transcribe() blocks up to 5s in waitForTranscriptionSocket() → macOS disables CGEventTap (timeout)
 - Fix: Dispatch transcribe() to DispatchQueue.global(qos: .userInitiated)
 - Safety net: Handle .tapDisabledByTimeout to re-enable tap
@@ -226,4 +305,5 @@
 **Focus:** Technical debt cleanup, stability fixes, dead code removal (4,500+ lines)
 
 ## 2026-02-11 — Documentation Scaffold
+
 - Ran chippy-scaffold-docs to create claude_docs/ structure

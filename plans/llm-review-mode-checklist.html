@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Review Mode — Implementation Checklist</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0a0a1a;
+        color: #c8d0e0;
+        min-height: 100vh;
+        padding: 32px 24px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: #5a6480;
+        margin-bottom: 32px;
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
+      .progress-bar-wrap {
+        background: #13132a;
+        border-radius: 6px;
+        height: 6px;
+        margin-bottom: 28px;
+        overflow: hidden;
+        border: 1px solid #1e1e40;
+      }
+      .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #4dd9a6, #8a5cf6);
+        border-radius: 6px;
+        transition: width 0.3s ease;
+      }
+      .progress-label {
+        font-size: 11px;
+        color: #5a6480;
+        font-family: "SF Mono", "Fira Code", monospace;
+        margin-top: -22px;
+        margin-bottom: 24px;
+        text-align: right;
+      }
+      .phase {
+        margin-bottom: 28px;
+      }
+      .phase-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .phase-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
+      .phase-count {
+        font-size: 10px;
+        color: #5a6480;
+        font-family: "SF Mono", "Fira Code", monospace;
+        margin-left: auto;
+      }
+      .phase-body {
+        display: block;
+      }
+      .task {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 9px 12px;
+        border-radius: 6px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        transition: background 0.15s;
+        border: 1px solid transparent;
+      }
+      .task:hover {
+        background: #13132a;
+        border-color: #1e1e40;
+      }
+      .task.done {
+        opacity: 0.5;
+      }
+      .task.done .task-text {
+        text-decoration: line-through;
+        color: #5a6480;
+      }
+      .checkbox {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 1.5px solid #2a2a50;
+        flex-shrink: 0;
+        margin-top: 1px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+        background: #0f0f24;
+      }
+      .task.done .checkbox {
+        background: #4dd9a6;
+        border-color: #4dd9a6;
+      }
+      .task.done .checkbox::after {
+        content: "";
+        display: block;
+        width: 8px;
+        height: 5px;
+        border-left: 2px solid #0a0a1a;
+        border-bottom: 2px solid #0a0a1a;
+        transform: rotate(-45deg) translateY(-1px);
+      }
+      .task-text {
+        font-size: 13px;
+        line-height: 1.45;
+        color: #c8d0e0;
+      }
+      .task-file {
+        font-size: 10px;
+        font-family: "SF Mono", "Fira Code", monospace;
+        color: #8a5cf6;
+        margin-top: 2px;
+        opacity: 0.8;
+      }
+      .badge {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: "SF Mono", "Fira Code", monospace;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      }
+      .badge-overlay {
+        background: #8a5cf620;
+        color: #8a5cf6;
+        border: 1px solid #8a5cf640;
+      }
+      .badge-appstate {
+        background: #4dd9a620;
+        color: #4dd9a6;
+        border: 1px solid #4dd9a640;
+      }
+      .badge-input {
+        background: #00e6ff20;
+        color: #00e6ff;
+        border: 1px solid #00e6ff40;
+      }
+      .badge-config {
+        background: #ffc20020;
+        color: #ffc200;
+        border: 1px solid #ffc20040;
+      }
+      .badge-settings {
+        background: #ff666620;
+        color: #ff6666;
+        border: 1px solid #ff666640;
+      }
+      .badge-test {
+        background: #ffffff15;
+        color: #888;
+        border: 1px solid #ffffff20;
+      }
+
+      .phase-recording .phase-title {
+        color: #00e6ff;
+      }
+      .phase-overlay .phase-title {
+        color: #8a5cf6;
+      }
+      .phase-appstate .phase-title {
+        color: #4dd9a6;
+      }
+      .phase-inputmonitor .phase-title {
+        color: #00e6ff;
+      }
+      .phase-wiring .phase-title {
+        color: #ffc200;
+      }
+      .phase-settings .phase-title {
+        color: #ff6666;
+      }
+      .phase-testing .phase-title {
+        color: #888;
+      }
+
+      .divider {
+        border: none;
+        border-top: 1px solid #1e1e40;
+        margin: 4px 0 12px;
+      }
+      .note {
+        font-size: 11px;
+        color: #5a6480;
+        font-family: "SF Mono", "Fira Code", monospace;
+        background: #0f0f24;
+        border: 1px solid #1e1e40;
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 28px;
+        line-height: 1.6;
+      }
+      .note strong {
+        color: #ffc200;
+      }
+      .reset-btn {
+        font-size: 11px;
+        color: #5a6480;
+        font-family: "SF Mono", "Fira Code", monospace;
+        background: none;
+        border: 1px solid #1e1e40;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+        float: right;
+        margin-top: -4px;
+      }
+      .reset-btn:hover {
+        color: #ff6666;
+        border-color: #ff666640;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>LLM Review Mode</h1>
+    <p class="subtitle">TextEcho // review-before-paste implementation</p>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressFill" style="width: 0%"></div>
+    </div>
+    <div class="progress-label" id="progressLabel">0 / 0 tasks</div>
+
+    <div class="note">
+      <strong>Design summary:</strong> When <code>llmAutoPaste = false</code>,
+      after generation completes the overlay enters a new
+      <code>.llmReview</code> state (amber accent, pulsing indicator, hint text
+      "↵ paste · ESC dismiss"). Press <strong>Return</strong> to inject,
+      <strong>ESC</strong> to discard, or wait 15s for auto-dismiss. The
+      CGEventTap consumes the Return keypress only while review state is active.
+      <button class="reset-btn" onclick="resetAll()">reset all</button>
+    </div>
+
+    <!-- Phase 1: Overlay -->
+    <div class="phase phase-overlay">
+      <div class="phase-header">
+        <span class="phase-title">1 — Overlay.swift</span>
+        <span class="phase-count" id="count-overlay"></span>
+      </div>
+      <hr class="divider" />
+      <div class="phase-body" id="phase-overlay">
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>.llmReview</code> case to <code>OverlayState</code> enum
+            </div>
+            <div class="task-file">OverlayState enum — add case llmReview</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Update <code>OverlayState ==</code> implementation to include
+              <code>.llmReview</code>
+            </div>
+            <div class="task-file">OverlayState.== static func</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>showLLMReview(_ text: String)</code> to
+              <code>OverlayViewModel</code> — sets state, statusText "LLM
+              READY", resultText
+            </div>
+            <div class="task-file">OverlayViewModel.showLLMReview</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add amber accent color branch for <code>.llmReview</code> in
+              <code>accentColor</code> computed var (<code>theme.loading</code>)
+            </div>
+            <div class="task-file">OverlayView.accentColor</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add amber text color branch for <code>.llmReview</code> in
+              <code>resultTextColor</code>
+              (<code>theme.loading.opacity(0.9)</code>)
+            </div>
+            <div class="task-file">OverlayView.resultTextColor</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add pulsing amber dot for <code>.llmReview</code> in
+              <code>statusIndicator</code> view builder
+            </div>
+            <div class="task-file">OverlayView.statusIndicator</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add hint text below result text in <code>OverlayView.body</code> —
+              only visible in <code>.llmReview</code> state: "↵ paste · ESC
+              dismiss"
+            </div>
+            <div class="task-file">OverlayView body — hint Text view</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>showLLMReview(_ text: String)</code> to
+              <code>OverlayWindowController</code> — calls
+              <code>viewModel.showLLMReview</code>, <code>show()</code>,
+              <code>autoHide(after: 15.0)</code>
+            </div>
+            <div class="task-file">OverlayWindowController.showLLMReview</div>
+          </div>
+          <span class="badge badge-overlay">Overlay</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 2: InputMonitor -->
+    <div class="phase phase-inputmonitor">
+      <div class="phase-header">
+        <span class="phase-title">2 — InputMonitor.swift</span>
+        <span class="phase-count" id="count-inputmonitor"></span>
+      </div>
+      <hr class="divider" />
+      <div class="phase-body" id="phase-inputmonitor">
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>.confirmPaste</code> case to
+              <code>InputEvent</code> enum
+            </div>
+            <div class="task-file">InputEvent enum</div>
+          </div>
+          <span class="badge badge-input">Input</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>var shouldConsumeReturn: Bool = false</code> property to
+              <code>InputMonitor</code>
+            </div>
+            <div class="task-file">InputMonitor — public property</div>
+          </div>
+          <span class="badge badge-input">Input</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              In <code>handleKeyDown</code>, detect keyCode 36 (Return) and emit
+              <code>.confirmPaste</code> when
+              <code>shouldConsumeReturn</code> is true
+            </div>
+            <div class="task-file">InputMonitor.handleKeyDown</div>
+          </div>
+          <span class="badge badge-input">Input</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              In the CGEventTap callback, return <code>nil</code> (consume
+              event) when <code>shouldConsumeReturn && keyCode == 36</code> —
+              prevents the Return keystroke reaching the frontmost app
+            </div>
+            <div class="task-file">
+              InputMonitor.handleEvent — return nil for consumed Return
+            </div>
+          </div>
+          <span class="badge badge-input">Input</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 3: AppState -->
+    <div class="phase phase-appstate">
+      <div class="phase-header">
+        <span class="phase-title">3 — AppState.swift</span>
+        <span class="phase-count" id="count-appstate"></span>
+      </div>
+      <hr class="divider" />
+      <div class="phase-body" id="phase-appstate">
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>private var isAwaitingLLMConfirm = false</code> and
+              <code>private var pendingLLMResponse: String = ""</code>
+              properties
+            </div>
+            <div class="task-file">AppState — state properties</div>
+          </div>
+          <span class="badge badge-appstate">AppState</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Modify <code>handleLLM</code> completion block: when
+              <code>!llmAutoPaste</code>, set pending state and call
+              <code>overlay.showLLMReview(response)</code> instead of injecting
+              immediately
+            </div>
+            <div class="task-file">AppState.handleLLM — completion block</div>
+          </div>
+          <span class="badge badge-appstate">AppState</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>confirmLLMPaste()</code> method — guards on
+              <code>isAwaitingLLMConfirm</code>, resets state, calls
+              <code>textInjector.inject</code>, hides overlay
+            </div>
+            <div class="task-file">AppState.confirmLLMPaste</div>
+          </div>
+          <span class="badge badge-appstate">AppState</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add <code>discardLLMPaste()</code> method — guards on
+              <code>isAwaitingLLMConfirm</code>, resets state, hides overlay,
+              nothing injected
+            </div>
+            <div class="task-file">AppState.discardLLMPaste</div>
+          </div>
+          <span class="badge badge-appstate">AppState</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Update <code>handleInputEvent</code> — add
+              <code>.confirmPaste</code> case calling
+              <code>confirmLLMPaste()</code>; update <code>.escape</code> to
+              call <code>discardLLMPaste()</code> when awaiting confirm
+            </div>
+            <div class="task-file">AppState.handleInputEvent</div>
+          </div>
+          <span class="badge badge-appstate">AppState</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Add 30-second watchdog: if <code>isAwaitingLLMConfirm</code> is
+              still true after 30s (e.g. after the 15s display timeout),
+              force-reset the flag and <code>shouldConsumeReturn</code>
+            </div>
+            <div class="task-file">
+              AppState — safety watchdog in confirmLLMPaste/discardLLMPaste or
+              autoHide callback
+            </div>
+          </div>
+          <span class="badge badge-appstate">AppState</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 4: Settings -->
+    <div class="phase phase-settings">
+      <div class="phase-header">
+        <span class="phase-title">4 — SettingsWindow.swift</span>
+        <span class="phase-count" id="count-settings"></span>
+      </div>
+      <hr class="divider" />
+      <div class="phase-body" id="phase-settings">
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              Update <code>llmAutoPaste</code> toggle label to "Auto-paste LLM
+              result (off = review before paste)"
+            </div>
+            <div class="task-file">
+              SettingsWindow — LLM section toggle label
+            </div>
+          </div>
+          <span class="badge badge-settings">Settings</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 5: Testing -->
+    <div class="phase phase-testing">
+      <div class="phase-header">
+        <span class="phase-title">5 — Verification</span>
+        <span class="phase-count" id="count-testing"></span>
+      </div>
+      <hr class="divider" />
+      <div class="phase-body" id="phase-testing">
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>llmAutoPaste = true (existing behaviour):</strong> trigger
+              LLM, verify result pastes immediately with no hint text, overlay
+              auto-hides as before
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>llmAutoPaste = false — review state appears:</strong>
+              overlay shows amber accent, pulsing dot, "LLM READY" status, hint
+              text "↵ paste · ESC dismiss"
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>Enter to paste:</strong> press Return while overlay in
+              review state — text injected into frontmost app, overlay hides
+              immediately
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>ESC to discard:</strong> press ESC while overlay in review
+              state — overlay hides, nothing pasted, no Return intercept active
+              after
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>15-second timeout:</strong> let review overlay expire
+              without pressing any key — overlay dismisses, nothing pasted,
+              <code>isAwaitingLLMConfirm</code> resets to false
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>Return pass-through when idle:</strong> with no LLM
+              response pending, press Return in any app — keystroke passes
+              through normally, not consumed
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>Streaming partials unchanged:</strong> during generation
+              (autoPaste = false), partial tokens still display in purple as
+              before; review state only appears after
+              <code>generate()</code> returns
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>Error path:</strong> simulate LLM error — error overlay
+              appears as before, no review state, Return not consumed
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+
+        <div class="task" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="task-text">
+              <strong>History:</strong> verify history entry is recorded for
+              both paste and discard paths
+            </div>
+          </div>
+          <span class="badge badge-test">Test</span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function toggle(el) {
+        el.classList.toggle("done");
+        updateProgress();
+        saveState();
+      }
+
+      function updateProgress() {
+        const all = document.querySelectorAll(".task");
+        const done = document.querySelectorAll(".task.done");
+        const pct = all.length
+          ? Math.round((done.length / all.length) * 100)
+          : 0;
+        document.getElementById("progressFill").style.width = pct + "%";
+        document.getElementById("progressLabel").textContent =
+          done.length + " / " + all.length + " tasks (" + pct + "%)";
+
+        const phases = [
+          "overlay",
+          "inputmonitor",
+          "appstate",
+          "settings",
+          "testing",
+        ];
+        phases.forEach((p) => {
+          const phaseTasks = document.querySelectorAll(
+            "#phase-" + p + " .task",
+          );
+          const phaseDone = document.querySelectorAll(
+            "#phase-" + p + " .task.done",
+          );
+          const el = document.getElementById("count-" + p);
+          if (el) el.textContent = phaseDone.length + "/" + phaseTasks.length;
+        });
+      }
+
+      function saveState() {
+        const tasks = document.querySelectorAll(".task");
+        const state = Array.from(tasks).map((t) =>
+          t.classList.contains("done"),
+        );
+        localStorage.setItem("llm-review-checklist", JSON.stringify(state));
+      }
+
+      function loadState() {
+        const saved = localStorage.getItem("llm-review-checklist");
+        if (!saved) return;
+        const state = JSON.parse(saved);
+        const tasks = document.querySelectorAll(".task");
+        tasks.forEach((t, i) => {
+          if (state[i]) t.classList.add("done");
+        });
+      }
+
+      function resetAll() {
+        if (!confirm("Reset all checkboxes?")) return;
+        document
+          .querySelectorAll(".task.done")
+          .forEach((t) => t.classList.remove("done"));
+        localStorage.removeItem("llm-review-checklist");
+        updateProgress();
+      }
+
+      loadState();
+      updateProgress();
+    </script>
+  </body>
+</html>

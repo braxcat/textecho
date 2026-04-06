@@ -44,6 +44,7 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 | `./build_native_app.sh --sign`     | Release build with Developer ID signing + hardened runtime + notarization                   |
 | `./build_native_app.sh --with-llm` | Build with bundled Python LLM (legacy — MLX is built-in)                                    |
 | `./build_native_dmg.sh`            | Create distributable DMG                                                                    |
+| `./clean_test.sh --force --debug`  | Remove config, models, logs, MLX cache for clean first-launch testing                       |
 
 ## Architecture
 
@@ -91,17 +92,18 @@ Transcription and LLM processing are fully native Swift — no IPC, no temp file
 
 ## Hotkeys
 
-| Action                        | Hotkey                                    |
-| ----------------------------- | ----------------------------------------- |
-| Transcribe & paste (mouse)    | Middle-click (hold to record)             |
-| Transcribe & paste (keyboard) | Ctrl+D (hold to record)                   |
-| LLM prompt (mouse)            | Shift + Middle-click                      |
-| LLM prompt (keyboard)         | Ctrl+Shift+D                              |
-| Save clipboard to register    | Cmd+Option+[1-9]                          |
-| Clear all registers           | Cmd+Option+0                              |
-| Settings dialog               | Cmd+Option+Space                          |
-| Transcribe & paste (trackpad) | Force click or right-click (configurable) |
-| Cancel recording              | ESC                                       |
+| Action                        | Hotkey                                     |
+| ----------------------------- | ------------------------------------------ |
+| Transcribe & paste (mouse)    | Middle-click (hold to record)              |
+| Transcribe & paste (keyboard) | Ctrl+D (hold to record)                    |
+| LLM prompt (mouse)            | Shift + Middle-click                       |
+| LLM prompt (keyboard)         | Ctrl+Shift+D                               |
+| Cycle LLM mode                | Ctrl+Shift+M (Grammar → Rephrase → Answer) |
+| Save clipboard to register    | Cmd+Option+[1-9]                           |
+| Clear all registers           | Cmd+Option+0                               |
+| Settings dialog               | Cmd+Option+Space                           |
+| Transcribe & paste (trackpad) | Force click or right-click (configurable)  |
+| Cancel recording              | ESC                                        |
 
 ## Development Guidelines
 

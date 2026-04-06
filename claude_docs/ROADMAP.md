@@ -17,7 +17,8 @@
 | 10.5  | COMPLETE | Native MLX LLM — on-device language model, xcodebuild migration                |
 | 11    | COMPLETE | Streaming Transcription — real-time partial text via EOU 120M model            |
 | 11.5  | COMPLETE | Silence Skip Removal — quiet/whispered speech no longer discarded pre-model    |
-| 12    | PLANNED  | Enhanced Transcription — multi-language, speaker diarization                   |
+| 12    | COMPLETE | LLM Review Mode — pre-send review, mode cycling, ESC cancel, dynamic overlay   |
+| 13    | PLANNED  | Enhanced Transcription — multi-language, speaker diarization                   |
 
 ## Phase 10: Parakeet TDT Integration (v2.2.0)
 
@@ -85,6 +86,19 @@
 - Removed RMS silence gate from `ParakeetTranscriber` and `WhisperKitTranscriber`
 - Quiet/whispered speech now reaches the transcription model instead of being discarded
 - `silence_threshold` config key retained solely for auto-stop silence detection
+
+## Phase 12: LLM Review Mode (v2.6.0)
+
+**Status:** COMPLETE
+
+- Pre-send review workflow: transcribe → show text + mode → Enter to send, Ctrl+Shift+M to cycle, ESC to cancel
+- LLM mode cycling: Grammar Fix → Rephrase → Answer (Custom removed). Menu bar indicator.
+- ESC cancels LLM generation mid-stream via thread-safe CancellationFlag (NSLock)
+- Thinking/responding overlay labels: "THINKING..." (purple) → "RESPONDING" (green) → "LLM READY"
+- Dynamic overlay: NSWindow resizes to fit SwiftUI content (560px for LLM, 300px scroll)
+- Post-wizard race fix: config notification triggered reloadTranscriber() before onClose, skipping LLM init
+- Security: log/register 0600 perms, no verbatim text in logs, CI SHA-pinned
+- clean_test.sh for fresh first-launch testing
 
 ## Phase 12+: Future Work (TBD)
 

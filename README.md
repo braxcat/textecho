@@ -37,7 +37,7 @@ Voice-to-text dictation for macOS with native on-device transcription on Apple S
 - **Fully offline** — no cloud, no accounts, audio never leaves your Mac
 - **Fast model loading** — lazy load on first use, auto-unload after idle
 - **Menu bar app** — settings, help, log viewer, setup wizard
-- **Native LLM** — on-device MLX processing with 6 models and 4 modes (clean, fix, expand, custom). Shift+Middle-click to transcribe+process.
+- **Native LLM** — on-device MLX processing with 6 models and 3 modes (Grammar Fix, Rephrase, Answer). Shift+Middle-click to transcribe+process. Pre-send review with Enter/ESC, mode cycling with Ctrl+Shift+M, ESC to cancel generation mid-stream.
 
 ## Requirements
 
@@ -102,6 +102,7 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 | `./rebuild.sh --clean`             | Full clean rebuild                                                                    |
 | `./rebuild.sh --uninstall`         | Wipe everything, then rebuild fresh                                                   |
 | `./uninstall.sh`                   | Remove app, config, models, logs, everything                                          |
+| `./clean_test.sh --force --debug`  | Remove config, models, logs, MLX cache for clean first-launch testing                 |
 | `./build_native_app.sh`            | Release build only (no deploy)                                                        |
 | `./build_native_app.sh --debug`    | Debug build only (faster, no deploy)                                                  |
 | `./build_native_app.sh --sign`     | Build with Developer ID signing + notarization                                        |
@@ -126,12 +127,23 @@ Enable one or more in Settings or Setup Wizard:
 | ------------------------- | ----------------------------------------------- |
 | **LLM prompt (mouse)**    | Shift + Middle-click (transcribe + LLM process) |
 | **LLM prompt (keyboard)** | Ctrl+Shift+D                                    |
+| **Cycle LLM mode**        | Ctrl+Shift+M (Grammar Fix → Rephrase → Answer)  |
 | **Paste (pedal)**         | Left pedal                                      |
 | **Enter (pedal)**         | Right pedal                                     |
 | **Save to register**      | Cmd+Option+1-9                                  |
 | **Clear registers**       | Cmd+Option+0                                    |
 | **Settings**              | Cmd+Option+Space                                |
 | **Cancel**                | ESC                                             |
+
+### LLM Review Workflow
+
+1. **Trigger** — Shift+Middle-click (or Ctrl+Shift+D) to record with LLM
+2. **Pre-send review** — after transcription, the overlay shows your text and current LLM mode. Press **Enter** to send, **Ctrl+Shift+M** to cycle modes, or **ESC** to cancel.
+3. **Processing** — overlay shows "THINKING..." (purple) → "RESPONDING" (green) as tokens stream in, with auto-scroll
+4. **Post-review** — press **Enter** to paste the LLM response, or **ESC** to discard
+5. **Cancel anytime** — press **ESC** during LLM generation to stop immediately
+
+The overlay dynamically resizes (560px wide for LLM content, up to 300px tall with auto-scroll).
 
 ### Transcription History
 

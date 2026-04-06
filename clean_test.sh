@@ -14,7 +14,11 @@ YELLOW='\033[0;33m'
 NC='\033[0m'
 
 FORCE=false
-[[ "${1:-}" == "--force" ]] && FORCE=true
+DEBUG=false
+for arg in "$@"; do
+    [[ "$arg" == "--force" ]] && FORCE=true
+    [[ "$arg" == "--debug" ]] && DEBUG=true
+done
 
 echo -e "${YELLOW}TextEcho Clean Test — removes all local data for fresh testing${NC}"
 echo ""
@@ -39,7 +43,7 @@ items=(
 )
 
 # Debug: show actual paths being checked
-if [[ "${2:-}" == "--debug" ]]; then
+if [[ "$DEBUG" == true ]]; then
     echo "DEBUG paths:"
     for item in "${items[@]}"; do
         path="${item%%|*}"

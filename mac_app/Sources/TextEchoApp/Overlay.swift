@@ -89,18 +89,18 @@ final class OverlayViewModel: ObservableObject {
 
     func showLLMProcessing(prompt: String) {
         state = .processing
-        statusText = "PROCESSING // LLM"
+        statusText = "THINKING..."
         promptText = prompt
         resultText = ""
-        llmModeHint = ""
+        llmModeHint = "ESC to cancel"
     }
 
     func showLLMPartial(prompt: String, partial: String) {
         state = .result(isLLM: true)
-        statusText = "LLM RESPONSE"
+        statusText = "RESPONDING"
         promptText = prompt
         resultText = partial
-        llmModeHint = ""
+        llmModeHint = "ESC to stop"
     }
 
     func showLLMReview(prompt: String, response: String) {
@@ -328,7 +328,14 @@ struct OverlayView: View {
     @State private var popScale: CGFloat = 0.92
     @State private var popOpacity: Double = 0.0
 
-    private let width: CGFloat = 420
+    private var width: CGFloat {
+        switch viewModel.state {
+        case .result(let isLLM) where isLLM: return 560
+        case .llmReview: return 560
+        case .processing where !viewModel.promptText.isEmpty: return 560
+        default: return 420
+        }
+    }
 
     private static var engineBadge: String {
         AppConfig.shared.model.transcriptionEngine == "whisper" ? "WHISPER" : "PARAKEET"

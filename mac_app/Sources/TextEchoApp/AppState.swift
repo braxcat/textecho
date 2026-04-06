@@ -133,14 +133,14 @@ final class AppState {
     }
 
     /// Called by the setup wizard's onClose callback on first launch.
-    /// Creates the transcriber for the engine/model the user chose, then preloads it.
+    /// Mirrors the start() initialization path so behavior is identical to a restart.
     func finalizeFirstLaunchSetup() {
         guard transcriber == nil else { return }
-        // Re-read config fresh — wizard just wrote it
         let model = AppConfig.shared.model
         let engine = model.transcriptionEngine
-        logger.info("finalizeFirstLaunchSetup: engine=\(engine), streaming=\(model.streamingEnabled), llmAvailable=\(model.llmAvailable), llmEngine=\(model.llmEngine), llmModelID=\(model.llmModelID)")
+        logger.info("finalizeFirstLaunchSetup: engine=\(engine), streaming=\(model.streamingEnabled), llmAvailable=\(model.llmAvailable), llmEngine=\(model.llmEngine)")
 
+        // Create transcriber — same as init() non-firstLaunch path
         if engine == "whisper" {
             transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
             loadedEngine = "whisper"
@@ -150,19 +150,22 @@ final class AppState {
             loadedEngine = "parakeet"
             loadedModel = model.parakeetModel
         }
-        // Always preload after wizard — models were downloaded during setup
+
+        // Preload transcription + streaming models — same as start() path
         startPreloadTask()
 
-        // Load LLM model if the wizard enabled it and downloaded the model.
-        // Re-read config fresh since the wizard just wrote llmEngine.
-        let freshModel = AppConfig.shared.model
-        logger.info("finalizeFirstLaunchSetup: llmEngine=\(freshModel.llmEngine), llmAvailable=\(freshModel.llmAvailable), llmModelID=\(freshModel.llmModelID)")
-        if freshModel.llmAvailable {
-            logger.info("finalizeFirstLaunchSetup: loading LLM model \(freshModel.llmModelID)")
-            // Delay slightly to let AppState finish initialization
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.loadLLMModel()
-            }
+        // Load LLM — same as start() path
+        if model.llmAvailable {
+            logger.info("finalizeFirstLaunchSetup: loading LLM model \(model.llmModelID)")
+            loadLLMModel()
+        }
+
+        // Start pedal/trackpad monitors if configured during wizard
+        if model.pedalEnabled && model.pedalInputMode == 0 {
+            startPedalMonitor()
+        }
+        if model.trackpadEnabled {
+            startTrackpadMonitor()
         }
     }
 

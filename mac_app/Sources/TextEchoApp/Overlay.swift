@@ -106,6 +106,14 @@ final class OverlayViewModel: ObservableObject {
         resultText = response
     }
 
+    func showLLMModeCycled(mode: String) {
+        state = .result(isLLM: true)
+        statusText = "LLM MODE"
+        resultText = mode
+        promptText = ""
+        llmModeHint = ""
+    }
+
     func showError(_ message: String) {
         state = .error
         statusText = "ERROR"
@@ -828,6 +836,15 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
                 self.show()
             }
             self.autoHide(after: 15.0)
+        }
+    }
+
+    func showLLMModeCycled(mode: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMModeCycled(mode: mode)
+            self.show()
+            self.autoHide(after: 1.5)
         }
     }
 

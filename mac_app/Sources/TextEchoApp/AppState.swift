@@ -144,9 +144,8 @@ final class AppState {
             loadedEngine = "parakeet"
             loadedModel = model.parakeetModel
         }
-        if isCurrentModelCached() {
-            startPreloadTask()
-        }
+        // Always preload after wizard — models were downloaded during setup
+        startPreloadTask()
 
         // Load LLM model if the wizard enabled it and downloaded the model
         if model.llmAvailable {
@@ -282,8 +281,10 @@ final class AppState {
         case .selectLLMMode(let mode):
             guard isRecording && isLLMMode else { return }
             llmModeOverride = mode
-            let hint = "1 Grammar · 2 Rephrase · 3 Answer · 4 Custom"
-            overlay.showRecordingLLMMode(mode: mode.displayName, hint: hint)
+            overlay.showRecordingLLMMode(mode: mode.displayName, hint: "Ctrl+Shift+M to cycle")
+        case .cycleLLMMode:
+            guard !isRecording else { return }
+            cycleLLMMode()
         case .register(let index):
             textInjector.captureClipboardToRegister(index)
         case .clearRegisters:
@@ -307,8 +308,7 @@ final class AppState {
         logger.info("Recording started (mode: \(mode.rawValue))")
         if isLLMMode {
             let currentMode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
-            let hint = "1 Grammar · 2 Rephrase · 3 Answer · 4 Custom"
-            overlay.showRecordingLLMMode(mode: currentMode.displayName, hint: hint)
+            overlay.showRecordingLLMMode(mode: currentMode.displayName, hint: "Ctrl+Shift+M to cycle")
         } else {
             overlay.showRecording(isLLM: false)
         }
@@ -458,6 +458,35 @@ final class AppState {
         textInjector.inject(response)
         overlay.hide()
         logger.info("LLM review: confirmed paste (\(response.count) chars)")
+    }
+
+    func handleCycleLLMMode() { cycleLLMMode() }
+
+    private func cycleLLMMode() {
+        let allModes: [LLMMode] = [.grammar, .rephrase, .answer, .custom]
+        let current = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        let currentIndex = allModes.firstIndex(of: current) ?? 0
+        let nextMode = allModes[(currentIndex + 1) % allModes.count]
+
+        config.update { model in
+            model.llmMode = nextMode.rawValue
+        }
+
+        // Flash overlay briefly showing the new mode
+        overlay.showLLMModeCycled(mode: nextMode.displayName)
+        logger.info("LLM mode cycled to: \(nextMode.displayName)")
+
+        // Update menu bar title
+        updateMenuBarLLMMode(nextMode)
+    }
+
+    /// Updates the menu bar status item to show current LLM mode.
+    /// Called on cycle and on launch.
+    private func updateMenuBarLLMMode(_ mode: LLMMode) {
+        NotificationCenter.default.post(
+            name: Notification.Name("TextEchoLLMModeChanged"),
+            object: mode.displayName
+        )
     }
 
     private func discardLLMPaste() {

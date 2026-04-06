@@ -15,6 +15,7 @@ enum InputEvent {
     case clearRegisters
     case capsLockChanged(Bool)
     case selectLLMMode(LLMMode)
+    case cycleLLMMode
 }
 
 final class InputMonitor {
@@ -236,6 +237,15 @@ final class InputMonitor {
 
         let cmd = flags.contains(.maskCommand)
         let opt = flags.contains(.maskAlternate)
+
+        let ctrl = flags.contains(.maskControl)
+        let shift = flags.contains(.maskShift)
+
+        // Ctrl+Shift+M — cycle LLM mode
+        if ctrl && shift && keyCode == 46 {
+            _onEvent?(.cycleLLMMode)
+            return
+        }
 
         if cmd && opt {
             switch keyCode {

@@ -30,6 +30,9 @@ struct TextEchoApp: App {
             Divider()
 
             if AppConfig.shared.model.llmAvailable {
+                Button("LLM Mode: \(appModel.llmModeDisplay)") {
+                    appModel.cycleLLMMode()
+                }
                 Button("Start LLM Recording") {
                     appModel.startRecording(llm: true)
                 }
@@ -185,6 +188,15 @@ final class AppModel: ObservableObject {
             return ParakeetTranscriber.availableModelList
                 .first(where: { $0.name == name })?.displayName ?? name
         }
+    }
+
+    var llmModeDisplay: String {
+        let mode = LLMMode(rawValue: AppConfig.shared.model.llmMode) ?? .grammar
+        return mode.displayName
+    }
+
+    func cycleLLMMode() {
+        appState.handleCycleLLMMode()
     }
 
     private func refreshHistory() {

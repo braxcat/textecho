@@ -4,6 +4,8 @@ import SwiftUI
 enum OverlayState: Equatable {
     case hidden
     case recording
+    /// Real-time streaming partial result displayed during recording.
+    case streamingPartial(text: String)
     case processing
     case loadingModel
     case downloading
@@ -16,6 +18,8 @@ enum OverlayState: Equatable {
              (.loadingModel, .loadingModel), (.downloading, .downloading), (.error, .error):
             return true
         case (.result(let a), .result(let b)):
+            return a == b
+        case (.streamingPartial(let a), .streamingPartial(let b)):
             return a == b
         default:
             return false
@@ -35,6 +39,12 @@ final class OverlayViewModel: ObservableObject {
         statusText = isLLM ? "RECORDING // LLM" : "RECORDING"
         resultText = ""
         waveform = Array(repeating: 0.0, count: 40)
+    }
+
+    func showStreamingPartial(_ text: String) {
+        state = .streamingPartial(text: text)
+        statusText = "STREAMING"
+        resultText = text
     }
 
     func showProcessing(isLLM: Bool) {
@@ -321,10 +331,14 @@ struct OverlayView: View {
                     .tracking(1.5)
                 }
 
-                // Waveform (recording state)
+                // Waveform (recording and streaming-partial states)
                 if case .recording = viewModel.state {
                     CyberWaveformView(levels: viewModel.waveform, waveformColor: theme.waveform, recordingColor: theme.recording)
                         .frame(height: 64)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                } else if case .streamingPartial = viewModel.state {
+                    CyberWaveformView(levels: viewModel.waveform, waveformColor: theme.waveform.opacity(0.6), recordingColor: theme.recording.opacity(0.6))
+                        .frame(height: 40)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
@@ -395,6 +409,13 @@ struct OverlayView: View {
                 .frame(width: 8, height: 8)
                 .scaleEffect(pulseScale)
                 .shadow(color: Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0.7), radius: 6)
+        case .streamingPartial:
+            // Pulsing cyan indicator — same rhythm as recording to signal ongoing input
+            Circle()
+                .fill(Color(red: 0.0, green: 0.9, blue: 1.0))
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulseScale)
+                .shadow(color: Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0.5), radius: 4)
         case .processing:
             Circle()
                 .fill(CyberColors.purple)
@@ -476,6 +497,7 @@ struct OverlayView: View {
     private var accentColor: Color {
         switch viewModel.state {
         case .recording: return theme.recording
+        case .streamingPartial: return theme.recording.opacity(0.7)
         case .processing: return theme.processing
         case .loadingModel: return theme.loading
         case .downloading: return theme.loading
@@ -496,6 +518,7 @@ struct OverlayView: View {
     private var resultTextColor: Color {
         switch viewModel.state {
         case .result(let isLLM): return isLLM ? theme.processing.opacity(0.9) : theme.success.opacity(0.9)
+        case .streamingPartial: return theme.recording.opacity(0.7)
         case .error: return theme.error.opacity(0.9)
         default: return theme.success.opacity(0.9)
         }
@@ -631,6 +654,17 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.window?.orderOut(nil)  // hide first so previous state doesn't flash through
             self.viewModel.showRecording(isLLM: isLLM)
             self.show()
+        }
+    }
+
+    func showStreamingPartial(_ text: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showStreamingPartial(text)
+            // Ensure the overlay is visible (it may already be showing the recording state)
+            if self.window?.isVisible != true {
+                self.show()
+            }
         }
     }
 

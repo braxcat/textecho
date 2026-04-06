@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import FluidAudio
 import MLXLLM
 import MLXLMCommon
 import SwiftUI
@@ -124,6 +125,12 @@ struct SettingsView: View {
     @State private var downloadedModelNames: [String] = []
     @State private var idleTimeoutPreset: Int = AppConfig.shared.model.whisperIdleTimeout
     @State private var customIdleTimeoutText: String = String(AppConfig.shared.model.whisperIdleTimeout / 60)
+
+    // Streaming
+    @State private var streamingEnabled: Bool = AppConfig.shared.model.streamingEnabled
+    @State private var streamingModelDownloadProgress: Double? = nil  // nil=idle, 0-1=downloading
+    @State private var streamingModelDownloadError: String? = nil
+    @State private var streamingModelReady: Bool = ParakeetTranscriber.isStreamingModelCached()
 
     // Input device
     @State private var selectedDeviceUID: String = AppConfig.shared.model.inputDeviceUID
@@ -522,6 +529,63 @@ struct SettingsView: View {
                         }
                         .frame(maxWidth: 220)
                     }
+                    .padding(.bottom, 8)
+
+                    // MARK: - Streaming (Beta)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Text("Streaming")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("BETA")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.8))
+                                .cornerRadius(4)
+                        }
+
+                        Toggle(isOn: dirty($streamingEnabled)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Show text while speaking")
+                                    .font(.system(size: 12))
+                                Text("Real-time partial results appear as you dictate. Requires a separate model download (~300 MB).")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .disabled(!streamingModelReady)
+
+                        if !streamingModelReady {
+                            HStack(spacing: 8) {
+                                if let progress = streamingModelDownloadProgress {
+                                    ProgressView(value: progress)
+                                        .frame(maxWidth: 160)
+                                    Text(String(format: "%.0f%%", progress * 100))
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Button("Download Streaming Model (~300 MB)") {
+                                        downloadStreamingModel()
+                                    }
+                                    .font(.system(size: 12))
+                                }
+                            }
+                            if let err = streamingModelDownloadError {
+                                Text(err)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.red)
+                            }
+                        } else {
+                            Text("Streaming model ready.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(Color.primary.opacity(0.04))
+                    .cornerRadius(8)
                     .padding(.bottom, 4)
                 } else {
                     HStack {
@@ -1287,6 +1351,7 @@ struct SettingsView: View {
             model.transcriptionEngine = selectedEngine
             model.whisperModel = selectedWhisperModel
             model.parakeetModel = selectedParakeetModel
+            model.streamingEnabled = streamingEnabled
             model.inputDeviceUID = selectedDeviceUID
             model.pedalEnabled = pedalEnabled
             model.pedalPosition = pedalPosition
@@ -1327,6 +1392,44 @@ struct SettingsView: View {
 
         isDirty = false
         onDirtyChanged(false)
+    }
+
+    // MARK: - Streaming model download
+
+    private func downloadStreamingModel() {
+        guard streamingModelDownloadProgress == nil else { return }
+        streamingModelDownloadProgress = 0.0
+        streamingModelDownloadError = nil
+
+        Task.detached(priority: .utility) {
+            do {
+                // Create a concrete EOU manager to trigger the download.
+                // loadModelsFromHuggingFace() is on StreamingEouAsrManager, not the protocol.
+                let engine = StreamingEouAsrManager()
+                try await engine.loadModelsFromHuggingFace(
+                    progressHandler: { progress in
+                        Task { @MainActor [weak self] in
+                            // progress is 0.0–1.0
+                            self?.streamingModelDownloadProgress = progress
+                        }
+                    }
+                )
+                await MainActor.run {
+                    self.streamingModelDownloadProgress = nil
+                    self.streamingModelReady = true
+                    self.streamingEnabled = true
+                    if !self.isDirty {
+                        self.isDirty = true
+                        self.onDirtyChanged(true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.streamingModelDownloadProgress = nil
+                    self.streamingModelDownloadError = "Download failed: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     private func buildModifierMask(ctrl: Bool, opt: Bool, cmd: Bool, shift: Bool) -> UInt {

@@ -6,6 +6,10 @@ import os
 final class AudioRecorder {
     var onWaveform: (([Double]) -> Void)?
     var onAutoStop: (() -> Void)?
+    /// Fires the raw AVAudioPCMBuffer from the tap before Int16 conversion.
+    /// Used by the streaming transcriber to feed audio in real time.
+    /// Called on AVAudioEngine's internal thread — keep the callback fast.
+    var onAudioBuffer: ((AVAudioPCMBuffer) -> Void)?
 
     private let engine = AVAudioEngine()
     private var bufferData = Data()
@@ -171,6 +175,10 @@ final class AudioRecorder {
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self else { return }
             guard let converter else { return }
+
+            // Fire raw buffer for streaming transcription BEFORE Int16 conversion.
+            // The streaming engine handles its own resampling.
+            self.onAudioBuffer?(buffer)
 
             guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: desiredFormat, frameCapacity: AVAudioFrameCount(sampleRate / 10)) else { return }
             var error: NSError?

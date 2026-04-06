@@ -59,6 +59,10 @@ final class AppConfig {
         // Parakeet (FluidAudio)
         var parakeetModel: String  // "parakeet-tdt-v3" or "parakeet-tdt-v2"
         var inputDeviceUID: String  // empty = system default
+        /// When true, use the FluidAudio EOU streaming engine during recording
+        /// to display real-time partial transcripts.
+        /// Only applies when transcription_engine = "parakeet".
+        var streamingEnabled: Bool
 
         // --- Transcription Activation Modes ---
         var capsLockEnabled: Bool       // Caps Lock toggles recording
@@ -124,6 +128,7 @@ final class AppConfig {
         whisperIdleTimeout: 0,
         parakeetModel: "parakeet-tdt-v2",
         inputDeviceUID: "",
+        streamingEnabled: false,
         capsLockEnabled: false,
         mouseEnabled: true,
         mouseMode: 1,           // hold by default for mouse
@@ -203,6 +208,7 @@ final class AppConfig {
         if let value = obj["whisper_idle_timeout"] as? Int { updated.whisperIdleTimeout = value == 0 ? 0 : max(60, min(value, 86400)) }
         if let v = obj["parakeet_model"] as? String { updated.parakeetModel = v }
         if let value = obj["input_device_uid"] as? String { updated.inputDeviceUID = value }
+        if let v = obj["streaming_enabled"] as? Bool { updated.streamingEnabled = v }
 
         // New activation mode fields
         if let v = obj["caps_lock_enabled"] as? Bool { updated.capsLockEnabled = v }
@@ -280,6 +286,7 @@ final class AppConfig {
         dict["whisper_idle_timeout"] = model.whisperIdleTimeout
         dict["parakeet_model"] = model.parakeetModel
         dict["input_device_uid"] = model.inputDeviceUID
+        dict["streaming_enabled"] = model.streamingEnabled
         dict["caps_lock_enabled"] = model.capsLockEnabled
         dict["mouse_enabled"] = model.mouseEnabled
         dict["mouse_mode"] = model.mouseMode

@@ -1,10 +1,11 @@
+import AVFoundation
 import Foundation
 import FluidAudio
 
 /// Parakeet TDT transcriber — runs NVIDIA Parakeet on Apple Neural Engine via Core ML.
 /// Uses FluidAudio SDK for model management and inference.
 /// Actor isolation prevents data races on the AsrManager instance and model state.
-actor ParakeetTranscriber: Transcriber {
+actor ParakeetTranscriber: Transcriber, StreamingTranscriber {
 
     // MARK: - Configuration
 
@@ -13,6 +14,12 @@ actor ParakeetTranscriber: Transcriber {
     private var asrManager: AsrManager?
     private var idleTask: Task<Void, Never>?
     private var _isModelLoaded = false
+
+    // MARK: - Streaming state
+
+    private var streamingEngine: (any StreamingAsrEngine)?
+    private var _isStreamingModelLoaded = false
+    private var partialCallback: (@Sendable (String) -> Void)?
 
     /// Notification posted when download completes.
     static let downloadCompleteNotification = Notification.Name("ParakeetDownloadComplete")
@@ -134,6 +141,74 @@ actor ParakeetTranscriber: Transcriber {
         AppLogger.shared.info("Parakeet model unloaded")
     }
 
+    // MARK: - StreamingTranscriber protocol
+
+    var isStreamingModelLoaded: Bool {
+        _isStreamingModelLoaded
+    }
+
+    func preloadStreamingModel() async throws {
+        guard streamingEngine == nil else { return }
+        AppLogger.shared.info("Parakeet: loading EOU streaming model")
+        do {
+            // Create the concrete EOU manager directly so we can call
+            // loadModelsFromHuggingFace() (not on the StreamingAsrEngine protocol).
+            let eouEngine = StreamingEouAsrManager()
+            try await eouEngine.loadModelsFromHuggingFace()
+            // Register the stored partial callback if one was set before load
+            if let cb = partialCallback {
+                await eouEngine.setPartialTranscriptCallback(cb)
+            }
+            self.streamingEngine = eouEngine
+            self._isStreamingModelLoaded = true
+            AppLogger.shared.info("Parakeet: EOU streaming model loaded")
+        } catch {
+            AppLogger.shared.error("Parakeet: streaming model load failed: \(error)")
+            throw error
+        }
+    }
+
+    func unloadStreamingModel() async {
+        streamingEngine = nil
+        _isStreamingModelLoaded = false
+        AppLogger.shared.info("Parakeet: streaming model unloaded")
+    }
+
+    func beginStreaming() async throws {
+        guard let engine = streamingEngine else {
+            throw TranscriberError.modelNotLoaded
+        }
+        try await engine.reset()
+        AppLogger.shared.info("Parakeet: streaming session started")
+    }
+
+    func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
+        guard let engine = streamingEngine else { return }
+        try engine.appendAudio(buffer)
+        try await engine.processBufferedAudio()
+    }
+
+    func endStreaming() async throws -> String {
+        guard let engine = streamingEngine else {
+            throw TranscriberError.modelNotLoaded
+        }
+        let text = try await engine.finish()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        AppLogger.shared.info("Parakeet streaming final: \(trimmed)")
+        resetIdleTimer()
+        return trimmed
+    }
+
+    func setPartialCallback(_ callback: @escaping @Sendable (String) -> Void) {
+        partialCallback = callback
+        // If engine already loaded, register immediately
+        if let engine = streamingEngine {
+            Task {
+                await engine.setPartialTranscriptCallback(callback)
+            }
+        }
+    }
+
     /// Checks if Parakeet models are cached locally.
     nonisolated static func isModelCached(_ modelName: String) -> Bool {
         let version = modelVersion(from: modelName)
@@ -148,6 +223,17 @@ actor ParakeetTranscriber: Transcriber {
         return appSupport
             .appendingPathComponent("FluidAudio", isDirectory: true)
             .appendingPathComponent("Models", isDirectory: true)
+    }
+
+    /// Checks if the EOU streaming model is already downloaded.
+    /// The streaming model lives in the same FluidAudio models directory.
+    nonisolated static func isStreamingModelCached() -> Bool {
+        let modelsDir = modelCacheDirectory(for: .v2)  // same base dir
+        // The EOU model folder contains "eou" or "parakeet-eou" in the name.
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: modelsDir.path) else {
+            return false
+        }
+        return contents.contains { $0.lowercased().contains("eou") }
     }
 
     // MARK: - Private helpers

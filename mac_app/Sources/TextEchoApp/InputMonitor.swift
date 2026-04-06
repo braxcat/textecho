@@ -10,6 +10,7 @@ enum InputEvent {
     case dictateLLMUp
     case settingsHotkey
     case escape
+    case confirmPaste
     case register(Int)
     case clearRegisters
     case capsLockChanged(Bool)
@@ -46,6 +47,7 @@ final class InputMonitor {
     }
     private var dictationActive = false
     private var dictationLLM = false
+    var shouldConsumeReturn = false
 
     func start() {
         guard eventTap == nil else { return }
@@ -157,6 +159,11 @@ final class InputMonitor {
         case .rightMouseDown, .rightMouseUp:
             handleMouseButton(button: 1, down: type == .rightMouseDown)
         case .keyDown:
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keyCode == 36 && shouldConsumeReturn {
+                _onEvent?(.confirmPaste)
+                return nil // consume the Return keypress
+            }
             handleKeyDown(event: event)
         case .keyUp:
             handleKeyUp(event: event)

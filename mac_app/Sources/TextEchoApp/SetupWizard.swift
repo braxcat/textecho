@@ -91,6 +91,7 @@ struct SetupWizardView: View {
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
     @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
+    @State private var streamingEnabled: Bool = AppConfig.shared.model.streamingEnabled
     @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
     @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
     @State private var llmModelID: String = AppConfig.shared.model.llmModelID
@@ -441,13 +442,17 @@ struct SetupWizardView: View {
                     Text(detail).font(.system(size: 10)).foregroundColor(.secondary)
                 }
                 if isDownloading {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .padding(.top, 2)
-                    Text("Downloading & loading model — this may take a few minutes…")
-                        .font(.system(size: 9))
-                        .foregroundColor(.orange)
-                    DownloadElapsedTimer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Downloading & loading model…")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            DownloadElapsedTimer()
+                        }
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
 
@@ -693,6 +698,17 @@ struct SetupWizardView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Live preview (Streaming Beta)", isOn: $streamingEnabled)
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Shows your words on screen as you speak. Uses a smaller, faster model for the live preview, then the full model for the final transcription. Requires a separate ~200MB model download.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()
@@ -1061,10 +1077,12 @@ struct SetupWizardView: View {
         AppConfig.shared.update { model in
             model.silenceEnabled = silenceEnabled
             model.silenceDuration = silenceDuration
+            model.streamingEnabled = streamingEnabled
             model.whisperIdleTimeout = timeout
             model.llmEnabled = llmEnabled
             model.llmAutoPaste = llmAutoPaste
             model.llmModelID = llmModelID
+            model.llmEngine = llmEnabled ? "mlx" : "none"
         }
     }
 

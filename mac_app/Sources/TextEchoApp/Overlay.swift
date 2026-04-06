@@ -36,6 +36,7 @@ final class OverlayViewModel: ObservableObject {
     @Published var resultText: String = ""
     @Published var promptText: String = ""
     @Published var waveform: [Double] = Array(repeating: 0.0, count: 40)
+    @Published var llmModeHint: String = ""
     @Published var appearTrigger: Bool = false
 
     func showRecording(isLLM: Bool) {
@@ -43,7 +44,15 @@ final class OverlayViewModel: ObservableObject {
         statusText = isLLM ? "RECORDING // LLM" : "RECORDING"
         resultText = ""
         promptText = ""
+        llmModeHint = ""
         waveform = Array(repeating: 0.0, count: 40)
+    }
+
+    func showRecordingLLMMode(mode: String, hint: String) {
+        state = .recording
+        statusText = "RECORDING // \(mode.uppercased())"
+        llmModeHint = hint
+        waveform = waveform.isEmpty ? Array(repeating: 0.0, count: 40) : waveform
     }
 
     func showStreamingPartial(_ text: String) {
@@ -55,6 +64,7 @@ final class OverlayViewModel: ObservableObject {
     func showProcessing(isLLM: Bool) {
         state = .processing
         statusText = isLLM ? "PROCESSING // LLM" : "TRANSCRIBING"
+        llmModeHint = ""
     }
 
     func showResult(_ text: String, isLLM: Bool) {
@@ -366,6 +376,16 @@ struct OverlayView: View {
                     CyberWaveformView(levels: viewModel.waveform, waveformColor: theme.waveform.opacity(0.6), recordingColor: theme.recording.opacity(0.6))
                         .frame(height: 40)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+
+                // LLM mode hint — shows during LLM recording
+                if !viewModel.llmModeHint.isEmpty, case .recording = viewModel.state {
+                    Text(viewModel.llmModeHint)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(theme.processing.opacity(0.5))
+                        .tracking(0.5)
+                        .padding(.top, 2)
+                        .transition(.opacity)
                 }
 
                 // Scanner bar (processing or loading model state)
@@ -705,6 +725,17 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.window?.orderOut(nil)  // hide first so previous state doesn't flash through
             self.viewModel.showRecording(isLLM: isLLM)
             self.show()
+        }
+    }
+
+    func showRecordingLLMMode(mode: String, hint: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showRecordingLLMMode(mode: mode, hint: hint)
+            if self.window?.isVisible != true {
+                self.window?.orderOut(nil)
+                self.show()
+            }
         }
     }
 

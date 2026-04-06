@@ -28,6 +28,7 @@ final class AppState {
     private var isStreaming = false
     private var isAwaitingLLMConfirm = false
     private var pendingLLMResponse = ""
+    private var llmModeOverride: LLMMode?
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
@@ -145,6 +146,11 @@ final class AppState {
         }
         if isCurrentModelCached() {
             startPreloadTask()
+        }
+
+        // Load LLM model if the wizard enabled it and downloaded the model
+        if model.llmAvailable {
+            loadLLMModel()
         }
     }
 
@@ -273,6 +279,11 @@ final class AppState {
             }
         case .confirmPaste:
             confirmLLMPaste()
+        case .selectLLMMode(let mode):
+            guard isRecording && isLLMMode else { return }
+            llmModeOverride = mode
+            let hint = "1 Grammar · 2 Rephrase · 3 Answer · 4 Custom"
+            overlay.showRecordingLLMMode(mode: mode.displayName, hint: hint)
         case .register(let index):
             textInjector.captureClipboardToRegister(index)
         case .clearRegisters:
@@ -290,9 +301,17 @@ final class AppState {
         isStreaming = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: true)
         isLLMMode = (mode == .llm)
+        llmModeOverride = nil
+        inputMonitor.shouldCaptureLLMMode = isLLMMode
 
         logger.info("Recording started (mode: \(mode.rawValue))")
-        overlay.showRecording(isLLM: isLLMMode)
+        if isLLMMode {
+            let currentMode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+            let hint = "1 Grammar · 2 Rephrase · 3 Answer · 4 Custom"
+            overlay.showRecordingLLMMode(mode: currentMode.displayName, hint: hint)
+        } else {
+            overlay.showRecording(isLLM: false)
+        }
 
         // Set configured input device (empty = system default)
         let deviceUID = config.model.inputDeviceUID
@@ -356,6 +375,7 @@ final class AppState {
     func endRecording(userInitiated: Bool) {
         guard isRecording else { return }
         isRecording = false
+        inputMonitor.shouldCaptureLLMMode = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
 
         logger.info("Recording stopped (userInitiated=\(userInitiated))")
@@ -489,8 +509,9 @@ final class AppState {
         }
 
         let context = textInjector.registersContext()
-        let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        let mode = llmModeOverride ?? LLMMode(rawValue: config.model.llmMode) ?? .grammar
         let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
+        llmModeOverride = nil
 
         // Show the user's spoken prompt while LLM processes
         overlay.showLLMProcessing(prompt: text)

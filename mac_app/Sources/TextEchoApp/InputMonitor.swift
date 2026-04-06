@@ -14,6 +14,7 @@ enum InputEvent {
     case register(Int)
     case clearRegisters
     case capsLockChanged(Bool)
+    case selectLLMMode(LLMMode)
 }
 
 final class InputMonitor {
@@ -48,6 +49,7 @@ final class InputMonitor {
     private var dictationActive = false
     private var dictationLLM = false
     var shouldConsumeReturn = false
+    var shouldCaptureLLMMode = false
 
     func start() {
         guard eventTap == nil else { return }
@@ -163,6 +165,15 @@ final class InputMonitor {
             if keyCode == 36 && shouldConsumeReturn {
                 _onEvent?(.confirmPaste)
                 return nil // consume the Return keypress
+            }
+            // Number keys 1-4 during LLM recording to switch mode
+            if shouldCaptureLLMMode {
+                // macOS keycodes: 18=1, 19=2, 20=3, 21=4
+                let modes: [Int64: LLMMode] = [18: .grammar, 19: .rephrase, 20: .answer, 21: .custom]
+                if let mode = modes[keyCode] {
+                    _onEvent?(.selectLLMMode(mode))
+                    return nil // consume the keypress
+                }
             }
             handleKeyDown(event: event)
         case .keyUp:

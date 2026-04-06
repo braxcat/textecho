@@ -94,6 +94,10 @@ struct SetupWizardView: View {
     @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
     @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
     @State private var llmModelID: String = AppConfig.shared.model.llmModelID
+    @State private var llmDownloading: Bool = false
+    @State private var llmDownloadProgress: Double = 0.0
+    @State private var llmDownloadError: String? = nil
+    @State private var llmModelReady: Bool = false
     @State private var idleTimeoutPreset: Int = {
         let t = AppConfig.shared.model.whisperIdleTimeout
         return [0, 3600, 14400, 28800].contains(t) ? t : -1
@@ -743,7 +747,7 @@ struct SetupWizardView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("AI Model")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Choose a model based on your Mac's RAM. Larger models give better answers but need more memory. The model downloads on first use (~2-5 GB).")
+                        Text("Choose a model based on your Mac's RAM. Larger models give better answers but need more memory.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -758,11 +762,57 @@ struct SetupWizardView: View {
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
+                        .disabled(llmDownloading)
+                        .onChange(of: llmModelID) {
+                            // Reset state when user picks a different model
+                            llmModelReady = false
+                            llmDownloadError = nil
+                        }
 
                         if let selected = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
                             Text("\(selected.description) — ~\(String(format: "%.1f", selected.sizeGB)) GB download")
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        // Download / status
+                        if llmModelReady {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Model ready")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.green)
+                            }
+                        } else if llmDownloading {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(llmDownloadProgress < 1.0 ? "Downloading..." : "Compiling model...")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Spacer()
+                                    if llmDownloadProgress < 1.0 {
+                                        Text("\(Int(llmDownloadProgress * 100))%")
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                ProgressView(value: min(llmDownloadProgress, 1.0))
+                                    .progressViewStyle(.linear)
+                            }
+                            .padding(.vertical, 4)
+                        } else {
+                            Button("Download & Load Model") {
+                                startLLMDownload()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+
+                        if let error = llmDownloadError {
+                            Text(error)
+                                .font(.system(size: 10))
+                                .foregroundColor(.red)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
@@ -1254,6 +1304,33 @@ struct SetupWizardView: View {
                     self.downloadError = "Download failed: \(error.localizedDescription)"
                 }
                 AppLogger.shared.error("Setup wizard model download failed: \(error)")
+            }
+        }
+    }
+
+    private func startLLMDownload() {
+        llmDownloading = true
+        llmDownloadProgress = 0.0
+        llmDownloadError = nil
+        let modelID = llmModelID
+        Task.detached(priority: .userInitiated) {
+            do {
+                let processor = MLXLLMProcessor()
+                try await processor.loadModel(id: modelID) { progress in
+                    Task { @MainActor in
+                        self.llmDownloadProgress = progress
+                    }
+                }
+                await MainActor.run {
+                    self.llmDownloading = false
+                    self.llmModelReady = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.llmDownloading = false
+                    self.llmDownloadError = "Download failed: \(error.localizedDescription)"
+                }
+                AppLogger.shared.error("LLM model download failed: \(error)")
             }
         }
     }

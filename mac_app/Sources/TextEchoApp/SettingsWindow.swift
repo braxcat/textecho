@@ -1,5 +1,7 @@
 import AppKit
 import AVFoundation
+import MLXLLM
+import MLXLMCommon
 import SwiftUI
 
 // MARK: - SettingsSaveCallbacks (bridges save callbacks from SwiftUI struct to NSWindowDelegate)
@@ -161,11 +163,15 @@ struct SettingsView: View {
     @State private var trackpadGesture: Int = AppConfig.shared.model.trackpadGesture
     @State private var trackpadMode: Int = AppConfig.shared.model.trackpadMode
 
-    // LLM
-    @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
-    @State private var llmModelPath: String = AppConfig.shared.model.llmModelPath
-    @State private var pythonPath: String = AppConfig.shared.model.pythonPath
-    @State private var scriptsDir: String = AppConfig.shared.model.daemonScriptsDir
+    // LLM (MLX)
+    @State private var llmEngine: String = AppConfig.shared.model.llmEngine
+    @State private var llmModelID: String = AppConfig.shared.model.llmModelID
+    @State private var llmMode: String = AppConfig.shared.model.llmMode
+    @State private var llmCustomPrompt: String = AppConfig.shared.model.llmCustomPrompt
+    @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
+    @State private var llmDownloadProgress: Double? = nil  // nil=idle, 0-1=downloading
+    @State private var llmDownloadError: String? = nil
+    @State private var llmModelReady: Bool = false
 
     // Permissions
     @State private var accessibilityTrusted: Bool = AccessibilityHelper.isTrusted()
@@ -173,8 +179,6 @@ struct SettingsView: View {
 
     // Dirty tracking
     @State private var isDirty = false
-
-    private let llmAvailable = AppConfig.shared.model.llmAvailable
     let onUninstall: () -> Void
     let onOpenLogs: () -> Void
     let onOpenSetupWizard: () -> Void
@@ -842,32 +846,118 @@ struct SettingsView: View {
 
                 sectionDivider()
 
-                // MARK: - LLM (only if available)
-                if llmAvailable {
-                    sectionHeader("LLM")
-                    Toggle("Enable LLM", isOn: dirty($llmEnabled))
-                    HStack {
-                        Text("LLM Model Path")
-                        Spacer()
-                        TextField("/path/to/model.gguf", text: dirty($llmModelPath)).frame(width: 260)
-                    }
+                // MARK: - LLM (MLX Swift)
+                sectionHeader("LLM Processing")
 
-                    sectionDivider()
-
-                    sectionHeader("Python (LLM)")
-                    HStack {
-                        Text("Python Path")
-                        Spacer()
-                        TextField("/opt/homebrew/bin/python3", text: dirty($pythonPath)).frame(width: 260)
+                HStack {
+                    Text("LLM Engine")
+                    Spacer()
+                    Picker("", selection: dirty($llmEngine)) {
+                        Text("Disabled").tag("none")
+                        Text("MLX (Local)").tag("mlx")
                     }
-                    HStack {
-                        Text("Daemons Dir")
-                        Spacer()
-                        TextField("/path/to/scripts", text: dirty($scriptsDir)).frame(width: 260)
-                    }
-
-                    sectionDivider()
+                    .frame(maxWidth: 160)
                 }
+
+                if llmEngine == "mlx" {
+                    HStack {
+                        Text("Model")
+                        Spacer()
+                        Picker("", selection: Binding(
+                            get: { llmModelID },
+                            set: { newValue in
+                                llmModelID = newValue
+                                llmModelReady = false
+                                llmDownloadProgress = nil
+                                llmDownloadError = nil
+                                isDirty = true
+                                onDirtyChanged(true)
+                            }
+                        )) {
+                            ForEach(recommendedLLMModels, id: \.id) { model in
+                                Text("\(model.displayName) (~\(String(format: "%.0f", model.sizeGB))GB)")
+                                    .tag(model.id)
+                            }
+                        }
+                        .frame(maxWidth: 260)
+                    }
+
+                    if let modelInfo = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
+                        Text(modelInfo.description)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Download / status
+                    if let progress = llmDownloadProgress {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(progress < 1.0 ? "Downloading..." : "Compiling model...")
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                if progress < 1.0 {
+                                    Text("\(Int(progress * 100))%")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            ProgressView(value: min(progress, 1.0))
+                                .progressViewStyle(.linear)
+                        }
+                        .padding(.vertical, 4)
+                    } else if llmModelReady {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Model ready")
+                                .font(.system(size: 12))
+                                .foregroundColor(.green)
+                        }
+                    } else {
+                        Button("Download & Load Model") {
+                            startLLMDownload()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    if let error = llmDownloadError {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
+                    }
+
+                    HStack {
+                        Text("Mode")
+                        Spacer()
+                        Picker("", selection: dirty($llmMode)) {
+                            ForEach(LLMMode.allCases, id: \.rawValue) { mode in
+                                Text(mode.displayName).tag(mode.rawValue)
+                            }
+                        }
+                        .frame(maxWidth: 160)
+                    }
+
+                    if llmMode == "custom" {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Custom System Prompt")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            TextEditor(text: dirty($llmCustomPrompt))
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(height: 60)
+                                .border(Color.gray.opacity(0.3))
+                        }
+                    }
+
+                    Toggle("Auto-paste LLM result", isOn: dirty($llmAutoPaste))
+                        .font(.system(size: 12))
+
+                    Text("Shift+Middle-click or Ctrl+Shift+D to trigger LLM. When auto-paste is off, results display without pasting.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+
+                sectionDivider()
 
                 // MARK: - Permissions
                 sectionHeader("Permissions")
@@ -1082,6 +1172,70 @@ struct SettingsView: View {
         userPresetNames = Array(UserThemePresets.shared.presets.keys).sorted()
     }
 
+    // MARK: - LLM Download
+
+    private func startLLMDownload() {
+        llmDownloadProgress = 0.0
+        llmDownloadError = nil
+        llmModelReady = false
+
+        let modelID = llmModelID
+        let modelSize = recommendedLLMModels.first(where: { $0.id == modelID })?.sizeGB ?? 0
+        AppLogger.shared.info("LLM download starting: \(modelID) (~\(String(format: "%.1f", modelSize))GB)")
+
+        Task.detached(priority: .utility) {
+            var lastReportedPct = -1
+            var phaseLogged = false
+            do {
+                AppLogger.shared.info("LLM: creating ModelConfiguration for \(modelID)")
+                let config = ModelConfiguration(id: modelID)
+
+                AppLogger.shared.info("LLM: calling loadContainer (download + compile)")
+                let container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: config
+                ) { progress in
+                    let pct = Int(progress.fractionCompleted * 100)
+                    guard pct != lastReportedPct else { return }
+                    lastReportedPct = pct
+
+                    // Log phase transitions
+                    if pct <= 50 && pct % 10 == 0 {
+                        AppLogger.shared.info("LLM download: \(pct)%")
+                    } else if pct > 50 && !phaseLogged {
+                        phaseLogged = true
+                        AppLogger.shared.info("LLM: download complete, entering compile/load phase")
+                    } else if pct > 50 && pct % 5 == 0 {
+                        AppLogger.shared.info("LLM compile/load: \(pct)%")
+                    }
+
+                    Task { @MainActor in
+                        self.llmDownloadProgress = progress.fractionCompleted
+                    }
+                }
+                _ = container
+                AppLogger.shared.info("LLM model ready: \(modelID)")
+                await MainActor.run {
+                    self.llmDownloadProgress = nil
+                    self.llmModelReady = true
+                    // Save the model ID + enable MLX before notifying AppState
+                    AppConfig.shared.update { model in
+                        model.llmEngine = "mlx"
+                        model.llmModelID = modelID
+                    }
+                    // Tell AppState to load the model into its LLM processor
+                    NotificationCenter.default.post(name: AppState.llmModelReadyNotification, object: nil)
+                }
+            } catch {
+                AppLogger.shared.error("LLM download failed at \(lastReportedPct)%: \(error)")
+                AppLogger.shared.error("LLM error detail: \(String(describing: error))")
+                await MainActor.run {
+                    self.llmDownloadProgress = nil
+                    self.llmDownloadError = "Failed at \(lastReportedPct)%: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     // MARK: - Logic
 
     private func restartApp() {
@@ -1124,11 +1278,12 @@ struct SettingsView: View {
             model.silenceDuration = silenceDuration
             model.silenceThreshold = Double(silenceThreshold) ?? model.silenceThreshold
             model.sampleRate = Double(sampleRate) ?? model.sampleRate
-            model.llmEnabled = llmEnabled
-            model.llmModelPath = llmModelPath
+            model.llmEngine = llmEngine
+            model.llmModelID = llmModelID
+            model.llmMode = llmMode
+            model.llmCustomPrompt = llmCustomPrompt
+            model.llmAutoPaste = llmAutoPaste
             model.showMenuBarIcon = showMenuBarIcon
-            model.pythonPath = pythonPath
-            model.daemonScriptsDir = scriptsDir
             model.transcriptionEngine = selectedEngine
             model.whisperModel = selectedWhisperModel
             model.parakeetModel = selectedParakeetModel

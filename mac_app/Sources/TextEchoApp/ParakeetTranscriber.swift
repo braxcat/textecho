@@ -154,7 +154,8 @@ actor ParakeetTranscriber: Transcriber {
 
     /// Returns the cache directory for a given model version.
     nonisolated static func modelCacheDirectory(for version: AsrModelVersion) -> URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return appSupport
             .appendingPathComponent("FluidAudio", isDirectory: true)
             .appendingPathComponent("Models", isDirectory: true)

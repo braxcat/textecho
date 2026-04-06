@@ -48,10 +48,10 @@ final class OverlayViewModel: ObservableObject {
         resultText = text
     }
 
-    func showLoadingModel() {
+    func showLoadingModel(detail: String = "") {
         state = .loadingModel
         statusText = "LOADING MODEL"
-        resultText = ""
+        resultText = detail
     }
 
     func showDownloading() {
@@ -653,11 +653,16 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
     }
 
     // Show at the same bottom-middle position as recording/processing overlays.
-    func showLoadingModel() {
+    // If already visible in loadingModel state, just updates the detail text without re-showing
+    // (prevents blinking during download progress updates).
+    func showLoadingModel(detail: String = "") {
         DispatchQueue.main.async {
+            let alreadyShowingLoader = self.viewModel.state == .loadingModel && self.window?.isVisible == true
             self.cancelAutoHide()
-            self.viewModel.showLoadingModel()
-            self.show()
+            self.viewModel.showLoadingModel(detail: detail)
+            if !alreadyShowingLoader {
+                self.show()
+            }
         }
     }
 

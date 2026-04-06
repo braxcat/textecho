@@ -33,7 +33,7 @@ Voice-to-text dictation for macOS with native on-device transcription on Apple S
 - **Fully offline** — no cloud, no accounts, audio never leaves your Mac
 - **Fast model loading** — lazy load on first use, auto-unload after idle
 - **Menu bar app** — settings, help, log viewer, setup wizard
-- **Optional LLM** — local llama-cpp-python processing (build with `--with-llm`)
+- **Native LLM** — on-device MLX processing with 6 models and 4 modes (clean, fix, expand, custom). Shift+Middle-click to transcribe+process.
 
 ## Requirements
 
@@ -97,7 +97,7 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 | `./build_native_app.sh` | Release build only (no deploy) |
 | `./build_native_app.sh --debug` | Debug build only (faster, no deploy) |
 | `./build_native_app.sh --sign` | Build with Developer ID signing + notarization |
-| `./build_native_app.sh --with-llm` | Build with optional LLM module |
+| `./build_native_app.sh --with-llm` | Build with native MLX LLM module |
 
 ## Usage
 
@@ -116,7 +116,8 @@ Enable one or more in Settings or Setup Wizard:
 
 | Action | How |
 |--------|-----|
-| **LLM prompt** | Add LLM modifier to keyboard shortcut (requires `--with-llm` build) |
+| **LLM prompt (mouse)** | Shift + Middle-click (transcribe + LLM process) |
+| **LLM prompt (keyboard)** | Ctrl+Shift+D |
 | **Paste (pedal)** | Left pedal |
 | **Enter (pedal)** | Right pedal |
 | **Save to register** | Cmd+Option+1-9 |
@@ -165,8 +166,8 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
                     │    │   WHISPER // LG V3 TURBO│      │
                     │    └────────────────────────┘       │
                     │                                     │
-                    │    Optional: llm_daemon.py           │
-                    │    (Unix socket IPC, --with-llm)     │
+                    │    Optional: MLXLLMProcessor          │
+                    │    (native MLX, --with-llm build)     │
                     └─────────────────────────────────────┘
 ```
 
@@ -187,7 +188,7 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 | Concurrency | Swift actor | No shared mutable state, no data races |
 | Audio start | DispatchQueue.main.async | IOKit HID callbacks block AVAudioEngine if started synchronously |
 | Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
-| LLM | Optional Python daemon | Rarely used, not worth native port complexity |
+| LLM | Native MLX (Swift) | On-device, 6 models, 4 modes, no Python needed |
 | Pedal | IOKit HID (shared mode) | No kernel extension, no Elgato software needed |
 
 ## Transcription Engines & Models
@@ -231,6 +232,10 @@ Models download on first use and cache locally. Select engine and model in Setup
 | `history_enabled` | `true` | Save transcription history |
 | `pedal_enabled` | `false` | Enable Stream Deck Pedal |
 | `pedal_position` | `1` | Push-to-talk pedal (0=left, 1=center, 2=right) |
+| `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
+| `llm_model` | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID) |
+| `llm_mode` | `clean` | LLM mode: `clean`, `fix`, `expand`, `custom` |
+| `llm_custom_prompt` | `""` | Custom system prompt for `custom` mode |
 
 ## Stream Deck Pedal
 

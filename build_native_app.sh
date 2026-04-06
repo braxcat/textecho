@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build TextEcho as a native Swift .app bundle.
-# Default: pure Swift + WhisperKit (no Python needed).
+# Uses xcodebuild (not swift build) so Metal shaders compile correctly for MLX.
+# Default: pure Swift + WhisperKit + MLX (no Python needed).
 # With --with-llm: also bundles Python venv with llama-cpp-python for local LLM.
 
 set -e
@@ -16,6 +17,7 @@ WITH_LLM=false
 CLEAN=false
 DEBUG=false
 SIGN_MODE="adhoc"
+DERIVED_DATA="$SCRIPT_DIR/mac_app/.build/xcode"
 
 for arg in "$@"; do
     case "$arg" in
@@ -39,37 +41,30 @@ if [ "$CLEAN" = true ]; then
     rm -rf mac_app/.build .swiftpm-cache .clang-cache .last_binary_hash dist/
 fi
 
-if [ "$WITH_LLM" = true ]; then
-    echo "==> Building with LLM support (requires Python 3.12)..."
-elif [ "$DEBUG" = true ]; then
-    echo "==> Building pure Swift app (debug)..."
-else
-    echo "==> Building pure Swift app (no Python needed)..."
-fi
-
-# SwiftPM and Clang cache dirs (avoid permission issues under sandboxed runs)
-mkdir -p "$SCRIPT_DIR/.swiftpm-cache/config" \
-         "$SCRIPT_DIR/.swiftpm-cache/cache" \
-         "$SCRIPT_DIR/.swiftpm-cache/security" \
-         "$SCRIPT_DIR/.clang-cache" \
-         "$SCRIPT_DIR/.tmp"
-
-export SWIFTPM_CONFIG_DIR="$SCRIPT_DIR/.swiftpm-cache/config"
-export SWIFTPM_CACHE_DIR="$SCRIPT_DIR/.swiftpm-cache/cache"
-export SWIFTPM_SECURITY_DIR="$SCRIPT_DIR/.swiftpm-cache/security"
-export CLANG_MODULE_CACHE_PATH="$SCRIPT_DIR/.clang-cache"
-export TMPDIR="$SCRIPT_DIR/.tmp"
-
-echo "==> Building Swift app..."
+echo "==> Building with xcodebuild (compiles Metal shaders for MLX)..."
 if [ "$DEBUG" = true ]; then
-    swift build --package-path mac_app
-    BIN_PATH="mac_app/.build/debug/TextEchoApp"
+    BUILD_CONFIG="Debug"
 else
-    swift build -c release --package-path mac_app
-    BIN_PATH="mac_app/.build/release/TextEchoApp"
+    BUILD_CONFIG="Release"
 fi
+
+pushd mac_app > /dev/null
+xcodebuild build \
+    -scheme TextEchoApp \
+    -configuration "$BUILD_CONFIG" \
+    -destination 'platform=macOS' \
+    -derivedDataPath "$DERIVED_DATA" \
+    -skipPackagePluginValidation \
+    -quiet
+popd > /dev/null
+
+# Locate the built binary
+PRODUCTS_DIR="$DERIVED_DATA/Build/Products/${BUILD_CONFIG}"
+BIN_PATH="$PRODUCTS_DIR/TextEchoApp"
 if [ ! -f "$BIN_PATH" ]; then
-    echo "ERROR: Swift build failed; binary not found at $BIN_PATH"
+    echo "ERROR: Build failed; binary not found at $BIN_PATH"
+    echo "  Searching derived data for binary..."
+    find "$DERIVED_DATA" -name "TextEchoApp" -type f -perm +111 2>/dev/null | head -5
     exit 1
 fi
 
@@ -96,6 +91,22 @@ if [ "$BINARY_CHANGED" = true ]; then
     cp "$BIN_PATH" "$MACOS_DIR/${APP_NAME}"
     chmod +x "$MACOS_DIR/${APP_NAME}"
     echo "$NEW_HASH" > "$BIN_HASH_FILE"
+fi
+
+# Bundle MLX Metal shader libraries (required for MLX GPU operations)
+# xcodebuild compiles .metal → .metallib and places them in resource bundles
+BUNDLES_COPIED=0
+for bundle in "$PRODUCTS_DIR"/*.bundle; do
+    if [ -d "$bundle" ]; then
+        BUNDLE_NAME="$(basename "$bundle")"
+        cp -R "$bundle" "$RESOURCES_DIR/$BUNDLE_NAME"
+        BUNDLES_COPIED=$((BUNDLES_COPIED + 1))
+    fi
+done
+if [ "$BUNDLES_COPIED" -gt 0 ]; then
+    echo "==> Copied $BUNDLES_COPIED resource bundle(s) (includes Metal shaders)"
+else
+    echo "WARNING: No resource bundles found — MLX GPU operations may fail"
 fi
 
 # Optional: Bundle Python venv with LLM support
@@ -229,8 +240,5 @@ else
 fi
 
 echo "==> Build complete: $APP_DIR"
-if [ "$WITH_LLM" = true ]; then
-    echo "    LLM module: included"
-else
-    echo "    LLM module: not included (rebuild with --with-llm to add)"
-fi
+echo "    Build: xcodebuild ($BUILD_CONFIG)"
+echo "    LLM: native MLX with Metal shaders (enable in Settings)"

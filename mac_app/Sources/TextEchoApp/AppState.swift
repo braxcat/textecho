@@ -10,7 +10,7 @@ final class AppState {
     private let inputMonitor = InputMonitor()
     private let recorder = AudioRecorder()
     private let textInjector = TextInjector()
-    private let pythonServices = PythonServiceManager()
+    private let llmProcessor = MLXLLMProcessor()
     private let pedalMonitor = StreamDeckPedalMonitor()
     private let trackpadMonitor = TrackpadMonitor()
 
@@ -28,6 +28,7 @@ final class AppState {
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
+    nonisolated static let llmModelReadyNotification = Notification.Name("TextEchoLLMModelReady")
 
     init() {
         let model = AppConfig.shared.model
@@ -53,9 +54,6 @@ final class AppState {
 
     func start() {
         logger.info("Starting TextEcho")
-
-        // Clean stale LLM socket from previous sessions
-        cleanStaleSocket(path: config.model.llmSocket)
 
         AccessibilityHelper.requestIfNeeded()
         MicrophoneHelper.requestIfNeeded()
@@ -101,6 +99,16 @@ final class AppState {
         } else {
             logger.info("WhisperKit model not downloaded yet, skipping auto-preload")
         }
+
+        // Auto-load LLM model if enabled
+        if config.model.llmAvailable {
+            loadLLMModel()
+        }
+
+        // Listen for Settings telling us a new LLM model was downloaded
+        NotificationCenter.default.addObserver(forName: Self.llmModelReadyNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.loadLLMModel()
+        }
     }
 
     func restartInputMonitor() {
@@ -115,7 +123,6 @@ final class AppState {
         trackpadMonitor.stop()
         recorder.stop()
         overlay.hide()
-        pythonServices.stopAll()
     }
 
     /// Called by the setup wizard's onClose callback on first launch.
@@ -192,6 +199,20 @@ final class AppState {
         }
     }
 
+    private func loadLLMModel() {
+        let modelID = config.model.llmModelID
+        logger.info("Loading LLM model: \(modelID)")
+        Task.detached(priority: .utility) { [weak self] in
+            guard let processor = self?.llmProcessor else { return }
+            do {
+                try await processor.loadModel(id: modelID)
+                AppLogger.shared.info("LLM model loaded and ready: \(modelID)")
+            } catch {
+                AppLogger.shared.error("LLM model load failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func handleInputEvent(_ event: InputEvent) {
         switch event {
         case .triggerDown:
@@ -215,14 +236,10 @@ final class AppState {
             guard config.model.keyboardEnabled, config.model.keyboardMode == 1 else { return }
             endRecording(userInitiated: true)
         case .dictateLLMDown:
-            guard config.model.keyboardEnabled else { return }
-            if config.model.keyboardMode == 0 {
-                isRecording ? endRecording(userInitiated: true) : beginRecording(mode: .llm)
-            } else {
-                beginRecording(mode: .llm)
-            }
+            // LLM mode can be triggered by keyboard (Ctrl+Shift+D) or mouse (Shift+Middle-click)
+            // The input source already validated enablement, so just start recording
+            beginRecording(mode: .llm)
         case .dictateLLMUp:
-            guard config.model.keyboardEnabled, config.model.keyboardMode == 1 else { return }
             endRecording(userInitiated: true)
         case .capsLockChanged(let isOn):
             guard config.model.capsLockEnabled else { return }
@@ -331,23 +348,50 @@ final class AppState {
     }
 
     private func handleLLM(text: String) {
-        guard config.llmEnabled, config.model.llmAvailable else {
+        guard config.model.llmAvailable else {
             overlay.showResult(text, isLLM: false)
             textInjector.inject(text)
             return
         }
 
-        pythonServices.ensureLLMDaemon()
         let context = textInjector.registersContext()
-        LLMClient.shared.send(prompt: text, context: context) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let response):
-                self.overlay.showResult(response, isLLM: true)
-                self.textInjector.inject(response)
-                TranscriptionHistory.shared.add(text: response, isLLM: true)
-            case .failure(let error):
-                self.overlay.showError(error.localizedDescription)
+        let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
+
+        overlay.showProcessing(isLLM: true)
+
+        Task(priority: .userInitiated) {
+            do {
+                if !(await llmProcessor.isLoaded) {
+                    await MainActor.run {
+                        self.overlay.showError("LLM model not loaded.\nOpen Settings (Cmd+Opt+Space) →\nLLM Processing → Download & Load Model")
+                    }
+                    AppLogger.shared.info("LLM trigger ignored — model not loaded. User needs to download via Settings.")
+                    return
+                }
+
+                let response = try await llmProcessor.generate(
+                    prompt: text,
+                    systemPrompt: systemPrompt,
+                    context: context
+                ) { [weak self] partialText in
+                    Task { @MainActor in
+                        self?.overlay.showResult(partialText, isLLM: true)
+                    }
+                }
+
+                await MainActor.run {
+                    self.overlay.showResult(response, isLLM: true)
+                    if self.config.model.llmAutoPaste {
+                        self.textInjector.inject(response)
+                    }
+                    TranscriptionHistory.shared.add(text: response, isLLM: true)
+                }
+            } catch {
+                await MainActor.run {
+                    self.overlay.showError(error.localizedDescription)
+                }
+                AppLogger.shared.error("LLM processing failed: \(error)")
             }
         }
     }
@@ -451,14 +495,6 @@ final class AppState {
             return WhisperKitTranscriber.isModelCached(config.model.whisperModel)
         } else {
             return ParakeetTranscriber.isModelCached(config.model.parakeetModel)
-        }
-    }
-
-    private func cleanStaleSocket(path: String) {
-        guard FileManager.default.fileExists(atPath: path) else { return }
-        if !UnixSocket.ping(socketPath: path, command: "status") {
-            try? FileManager.default.removeItem(atPath: path)
-            logger.info("Removed stale socket at startup: \(path)")
         }
     }
 

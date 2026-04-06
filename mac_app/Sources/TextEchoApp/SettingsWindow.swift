@@ -1016,7 +1016,7 @@ struct SettingsView: View {
                     Toggle("Auto-paste LLM result", isOn: dirty($llmAutoPaste))
                         .font(.system(size: 12))
 
-                    Text("Shift+Middle-click or Ctrl+Shift+D to trigger LLM. When auto-paste is off, results display without pasting.")
+                    Text("Shift+Middle-click or Ctrl+Shift+D to trigger LLM. When off, review the result first — press Enter to paste or ESC to dismiss.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }

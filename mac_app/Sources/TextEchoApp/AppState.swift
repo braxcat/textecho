@@ -26,6 +26,8 @@ final class AppState {
     private var isModelLoading = false
     private var hasPreloaded = false
     private var isStreaming = false
+    private var isAwaitingLLMConfirm = false
+    private var pendingLLMResponse = ""
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
@@ -264,7 +266,13 @@ final class AppState {
         case .settingsHotkey:
             openSettings()
         case .escape:
-            cancelRecording()
+            if isAwaitingLLMConfirm {
+                discardLLMPaste()
+            } else {
+                cancelRecording()
+            }
+        case .confirmPaste:
+            confirmLLMPaste()
         case .register(let index):
             textInjector.captureClipboardToRegister(index)
         case .clearRegisters:
@@ -294,7 +302,7 @@ final class AppState {
 
         // Activate streaming if enabled, Parakeet is the engine, and the streaming model is loaded.
         // LLM mode always uses the batch path (streaming result would be discarded anyway).
-        let streamingEnabled = config.model.streamingEnabled && !isLLMMode
+        let streamingEnabled = config.model.streamingEnabled
         if streamingEnabled,
            let streamingTranscriber = transcriber as? (any StreamingTranscriber) {
             Task(priority: .userInitiated) { [weak self] in
@@ -421,6 +429,26 @@ final class AppState {
         }
     }
 
+    private func confirmLLMPaste() {
+        guard isAwaitingLLMConfirm else { return }
+        isAwaitingLLMConfirm = false
+        inputMonitor.shouldConsumeReturn = false
+        let response = pendingLLMResponse
+        pendingLLMResponse = ""
+        textInjector.inject(response)
+        overlay.hide()
+        logger.info("LLM review: confirmed paste (\(response.count) chars)")
+    }
+
+    private func discardLLMPaste() {
+        guard isAwaitingLLMConfirm else { return }
+        isAwaitingLLMConfirm = false
+        inputMonitor.shouldConsumeReturn = false
+        pendingLLMResponse = ""
+        overlay.hide()
+        logger.info("LLM review: discarded")
+    }
+
     private func transcribe(audioData: Data, isLLM: Bool) async {
         guard let transcriber else {
             await MainActor.run { self.overlay.showError("No transcription model loaded") }
@@ -464,7 +492,8 @@ final class AppState {
         let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
         let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
 
-        overlay.showProcessing(isLLM: true)
+        // Show the user's spoken prompt while LLM processes
+        overlay.showLLMProcessing(prompt: text)
 
         Task(priority: .userInitiated) {
             do {
@@ -476,22 +505,28 @@ final class AppState {
                     return
                 }
 
+                let prompt = text
                 let response = try await llmProcessor.generate(
                     prompt: text,
                     systemPrompt: systemPrompt,
                     context: context
                 ) { [weak self] partialText in
                     Task { @MainActor in
-                        self?.overlay.showResult(partialText, isLLM: true)
+                        self?.overlay.showLLMPartial(prompt: prompt, partial: partialText)
                     }
                 }
 
                 await MainActor.run {
-                    self.overlay.showResult(response, isLLM: true)
-                    if self.config.model.llmAutoPaste {
-                        self.textInjector.inject(response)
-                    }
                     TranscriptionHistory.shared.add(text: response, isLLM: true)
+                    if self.config.model.llmAutoPaste {
+                        self.overlay.showResult(response, isLLM: true)
+                        self.textInjector.inject(response)
+                    } else {
+                        self.pendingLLMResponse = response
+                        self.isAwaitingLLMConfirm = true
+                        self.inputMonitor.shouldConsumeReturn = true
+                        self.overlay.showLLMReview(prompt: prompt, response: response)
+                    }
                 }
             } catch {
                 await MainActor.run {

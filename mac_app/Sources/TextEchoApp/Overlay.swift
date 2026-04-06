@@ -10,6 +10,7 @@ enum OverlayState: Equatable {
     case loadingModel
     case downloading
     case result(isLLM: Bool)
+    case llmReview
     case error
 
     static func == (lhs: OverlayState, rhs: OverlayState) -> Bool {
@@ -19,6 +20,8 @@ enum OverlayState: Equatable {
             return true
         case (.result(let a), .result(let b)):
             return a == b
+        case (.llmReview, .llmReview):
+            return true
         case (.streamingPartial(let a), .streamingPartial(let b)):
             return a == b
         default:
@@ -31,6 +34,7 @@ final class OverlayViewModel: ObservableObject {
     @Published var state: OverlayState = .hidden
     @Published var statusText: String = ""
     @Published var resultText: String = ""
+    @Published var promptText: String = ""
     @Published var waveform: [Double] = Array(repeating: 0.0, count: 40)
     @Published var appearTrigger: Bool = false
 
@@ -38,6 +42,7 @@ final class OverlayViewModel: ObservableObject {
         state = .recording
         statusText = isLLM ? "RECORDING // LLM" : "RECORDING"
         resultText = ""
+        promptText = ""
         waveform = Array(repeating: 0.0, count: 40)
     }
 
@@ -68,6 +73,27 @@ final class OverlayViewModel: ObservableObject {
         state = .downloading
         statusText = "DOWNLOADING MODEL"
         resultText = "This only happens once."
+    }
+
+    func showLLMProcessing(prompt: String) {
+        state = .processing
+        statusText = "PROCESSING // LLM"
+        promptText = prompt
+        resultText = ""
+    }
+
+    func showLLMPartial(prompt: String, partial: String) {
+        state = .result(isLLM: true)
+        statusText = "LLM RESPONSE"
+        promptText = prompt
+        resultText = partial
+    }
+
+    func showLLMReview(prompt: String, response: String) {
+        state = .llmReview
+        statusText = "LLM READY"
+        promptText = prompt
+        resultText = response
     }
 
     func showError(_ message: String) {
@@ -356,13 +382,30 @@ struct OverlayView: View {
                         .transition(.opacity)
                 }
 
-                // Result text — expands to show full transcription
+                // Prompt text — shows the user's spoken question during LLM flow
+                if !viewModel.promptText.isEmpty {
+                    Text(viewModel.promptText)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundColor(theme.recording.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 4)
+                        .transition(.opacity)
+                }
+
+                // Result text — expands to show full transcription or LLM response
                 if !viewModel.resultText.isEmpty {
                     Text(viewModel.resultText)
                         .font(.system(size: 12, weight: .regular, design: .monospaced))
                         .foregroundColor(resultTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    if case .llmReview = viewModel.state {
+                        Text("↵ paste  ·  ESC dismiss")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(theme.loading.opacity(0.5))
+                            .tracking(0.8)
+                            .padding(.top, 4)
+                    }
                 }
 
                 // Bottom bar: model badge
@@ -438,6 +481,12 @@ struct OverlayView: View {
                 .fill(Color(red: 0.3, green: 0.85, blue: 0.65))
                 .frame(width: 8, height: 8)
                 .shadow(color: Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.5), radius: 4)
+        case .llmReview:
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulseScale)
+                .shadow(color: Color.orange.opacity(0.6), radius: 4)
         case .error:
             Circle()
                 .fill(CyberColors.red)
@@ -502,6 +551,7 @@ struct OverlayView: View {
         case .loadingModel: return theme.loading
         case .downloading: return theme.loading
         case .result(let isLLM): return isLLM ? theme.processing : theme.success
+        case .llmReview: return theme.loading
         case .error: return theme.error
         case .hidden: return theme.success
         }
@@ -518,6 +568,7 @@ struct OverlayView: View {
     private var resultTextColor: Color {
         switch viewModel.state {
         case .result(let isLLM): return isLLM ? theme.processing.opacity(0.9) : theme.success.opacity(0.9)
+        case .llmReview: return theme.loading.opacity(0.9)
         case .streamingPartial: return theme.recording.opacity(0.7)
         case .error: return theme.error.opacity(0.9)
         default: return theme.success.opacity(0.9)
@@ -715,6 +766,37 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.cancelAutoHide()
             self.viewModel.showDownloading()
             self.show()
+        }
+    }
+
+    func showLLMProcessing(prompt: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMProcessing(prompt: prompt)
+            if self.window?.isVisible != true {
+                self.show()
+            }
+        }
+    }
+
+    func showLLMPartial(prompt: String, partial: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMPartial(prompt: prompt, partial: partial)
+            if self.window?.isVisible != true {
+                self.show()
+            }
+        }
+    }
+
+    func showLLMReview(prompt: String, response: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMReview(prompt: prompt, response: response)
+            if self.window?.isVisible != true {
+                self.show()
+            }
+            self.autoHide(after: 15.0)
         }
     }
 

@@ -262,6 +262,7 @@ final class AppModel: ObservableObject {
 
         if setupWizard == nil {
             setupWizard = SetupWizardController(onClose: { [weak self] in
+                AppLogger.shared.info("Setup wizard onClose fired (self=\(self == nil ? "nil" : "alive"))")
                 self?.setupWizard?.close()
                 self?.setupWizard = nil
                 self?.appState.finalizeFirstLaunchSetup()

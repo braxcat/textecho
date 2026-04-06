@@ -1076,6 +1076,7 @@ struct SetupWizardView: View {
 
             case .ready:
                 Button("Start Using TextEcho") {
+                    AppLogger.shared.info("Wizard: 'Start Using TextEcho' tapped, calling onClose")
                     AppConfig.shared.update { model in
                         model.firstLaunch = false
                         model.transcriptionEngine = selectedEngine
@@ -1086,6 +1087,7 @@ struct SetupWizardView: View {
                         }
                     }
                     onClose()
+                    AppLogger.shared.info("Wizard: onClose returned")
                 }
                 .buttonStyle(.borderedProminent)
             }

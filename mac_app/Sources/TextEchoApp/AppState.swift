@@ -135,26 +135,27 @@ final class AppState {
     /// Called by the setup wizard's onClose callback on first launch.
     /// Mirrors the start() initialization path so behavior is identical to a restart.
     func finalizeFirstLaunchSetup() {
-        guard transcriber == nil else { return }
         let model = AppConfig.shared.model
         let engine = model.transcriptionEngine
-        logger.info("finalizeFirstLaunchSetup: engine=\(engine), streaming=\(model.streamingEnabled), llmAvailable=\(model.llmAvailable), llmEngine=\(model.llmEngine)")
+        logger.info("finalizeFirstLaunchSetup: transcriber=\(transcriber == nil ? "nil" : "set"), engine=\(engine), streaming=\(model.streamingEnabled), llmAvailable=\(model.llmAvailable), llmEngine=\(model.llmEngine)")
 
-        // Create transcriber — same as init() non-firstLaunch path
-        if engine == "whisper" {
-            transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
-            loadedEngine = "whisper"
-            loadedModel = model.whisperModel
-        } else {
-            transcriber = ParakeetTranscriber(modelName: model.parakeetModel, idleTimeout: model.whisperIdleTimeout)
-            loadedEngine = "parakeet"
-            loadedModel = model.parakeetModel
+        // Create transcriber if not already set.
+        // The .textechoConfigChanged notification may have already triggered
+        // reloadTranscriber() before this method runs — that's fine, skip creation.
+        if transcriber == nil {
+            if engine == "whisper" {
+                transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
+                loadedEngine = "whisper"
+                loadedModel = model.whisperModel
+            } else {
+                transcriber = ParakeetTranscriber(modelName: model.parakeetModel, idleTimeout: model.whisperIdleTimeout)
+                loadedEngine = "parakeet"
+                loadedModel = model.parakeetModel
+            }
+            startPreloadTask()
         }
 
-        // Preload transcription + streaming models — same as start() path
-        startPreloadTask()
-
-        // Load LLM — same as start() path
+        // Load LLM — reloadTranscriber() doesn't handle this
         if model.llmAvailable {
             logger.info("finalizeFirstLaunchSetup: loading LLM model \(model.llmModelID)")
             loadLLMModel()

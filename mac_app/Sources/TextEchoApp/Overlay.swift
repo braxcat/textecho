@@ -839,6 +839,8 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.viewModel.showLLMProcessing(prompt: prompt)
             if self.window?.isVisible != true {
                 self.show()
+            } else {
+                self.resizeWindowToFit()
             }
         }
     }
@@ -849,6 +851,8 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.viewModel.showLLMPartial(prompt: prompt, partial: partial)
             if self.window?.isVisible != true {
                 self.show()
+            } else {
+                self.resizeWindowToFit()
             }
         }
     }
@@ -859,6 +863,8 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.viewModel.showLLMReview(prompt: prompt, response: response)
             if self.window?.isVisible != true {
                 self.show()
+            } else {
+                self.resizeWindowToFit()
             }
             self.autoHide(after: 15.0)
         }
@@ -870,6 +876,8 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.viewModel.showLLMPreSend(prompt: prompt, mode: mode)
             if self.window?.isVisible != true {
                 self.show()
+            } else {
+                self.resizeWindowToFit()
             }
         }
     }
@@ -957,6 +965,7 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
     }
 
     private func show() {
+        resizeWindowToFit()
         positionOverlay()
         window?.orderFrontRegardless()
         viewModel.appearTrigger.toggle()
@@ -965,6 +974,20 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
         } else {
             stopFollow()
         }
+    }
+
+    /// Resize the NSWindow to match the SwiftUI content's ideal size.
+    private func resizeWindowToFit() {
+        guard let window, let hostingView = window.contentView as? NSHostingView<OverlayView> else { return }
+        hostingView.invalidateIntrinsicContentSize()
+        let fitting = hostingView.fittingSize
+        let newFrame = NSRect(
+            x: window.frame.origin.x,
+            y: window.frame.origin.y + window.frame.height - fitting.height,
+            width: fitting.width,
+            height: fitting.height
+        )
+        window.setFrame(newFrame, display: true, animate: false)
     }
 
     private var shouldFollowCursor: Bool {

@@ -378,6 +378,9 @@ final class AppState {
                         if text.isEmpty {
                             self.logger.info("Streaming: no speech detected")
                             self.overlay.hide()
+                        } else if isLLM {
+                            self.logger.info("Streaming transcription (LLM): \(text)")
+                            self.handleLLM(text: text)
                         } else {
                             TranscriptionHistory.shared.add(text: text)
                             self.logger.info("Streaming transcription: \(text)")

@@ -6,7 +6,7 @@
 #   ./clean_test.sh          # Interactive — prompts before deleting
 #   ./clean_test.sh --force  # No prompts — just delete everything
 
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

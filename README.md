@@ -54,6 +54,7 @@ Download the latest signed DMG from [GitHub Releases](https://github.com/braxcat
 5. **Setup Wizard** — on first launch, the wizard walks you through engine selection (Parakeet recommended), model download, activation method, theme, and silence timeout.
 
 **Verify the signature:**
+
 ```bash
 # Check code signature
 codesign -dv --verbose=2 /Applications/TextEcho.app
@@ -76,6 +77,7 @@ spctl -a -vv /Applications/TextEcho.app
 ```
 
 Or step by step:
+
 ```bash
 ./build_native_app.sh
 cp -R dist/TextEcho.app /Applications/
@@ -86,18 +88,18 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 
 ## Scripts
 
-| Script | What it does |
-|--------|-------------|
-| `./install_dev.sh` | **Dev workflow**: debug build → kill → deploy → reset Accessibility → relaunch |
-| `./reset_accessibility.sh` | Reset Accessibility permission after a rebuild (run standalone or via install_dev.sh) |
-| `./rebuild.sh` | Pull + release build + deploy + launch (one command) |
-| `./rebuild.sh --clean` | Full clean rebuild |
-| `./rebuild.sh --uninstall` | Wipe everything, then rebuild fresh |
-| `./uninstall.sh` | Remove app, config, models, logs, everything |
-| `./build_native_app.sh` | Release build only (no deploy) |
-| `./build_native_app.sh --debug` | Debug build only (faster, no deploy) |
-| `./build_native_app.sh --sign` | Build with Developer ID signing + notarization |
-| `./build_native_app.sh --with-llm` | Build with native MLX LLM module |
+| Script                             | What it does                                                                          |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `./install_dev.sh`                 | **Dev workflow**: debug build → kill → deploy → reset Accessibility → relaunch        |
+| `./reset_accessibility.sh`         | Reset Accessibility permission after a rebuild (run standalone or via install_dev.sh) |
+| `./rebuild.sh`                     | Pull + release build + deploy + launch (one command)                                  |
+| `./rebuild.sh --clean`             | Full clean rebuild                                                                    |
+| `./rebuild.sh --uninstall`         | Wipe everything, then rebuild fresh                                                   |
+| `./uninstall.sh`                   | Remove app, config, models, logs, everything                                          |
+| `./build_native_app.sh`            | Release build only (no deploy)                                                        |
+| `./build_native_app.sh --debug`    | Debug build only (faster, no deploy)                                                  |
+| `./build_native_app.sh --sign`     | Build with Developer ID signing + notarization                                        |
+| `./build_native_app.sh --with-llm` | Build with bundled Python LLM (legacy — MLX is built-in)                              |
 
 ## Usage
 
@@ -105,25 +107,25 @@ Grant **Accessibility** and **Microphone** in System Settings when prompted. Fir
 
 Enable one or more in Settings or Setup Wizard:
 
-| Method | Modes | How |
-|--------|-------|-----|
-| **Caps Lock** | Toggle | Press to start, press again to stop |
-| **Mouse button** | Toggle / Hold | Click to toggle or hold to record (configurable button) |
-| **Keyboard shortcut** | Toggle / Hold | Default: Ctrl+Opt+Z (configurable key + modifiers) |
-| **Stream Deck Pedal** | Hold | Center pedal = push-to-talk |
+| Method                | Modes         | How                                                     |
+| --------------------- | ------------- | ------------------------------------------------------- |
+| **Caps Lock**         | Toggle        | Press to start, press again to stop                     |
+| **Mouse button**      | Toggle / Hold | Click to toggle or hold to record (configurable button) |
+| **Keyboard shortcut** | Toggle / Hold | Default: Ctrl+Opt+Z (configurable key + modifiers)      |
+| **Stream Deck Pedal** | Hold          | Center pedal = push-to-talk                             |
 
 ### Other Controls
 
-| Action | How |
-|--------|-----|
-| **LLM prompt (mouse)** | Shift + Middle-click (transcribe + LLM process) |
-| **LLM prompt (keyboard)** | Ctrl+Shift+D |
-| **Paste (pedal)** | Left pedal |
-| **Enter (pedal)** | Right pedal |
-| **Save to register** | Cmd+Option+1-9 |
-| **Clear registers** | Cmd+Option+0 |
-| **Settings** | Cmd+Option+Space |
-| **Cancel** | ESC |
+| Action                    | How                                             |
+| ------------------------- | ----------------------------------------------- |
+| **LLM prompt (mouse)**    | Shift + Middle-click (transcribe + LLM process) |
+| **LLM prompt (keyboard)** | Ctrl+Shift+D                                    |
+| **Paste (pedal)**         | Left pedal                                      |
+| **Enter (pedal)**         | Right pedal                                     |
+| **Save to register**      | Cmd+Option+1-9                                  |
+| **Clear registers**       | Cmd+Option+0                                    |
+| **Settings**              | Cmd+Option+Space                                |
+| **Cancel**                | ESC                                             |
 
 ### Transcription History
 
@@ -166,8 +168,8 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
                     │    │   WHISPER // LG V3 TURBO│      │
                     │    └────────────────────────┘       │
                     │                                     │
-                    │    Optional: MLXLLMProcessor          │
-                    │    (native MLX, --with-llm build)     │
+                    │    MLXLLMProcessor (native MLX LLM)   │
+                    │    (6 models, 4 modes, built-in)      │
                     └─────────────────────────────────────┘
 ```
 
@@ -182,33 +184,33 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 
 ### Key Design Decisions
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Transcription | Parakeet TDT (default) / WhisperKit | Neural Engine, no Python; Parakeet: 2.1% WER, 3-6x faster |
-| Concurrency | Swift actor | No shared mutable state, no data races |
-| Audio start | DispatchQueue.main.async | IOKit HID callbacks block AVAudioEngine if started synchronously |
-| Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
-| LLM | Native MLX (Swift) | On-device, 6 models, 4 modes, no Python needed |
-| Pedal | IOKit HID (shared mode) | No kernel extension, no Elgato software needed |
+| Decision       | Choice                              | Why                                                              |
+| -------------- | ----------------------------------- | ---------------------------------------------------------------- |
+| Transcription  | Parakeet TDT (default) / WhisperKit | Neural Engine, no Python; Parakeet: 2.1% WER, 3-6x faster        |
+| Concurrency    | Swift actor                         | No shared mutable state, no data races                           |
+| Audio start    | DispatchQueue.main.async            | IOKit HID callbacks block AVAudioEngine if started synchronously |
+| Text injection | Clipboard + Cmd+V                   | Most reliable cross-app method on macOS                          |
+| LLM            | Native MLX (Swift)                  | On-device, 6 models, 4 modes, no Python needed                   |
+| Pedal          | IOKit HID (shared mode)             | No kernel extension, no Elgato software needed                   |
 
 ## Transcription Engines & Models
 
 ### Parakeet TDT (Default)
 
-| Model | WER | Params | Languages | Speed |
-|-------|-----|--------|-----------|-------|
-| **Parakeet TDT v3** (default) | 2.1% | 600M | 25 European | 3-6x faster than Whisper |
-| Parakeet TDT v2 | ~3% | 600M | English | Fast |
+| Model                         | WER  | Params | Languages   | Speed                    |
+| ----------------------------- | ---- | ------ | ----------- | ------------------------ |
+| **Parakeet TDT v3** (default) | 2.1% | 600M   | 25 European | 3-6x faster than Whisper |
+| Parakeet TDT v2               | ~3%  | 600M   | English     | Fast                     |
 
 Parakeet runs via FluidAudio SDK on Apple Neural Engine (Core ML). Model weights are CC-BY-4.0 licensed.
 
 ### WhisperKit (Fallback)
 
-| Model | Download | RAM | Speed | Quality |
-|-------|----------|-----|-------|---------|
-| **Large V3 Turbo** | ~1.6GB | ~1.6GB | Fast | Near-best (7.8% WER) |
-| Large V3 | ~3GB | ~3.5GB | Slower | Best |
-| Base (English) | ~140MB | ~180MB | Very fast | Good for clear speech |
+| Model              | Download | RAM    | Speed     | Quality               |
+| ------------------ | -------- | ------ | --------- | --------------------- |
+| **Large V3 Turbo** | ~1.6GB   | ~1.6GB | Fast      | Near-best (7.8% WER)  |
+| Large V3           | ~3GB     | ~3.5GB | Slower    | Best                  |
+| Base (English)     | ~140MB   | ~180MB | Very fast | Good for clear speech |
 
 Models download on first use and cache locally. Select engine and model in Setup Wizard or Settings.
 
@@ -216,36 +218,36 @@ Models download on first use and cache locally. Select engine and model in Setup
 
 `~/.textecho_config` (JSON):
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `trigger_button` | `2` | Mouse button (0=left, 1=right, 2=middle) |
-| `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
-| `silence_duration` | `2.5` | Seconds of silence before auto-stop |
-| `silence_threshold` | `0.015` | Audio level for silence detection |
-| `transcription_engine` | `parakeet` | Engine: `parakeet` or `whisper` |
-| `parakeet_model` | `parakeet-tdt-v3` | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
-| `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
-| `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
-| `caps_lock_enabled` | `false` | Enable Caps Lock activation |
-| `mouse_mode` | `1` | Mouse mode: 0=toggle, 1=hold |
-| `keyboard_mode` | `0` | Keyboard mode: 0=toggle, 1=hold |
-| `history_enabled` | `true` | Save transcription history |
-| `pedal_enabled` | `false` | Enable Stream Deck Pedal |
-| `pedal_position` | `1` | Push-to-talk pedal (0=left, 1=center, 2=right) |
-| `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
-| `llm_model` | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID) |
-| `llm_mode` | `clean` | LLM mode: `clean`, `fix`, `expand`, `custom` |
-| `llm_custom_prompt` | `""` | Custom system prompt for `custom` mode |
+| Option                 | Default                                    | Description                                            |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `trigger_button`       | `2`                                        | Mouse button (0=left, 1=right, 2=middle)               |
+| `dictation_keycode`    | `2`                                        | Keyboard trigger (2=D key)                             |
+| `silence_duration`     | `2.5`                                      | Seconds of silence before auto-stop                    |
+| `silence_threshold`    | `0.015`                                    | Audio level for silence detection                      |
+| `transcription_engine` | `parakeet`                                 | Engine: `parakeet` or `whisper`                        |
+| `parakeet_model`       | `parakeet-tdt-v3`                          | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
+| `whisper_model`        | `openai_whisper-large-v3_turbo`            | WhisperKit model name                                  |
+| `whisper_idle_timeout` | `0`                                        | Seconds before model unloads from RAM (0=never)        |
+| `caps_lock_enabled`    | `false`                                    | Enable Caps Lock activation                            |
+| `mouse_mode`           | `1`                                        | Mouse mode: 0=toggle, 1=hold                           |
+| `keyboard_mode`        | `0`                                        | Keyboard mode: 0=toggle, 1=hold                        |
+| `history_enabled`      | `true`                                     | Save transcription history                             |
+| `pedal_enabled`        | `false`                                    | Enable Stream Deck Pedal                               |
+| `pedal_position`       | `1`                                        | Push-to-talk pedal (0=left, 1=center, 2=right)         |
+| `llm_enabled`          | `false`                                    | Enable LLM processing (built-in, enable in Settings)   |
+| `llm_model`            | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID)                    |
+| `llm_mode`             | `clean`                                    | LLM mode: `clean`, `fix`, `expand`, `custom`           |
+| `llm_custom_prompt`    | `""`                                       | Custom system prompt for `custom` mode                 |
 
 ## Stream Deck Pedal
 
 Elgato Stream Deck Pedal works out of the box via IOKit HID — no Elgato software needed (actually, quit it first).
 
-| Pedal | Action |
-|-------|--------|
-| Left | Paste (Cmd+V) |
+| Pedal  | Action                        |
+| ------ | ----------------------------- |
+| Left   | Paste (Cmd+V)                 |
 | Center | Push-to-talk (hold to record) |
-| Right | Enter |
+| Right  | Enter                         |
 
 Enable in Settings or `~/.textecho_config`. Auto-detects with exponential backoff (3s to 60s), auto-reconnects on unplug/replug.
 
@@ -264,13 +266,13 @@ Enable in Settings or `~/.textecho_config`. Auto-detects with exponential backof
 
 ## Troubleshooting
 
-| Problem | Fix |
-|---------|-----|
-| No transcription | Check Accessibility + Microphone in System Settings |
-| Audio too quiet (RMS=0) | Reset mic permission: `tccutil reset Microphone com.textecho.app`, relaunch |
-| Pedal not detected | Quit Elgato Stream Deck app, unplug/replug pedal |
-| Permissions lost after rebuild | Re-grant in System Settings (ad-hoc signing changes signature) |
-| Model not downloading | Check internet, try `./rebuild.sh --clean` |
+| Problem                        | Fix                                                                         |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| No transcription               | Check Accessibility + Microphone in System Settings                         |
+| Audio too quiet (RMS=0)        | Reset mic permission: `tccutil reset Microphone com.textecho.app`, relaunch |
+| Pedal not detected             | Quit Elgato Stream Deck app, unplug/replug pedal                            |
+| Permissions lost after rebuild | Re-grant in System Settings (ad-hoc signing changes signature)              |
+| Model not downloading          | Check internet, try `./rebuild.sh --clean`                                  |
 
 ## Distribution
 
@@ -286,19 +288,20 @@ See [docs/SIGNING.md](docs/SIGNING.md) for signing architecture and secret rotat
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and data flow |
-| [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history |
-| [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory |
-| [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan and future work |
-| [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Security and permissions |
-| [docs/SIGNING.md](docs/SIGNING.md) | Code signing and notarization |
+| Document                                                   | Purpose                       |
+| ---------------------------------------------------------- | ----------------------------- |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design and data flow   |
+| [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md)       | Release history               |
+| [claude_docs/FEATURES.md](claude_docs/FEATURES.md)         | Feature inventory             |
+| [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md)           | Phase plan and future work    |
+| [claude_docs/SECURITY.md](claude_docs/SECURITY.md)         | Security and permissions      |
+| [docs/SIGNING.md](docs/SIGNING.md)                         | Code signing and notarization |
 
 ## License
 
 MIT
 
 **Third-party attribution:**
+
 - Parakeet TDT model weights by NVIDIA are licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)
 - FluidAudio SDK is licensed under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)

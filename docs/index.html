@@ -1,479 +1,1007 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TextEcho — Voice-to-text. Local. Instant.</title>
-<meta name="description" content="Native macOS dictation app. WhisperKit transcription on Apple Silicon — fully local, fully private.">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg-dark:#0A0A1A;--bg-light:#0F0F24;
-  --cyan:#00E6FF;--purple:#8A5CF6;--mint:#4DD9A6;
-  --text:#e0e0e0;--text-dim:#888;--silver:#B3B3B3;
-  --card-bg:rgba(15,15,36,0.7);--card-border:rgba(0,230,255,0.15);
-}
-html{scroll-behavior:smooth}
-body{
-  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;
-  background:linear-gradient(180deg,var(--bg-dark) 0%,var(--bg-light) 100%);
-  color:var(--text);line-height:1.6;overflow-x:hidden;
-}
-a{color:var(--cyan);text-decoration:none}
-a:hover{text-decoration:underline}
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TextEcho — Voice-to-text. Local. Instant.</title>
+    <meta
+      name="description"
+      content="Native macOS dictation app. Parakeet TDT transcription + on-device LLM via MLX on Apple Silicon — fully local, fully private."
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --bg-dark: #0a0a1a;
+        --bg-light: #0f0f24;
+        --cyan: #00e6ff;
+        --purple: #8a5cf6;
+        --mint: #4dd9a6;
+        --text: #e0e0e0;
+        --text-dim: #888;
+        --silver: #b3b3b3;
+        --card-bg: rgba(15, 15, 36, 0.7);
+        --card-border: rgba(0, 230, 255, 0.15);
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI",
+          sans-serif;
+        background: linear-gradient(
+          180deg,
+          var(--bg-dark) 0%,
+          var(--bg-light) 100%
+        );
+        color: var(--text);
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+      a {
+        color: var(--cyan);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
 
-/* ── Layout ── */
-.container{max-width:1100px;margin:0 auto;padding:0 24px}
-section{padding:80px 0}
-h2{font-size:2rem;font-weight:700;margin-bottom:40px;text-align:center}
-h2 .accent{color:var(--cyan)}
+      /* ── Layout ── */
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      section {
+        padding: 80px 0;
+      }
+      h2 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 40px;
+        text-align: center;
+      }
+      h2 .accent {
+        color: var(--cyan);
+      }
 
-/* ── Hero ── */
-.hero{
-  min-height:100vh;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;text-align:center;
-  padding:40px 24px;position:relative;
-}
-.logo{font-size:3.5rem;font-weight:800;letter-spacing:0.04em;margin-bottom:16px}
-.logo-text{color:var(--silver)}.logo-echo{color:var(--cyan)}
-.tagline{font-size:1.4rem;color:var(--text-dim);margin-bottom:48px}
+      /* ── Hero ── */
+      .hero {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 40px 24px;
+        position: relative;
+      }
+      .logo {
+        font-size: 3.5rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        margin-bottom: 16px;
+      }
+      .logo-text {
+        color: var(--silver);
+      }
+      .logo-echo {
+        color: var(--cyan);
+      }
+      .tagline {
+        font-size: 1.4rem;
+        color: var(--text-dim);
+        margin-bottom: 48px;
+      }
 
-/* waveform */
-.waveform{display:flex;align-items:center;gap:3px;height:60px;margin-bottom:48px}
-.waveform .bar{
-  width:4px;border-radius:2px;
-  background:linear-gradient(180deg,var(--cyan),rgba(0,230,255,0.3));
-  animation:wave 1.2s ease-in-out infinite;
-}
-@keyframes wave{
-  0%,100%{height:8px;opacity:0.4}
-  50%{height:100%;opacity:1}
-}
-.btn-primary{
-  display:inline-flex;align-items:center;gap:8px;
-  padding:14px 32px;border-radius:12px;font-size:1.1rem;font-weight:600;
-  background:var(--cyan);color:var(--bg-dark);
-  border:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;
-}
-.btn-primary:hover{
-  transform:translateY(-2px);
-  box-shadow:0 4px 24px rgba(0,230,255,0.35);
-  text-decoration:none;color:var(--bg-dark);
-}
-.btn-secondary{
-  display:inline-flex;align-items:center;gap:8px;
-  padding:12px 28px;border-radius:12px;font-size:1rem;font-weight:500;
-  background:transparent;color:var(--cyan);
-  border:1px solid var(--card-border);cursor:pointer;
-  transition:background 0.15s;margin-left:12px;
-}
-.btn-secondary:hover{background:rgba(0,230,255,0.08);text-decoration:none}
+      /* waveform */
+      .waveform {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 60px;
+        margin-bottom: 48px;
+      }
+      .waveform .bar {
+        width: 4px;
+        border-radius: 2px;
+        background: linear-gradient(
+          180deg,
+          var(--cyan),
+          rgba(0, 230, 255, 0.3)
+        );
+        animation: wave 1.2s ease-in-out infinite;
+      }
+      @keyframes wave {
+        0%,
+        100% {
+          height: 8px;
+          opacity: 0.4;
+        }
+        50% {
+          height: 100%;
+          opacity: 1;
+        }
+      }
+      .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 32px;
+        border-radius: 12px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        background: var(--cyan);
+        color: var(--bg-dark);
+        border: none;
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+      }
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 24px rgba(0, 230, 255, 0.35);
+        text-decoration: none;
+        color: var(--bg-dark);
+      }
+      .btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 28px;
+        border-radius: 12px;
+        font-size: 1rem;
+        font-weight: 500;
+        background: transparent;
+        color: var(--cyan);
+        border: 1px solid var(--card-border);
+        cursor: pointer;
+        transition: background 0.15s;
+        margin-left: 12px;
+      }
+      .btn-secondary:hover {
+        background: rgba(0, 230, 255, 0.08);
+        text-decoration: none;
+      }
 
-/* ── How It Works ── */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;text-align:center}
-.step-num{
-  width:56px;height:56px;border-radius:50%;
-  display:inline-flex;align-items:center;justify-content:center;
-  font-size:1.4rem;font-weight:700;margin-bottom:16px;
-  background:rgba(0,230,255,0.1);border:2px solid var(--cyan);color:var(--cyan);
-}
-.step h3{font-size:1.2rem;margin-bottom:8px}
-.step p{color:var(--text-dim);font-size:0.95rem}
+      /* ── How It Works ── */
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+        text-align: center;
+      }
+      .step-num {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin-bottom: 16px;
+        background: rgba(0, 230, 255, 0.1);
+        border: 2px solid var(--cyan);
+        color: var(--cyan);
+      }
+      .step h3 {
+        font-size: 1.2rem;
+        margin-bottom: 8px;
+      }
+      .step p {
+        color: var(--text-dim);
+        font-size: 0.95rem;
+      }
 
-/* ── Feature Grid ── */
-.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-.card{
-  background:var(--card-bg);border:1px solid var(--card-border);
-  border-radius:16px;padding:28px;
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  transition:border-color 0.2s,transform 0.2s;
-}
-.card:hover{border-color:rgba(0,230,255,0.35);transform:translateY(-3px)}
-.card-icon{font-size:1.8rem;margin-bottom:12px}
-.card h3{font-size:1.1rem;margin-bottom:8px}
-.card p{color:var(--text-dim);font-size:0.9rem}
+      /* ── Feature Grid ── */
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 16px;
+        padding: 28px;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        transition:
+          border-color 0.2s,
+          transform 0.2s;
+      }
+      .card:hover {
+        border-color: rgba(0, 230, 255, 0.35);
+        transform: translateY(-3px);
+      }
+      .card-icon {
+        font-size: 1.8rem;
+        margin-bottom: 12px;
+      }
+      .card h3 {
+        font-size: 1.1rem;
+        margin-bottom: 8px;
+      }
+      .card p {
+        color: var(--text-dim);
+        font-size: 0.9rem;
+      }
 
-/* ── Themes ── */
-.themes-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
-.theme-card{
-  background:var(--card-bg);border:1px solid var(--card-border);
-  border-radius:14px;padding:20px;text-align:center;
-  transition:transform 0.2s;
-}
-.theme-card:hover{transform:translateY(-3px)}
-.theme-card h4{font-size:1rem;margin-bottom:12px}
-.swatch-row{display:flex;justify-content:center;gap:6px;margin-bottom:8px}
-.swatch{width:28px;height:28px;border-radius:6px;border:1px solid rgba(255,255,255,0.1)}
-.swatch-label{font-size:0.7rem;color:var(--text-dim);display:flex;justify-content:center;gap:6px}
-.swatch-label span{width:28px;text-align:center}
-.theme-bg{
-  display:flex;gap:4px;justify-content:center;margin-top:10px;
-  padding:6px 10px;border-radius:8px;
-}
-.theme-bg .bg-swatch{width:36px;height:20px;border-radius:4px;border:1px solid rgba(255,255,255,0.1)}
+      /* ── Themes ── */
+      .themes-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 20px;
+      }
+      .theme-card {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+        transition: transform 0.2s;
+      }
+      .theme-card:hover {
+        transform: translateY(-3px);
+      }
+      .theme-card h4 {
+        font-size: 1rem;
+        margin-bottom: 12px;
+      }
+      .swatch-row {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .swatch {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .swatch-label {
+        font-size: 0.7rem;
+        color: var(--text-dim);
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+      }
+      .swatch-label span {
+        width: 28px;
+        text-align: center;
+      }
+      .theme-bg {
+        display: flex;
+        gap: 4px;
+        justify-content: center;
+        margin-top: 10px;
+        padding: 6px 10px;
+        border-radius: 8px;
+      }
+      .theme-bg .bg-swatch {
+        width: 36px;
+        height: 20px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
 
-/* ── Overlay Demo ── */
-.demo-container{max-width:380px;margin:0 auto}
-.demo-overlay{
-  border-radius:16px;padding:20px 24px;text-align:center;
-  background:rgba(10,10,26,0.92);border:1px solid rgba(0,230,255,0.2);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  position:relative;overflow:hidden;
-}
-.demo-overlay::before{
-  content:'';position:absolute;inset:0;border-radius:16px;
-  background:linear-gradient(135deg,rgba(0,230,255,0.05),transparent);
-  pointer-events:none;
-}
-.demo-status{
-  font-size:0.85rem;font-weight:600;text-transform:uppercase;
-  letter-spacing:0.08em;margin-bottom:12px;
-  transition:color 0.4s;
-}
-.demo-waveform{display:flex;align-items:center;justify-content:center;gap:2px;height:36px;margin-bottom:12px}
-.demo-waveform .bar{
-  width:3px;border-radius:1.5px;
-  animation:wave 1.2s ease-in-out infinite;
-}
-.demo-text{
-  font-size:0.95rem;color:var(--text-dim);min-height:24px;
-  transition:color 0.4s;
-}
-.demo-tabs{display:flex;justify-content:center;gap:8px;margin-bottom:24px}
-.demo-tab{
-  padding:8px 18px;border-radius:8px;font-size:0.85rem;font-weight:500;
-  cursor:pointer;border:1px solid var(--card-border);background:transparent;
-  color:var(--text-dim);transition:all 0.2s;
-}
-.demo-tab.active,.demo-tab:hover{
-  background:rgba(0,230,255,0.1);border-color:var(--cyan);color:var(--cyan);
-}
+      /* ── Overlay Demo ── */
+      .demo-container {
+        max-width: 380px;
+        margin: 0 auto;
+      }
+      .demo-overlay {
+        border-radius: 16px;
+        padding: 20px 24px;
+        text-align: center;
+        background: rgba(10, 10, 26, 0.92);
+        border: 1px solid rgba(0, 230, 255, 0.2);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        position: relative;
+        overflow: hidden;
+      }
+      .demo-overlay::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 230, 255, 0.05),
+          transparent
+        );
+        pointer-events: none;
+      }
+      .demo-status {
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+        transition: color 0.4s;
+      }
+      .demo-waveform {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        height: 36px;
+        margin-bottom: 12px;
+      }
+      .demo-waveform .bar {
+        width: 3px;
+        border-radius: 1.5px;
+        animation: wave 1.2s ease-in-out infinite;
+      }
+      .demo-text {
+        font-size: 0.95rem;
+        color: var(--text-dim);
+        min-height: 24px;
+        transition: color 0.4s;
+      }
+      .demo-tabs {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 24px;
+      }
+      .demo-tab {
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid var(--card-border);
+        background: transparent;
+        color: var(--text-dim);
+        transition: all 0.2s;
+      }
+      .demo-tab.active,
+      .demo-tab:hover {
+        background: rgba(0, 230, 255, 0.1);
+        border-color: var(--cyan);
+        color: var(--cyan);
+      }
 
-/* demo states */
-.demo-overlay[data-state="recording"] .demo-status{color:var(--cyan)}
-.demo-overlay[data-state="processing"] .demo-status{color:var(--purple)}
-.demo-overlay[data-state="processing"] .demo-waveform .bar{
-  animation:pulse-purple 0.8s ease-in-out infinite;
-  background:linear-gradient(180deg,var(--purple),rgba(138,92,246,0.3)) !important;
-}
-.demo-overlay[data-state="done"] .demo-status{color:var(--mint)}
-.demo-overlay[data-state="done"] .demo-waveform{display:none}
-.demo-overlay[data-state="done"] .demo-text{color:var(--text)}
-@keyframes pulse-purple{
-  0%,100%{height:6px;opacity:0.3}
-  50%{height:60%;opacity:0.8}
-}
+      /* demo states */
+      .demo-overlay[data-state="recording"] .demo-status {
+        color: var(--cyan);
+      }
+      .demo-overlay[data-state="processing"] .demo-status {
+        color: var(--purple);
+      }
+      .demo-overlay[data-state="processing"] .demo-waveform .bar {
+        animation: pulse-purple 0.8s ease-in-out infinite;
+        background: linear-gradient(
+          180deg,
+          var(--purple),
+          rgba(138, 92, 246, 0.3)
+        ) !important;
+      }
+      .demo-overlay[data-state="done"] .demo-status {
+        color: var(--mint);
+      }
+      .demo-overlay[data-state="done"] .demo-waveform {
+        display: none;
+      }
+      .demo-overlay[data-state="done"] .demo-text {
+        color: var(--text);
+      }
+      @keyframes pulse-purple {
+        0%,
+        100% {
+          height: 6px;
+          opacity: 0.3;
+        }
+        50% {
+          height: 60%;
+          opacity: 0.8;
+        }
+      }
 
-/* ── Download ── */
-.download-section{text-align:center}
-.terminal{
-  background:#0D0D1E;border:1px solid var(--card-border);
-  border-radius:14px;overflow:hidden;
-  margin:32px auto 0;max-width:540px;text-align:left;
-}
-.terminal-bar{
-  display:flex;align-items:center;gap:7px;
-  padding:10px 16px;background:rgba(0,230,255,0.04);
-  border-bottom:1px solid var(--card-border);
-}
-.terminal-dot{width:11px;height:11px;border-radius:50%}
-.terminal-dot.r{background:#FF5F57}.terminal-dot.y{background:#FFBD2E}.terminal-dot.g{background:#28CA42}
-.terminal-title{
-  flex:1;text-align:center;font-size:0.75rem;font-weight:500;
-  color:var(--text-dim);letter-spacing:0.04em;font-family:'SF Mono',Menlo,monospace;
-}
-.terminal-body{padding:20px 24px;font-family:'SF Mono',Menlo,monospace;font-size:0.88rem;line-height:2}
-.terminal-body .line::before{content:'$ ';color:var(--text-dim);opacity:0.5}
-.terminal-body .line{color:var(--cyan)}
-.terminal-body .comment{color:var(--text-dim);opacity:0.45;font-style:italic}
-.terminal-body .comment::before{content:'# ';color:var(--text-dim);opacity:0.3}
-.coming-soon{
-  display:inline-block;margin-top:24px;
-  padding:6px 18px;border-radius:20px;
-  font-size:0.82rem;letter-spacing:0.03em;
-  color:var(--text-dim);
-  border:1px solid rgba(255,255,255,0.08);
-  background:rgba(255,255,255,0.03);
-}
+      /* ── Download ── */
+      .download-section {
+        text-align: center;
+      }
+      .terminal {
+        background: #0d0d1e;
+        border: 1px solid var(--card-border);
+        border-radius: 14px;
+        overflow: hidden;
+        margin: 32px auto 0;
+        max-width: 540px;
+        text-align: left;
+      }
+      .terminal-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 10px 16px;
+        background: rgba(0, 230, 255, 0.04);
+        border-bottom: 1px solid var(--card-border);
+      }
+      .terminal-dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+      .terminal-dot.r {
+        background: #ff5f57;
+      }
+      .terminal-dot.y {
+        background: #ffbd2e;
+      }
+      .terminal-dot.g {
+        background: #28ca42;
+      }
+      .terminal-title {
+        flex: 1;
+        text-align: center;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-dim);
+        letter-spacing: 0.04em;
+        font-family: "SF Mono", Menlo, monospace;
+      }
+      .terminal-body {
+        padding: 20px 24px;
+        font-family: "SF Mono", Menlo, monospace;
+        font-size: 0.88rem;
+        line-height: 2;
+      }
+      .terminal-body .line::before {
+        content: "$ ";
+        color: var(--text-dim);
+        opacity: 0.5;
+      }
+      .terminal-body .line {
+        color: var(--cyan);
+      }
+      .terminal-body .comment {
+        color: var(--text-dim);
+        opacity: 0.45;
+        font-style: italic;
+      }
+      .terminal-body .comment::before {
+        content: "# ";
+        color: var(--text-dim);
+        opacity: 0.3;
+      }
+      .coming-soon {
+        display: inline-block;
+        margin-top: 24px;
+        padding: 6px 18px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        letter-spacing: 0.03em;
+        color: var(--text-dim);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+      }
 
-/* ── Footer ── */
-footer{
-  border-top:1px solid var(--card-border);padding:32px 0;
-  text-align:center;color:var(--text-dim);font-size:0.9rem;
-}
-footer a{color:var(--cyan)}
+      /* ── Footer ── */
+      footer {
+        border-top: 1px solid var(--card-border);
+        padding: 32px 0;
+        text-align: center;
+        color: var(--text-dim);
+        font-size: 0.9rem;
+      }
+      footer a {
+        color: var(--cyan);
+      }
 
-/* ── Responsive ── */
-@media(max-width:768px){
-  .logo{font-size:2.4rem}
-  .tagline{font-size:1.1rem}
-  .steps{grid-template-columns:1fr;gap:24px}
-  .features-grid{grid-template-columns:1fr}
-  .themes-grid{grid-template-columns:repeat(2,1fr)}
-  .themes-grid .theme-card:last-child{grid-column:span 2;max-width:50%;margin:0 auto}
-  .btn-secondary{margin-left:0;margin-top:8px}
-  .hero .btn-row{display:flex;flex-direction:column;align-items:center}
-  section{padding:56px 0}
-}
-@media(max-width:480px){
-  .themes-grid{grid-template-columns:1fr}
-  .themes-grid .theme-card:last-child{grid-column:span 1;max-width:100%}
-}
-</style>
-</head>
-<body>
-
-<!-- ════ Hero ════ -->
-<section class="hero">
-  <div class="logo"><span class="logo-text">TEXT</span><span class="logo-echo">ECHO</span></div>
-  <p class="tagline">Voice-to-text. Local. Instant. 3.7x more accurate than Whisper.</p>
-  <div class="waveform" id="heroWaveform"></div>
-  <div class="btn-row">
-    <a href="https://github.com/braxcat/textecho/releases/latest" class="btn-primary">Download DMG</a>
-    <a href="https://github.com/braxcat/textecho" class="btn-secondary">View on GitHub</a>
-  </div>
-</section>
-
-<!-- ════ How It Works ════ -->
-<section>
-  <div class="container">
-    <h2>How It <span class="accent">Works</span></h2>
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">1</div>
-        <h3>Hold</h3>
-        <p>Middle-click your mouse, press Ctrl+D, or step on your Stream Deck pedal.</p>
+      /* ── Responsive ── */
+      @media (max-width: 768px) {
+        .logo {
+          font-size: 2.4rem;
+        }
+        .tagline {
+          font-size: 1.1rem;
+        }
+        .steps {
+          grid-template-columns: 1fr;
+          gap: 24px;
+        }
+        .features-grid {
+          grid-template-columns: 1fr;
+        }
+        .themes-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .themes-grid .theme-card:last-child {
+          grid-column: span 2;
+          max-width: 50%;
+          margin: 0 auto;
+        }
+        .btn-secondary {
+          margin-left: 0;
+          margin-top: 8px;
+        }
+        .hero .btn-row {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+        section {
+          padding: 56px 0;
+        }
+      }
+      @media (max-width: 480px) {
+        .themes-grid {
+          grid-template-columns: 1fr;
+        }
+        .themes-grid .theme-card:last-child {
+          grid-column: span 1;
+          max-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ════ Hero ════ -->
+    <section class="hero">
+      <div class="logo">
+        <span class="logo-text">TEXT</span><span class="logo-echo">ECHO</span>
       </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <h3>Speak</h3>
-        <p>Talk naturally. Parakeet TDT transcribes locally on Apple&nbsp;Silicon — nothing leaves your Mac.</p>
+      <p class="tagline">
+        Voice-to-text. Local. Instant. 3.7x more accurate than Whisper.
+      </p>
+      <div class="waveform" id="heroWaveform"></div>
+      <div class="btn-row">
+        <a
+          href="https://github.com/braxcat/textecho/releases/latest"
+          class="btn-primary"
+          >Download DMG</a
+        >
+        <a href="https://github.com/braxcat/textecho" class="btn-secondary"
+          >View on GitHub</a
+        >
       </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <h3>Paste</h3>
-        <p>Release the trigger. Your text is instantly pasted into whatever app you're using.</p>
-      </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<!-- ════ Features ════ -->
-<section>
-  <div class="container">
-    <h2><span class="accent">Features</span></h2>
-    <div class="features-grid">
-      <div class="card">
-        <div class="card-icon">🧠</div>
-        <h3>Parakeet TDT Engine</h3>
-        <p>NVIDIA Parakeet TDT v3 — 2.1% word error rate, 3-6x faster than Whisper. Runs on Apple Neural Engine via Core ML. Whisper available as fallback.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">🎨</div>
-        <h3>Cyberpunk Themes</h3>
-        <p>5 built-in overlay themes — TextEcho, Cyber, Classic, Ocean, Sunset — plus full color customization.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">🦶</div>
-        <h3>Stream Deck Pedal</h3>
-        <p>Hands-free dictation with Elgato Stream Deck Pedal. Push-to-talk, paste, and enter — all by foot.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">📜</div>
-        <h3>Transcription History</h3>
-        <p>Browse, search, copy, and re-use past transcriptions. Stored locally in plain text.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">🔒</div>
-        <h3>Privacy First</h3>
-        <p>Zero telemetry. Zero network calls. Audio is processed in memory and never written to disk.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">🧙</div>
-        <h3>Setup Wizard</h3>
-        <p>Guided first-launch wizard handles permissions, model download, and pedal setup in under two minutes.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════ Themes ════ -->
-<section>
-  <div class="container">
-    <h2>Overlay <span class="accent">Themes</span></h2>
-    <div class="themes-grid">
-      <div class="theme-card">
-        <h4>TextEcho</h4>
-        <div class="swatch-row">
-          <div class="swatch" style="background:#00E6FF" title="Recording"></div>
-          <div class="swatch" style="background:#8A5CF6" title="Processing"></div>
-          <div class="swatch" style="background:#4DD9A6" title="Success"></div>
-          <div class="swatch" style="background:#00E6FF" title="Waveform"></div>
+    <!-- ════ How It Works ════ -->
+    <section>
+      <div class="container">
+        <h2>How It <span class="accent">Works</span></h2>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <h3>Hold</h3>
+            <p>
+              Middle-click your mouse, press Ctrl+D, or step on your Stream Deck
+              pedal.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <h3>Speak</h3>
+            <p>
+              Talk naturally. Parakeet TDT transcribes locally on
+              Apple&nbsp;Silicon — nothing leaves your Mac.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <h3>Paste</h3>
+            <p>
+              Release the trigger. Your text is instantly pasted into whatever
+              app you're using.
+            </p>
+          </div>
         </div>
-        <div class="swatch-label"><span>Rec</span><span>Proc</span><span>Done</span><span>Wave</span></div>
-        <div class="theme-bg">
-          <div class="bg-swatch" style="background:#0A0A1A" title="BG Dark"></div>
-          <div class="bg-swatch" style="background:#0F0F24" title="BG Light"></div>
+      </div>
+    </section>
+
+    <!-- ════ Features ════ -->
+    <section>
+      <div class="container">
+        <h2><span class="accent">Features</span></h2>
+        <div class="features-grid">
+          <div class="card">
+            <div class="card-icon">🧠</div>
+            <h3>Parakeet TDT Engine</h3>
+            <p>
+              NVIDIA Parakeet TDT v3 — 2.1% word error rate, 3-6x faster than
+              Whisper. Runs on Apple Neural Engine via Core ML. Whisper
+              available as fallback.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🎨</div>
+            <h3>Cyberpunk Themes</h3>
+            <p>
+              5 built-in overlay themes — TextEcho, Cyber, Classic, Ocean,
+              Sunset — plus full color customization.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🦶</div>
+            <h3>Stream Deck Pedal</h3>
+            <p>
+              Hands-free dictation with Elgato Stream Deck Pedal. Push-to-talk,
+              paste, and enter — all by foot.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">📜</div>
+            <h3>Transcription History</h3>
+            <p>
+              Browse, search, copy, and re-use past transcriptions. Stored
+              locally in plain text.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🔒</div>
+            <h3>Privacy First</h3>
+            <p>
+              Zero telemetry. Zero network calls. Audio is processed in memory
+              and never written to disk.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">💬</div>
+            <h3>On-Device LLM</h3>
+            <p>
+              Native MLX language models — grammar fix, rephrase, answer
+              questions, or custom prompts. Shift+Middle-click to transcribe
+              &amp; process. Runs on GPU, fully offline.
+            </p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🧙</div>
+            <h3>Setup Wizard</h3>
+            <p>
+              Guided first-launch wizard handles permissions, model download,
+              and pedal setup in under two minutes.
+            </p>
+          </div>
         </div>
       </div>
-      <div class="theme-card">
-        <h4>Cyber</h4>
-        <div class="swatch-row">
-          <div class="swatch" style="background:#00FFE0" title="Recording"></div>
-          <div class="swatch" style="background:#8A5CF6" title="Processing"></div>
-          <div class="swatch" style="background:#4DD9A6" title="Success"></div>
-          <div class="swatch" style="background:#4D99E6" title="Waveform"></div>
-        </div>
-        <div class="swatch-label"><span>Rec</span><span>Proc</span><span>Done</span><span>Wave</span></div>
-        <div class="theme-bg">
-          <div class="bg-swatch" style="background:#0A0A1A" title="BG Dark"></div>
-          <div class="bg-swatch" style="background:#0F0F24" title="BG Light"></div>
+    </section>
+
+    <!-- ════ Themes ════ -->
+    <section>
+      <div class="container">
+        <h2>Overlay <span class="accent">Themes</span></h2>
+        <div class="themes-grid">
+          <div class="theme-card">
+            <h4>TextEcho</h4>
+            <div class="swatch-row">
+              <div
+                class="swatch"
+                style="background: #00e6ff"
+                title="Recording"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #8a5cf6"
+                title="Processing"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #4dd9a6"
+                title="Success"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #00e6ff"
+                title="Waveform"
+              ></div>
+            </div>
+            <div class="swatch-label">
+              <span>Rec</span><span>Proc</span><span>Done</span
+              ><span>Wave</span>
+            </div>
+            <div class="theme-bg">
+              <div
+                class="bg-swatch"
+                style="background: #0a0a1a"
+                title="BG Dark"
+              ></div>
+              <div
+                class="bg-swatch"
+                style="background: #0f0f24"
+                title="BG Light"
+              ></div>
+            </div>
+          </div>
+          <div class="theme-card">
+            <h4>Cyber</h4>
+            <div class="swatch-row">
+              <div
+                class="swatch"
+                style="background: #00ffe0"
+                title="Recording"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #8a5cf6"
+                title="Processing"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #4dd9a6"
+                title="Success"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #4d99e6"
+                title="Waveform"
+              ></div>
+            </div>
+            <div class="swatch-label">
+              <span>Rec</span><span>Proc</span><span>Done</span
+              ><span>Wave</span>
+            </div>
+            <div class="theme-bg">
+              <div
+                class="bg-swatch"
+                style="background: #0a0a1a"
+                title="BG Dark"
+              ></div>
+              <div
+                class="bg-swatch"
+                style="background: #0f0f24"
+                title="BG Light"
+              ></div>
+            </div>
+          </div>
+          <div class="theme-card">
+            <h4>Classic</h4>
+            <div class="swatch-row">
+              <div
+                class="swatch"
+                style="background: #4a90d9"
+                title="Recording"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #7b68ee"
+                title="Processing"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #50c878"
+                title="Success"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #6495ed"
+                title="Waveform"
+              ></div>
+            </div>
+            <div class="swatch-label">
+              <span>Rec</span><span>Proc</span><span>Done</span
+              ><span>Wave</span>
+            </div>
+            <div class="theme-bg">
+              <div
+                class="bg-swatch"
+                style="background: #1a1a2e"
+                title="BG Dark"
+              ></div>
+              <div
+                class="bg-swatch"
+                style="background: #16213e"
+                title="BG Light"
+              ></div>
+            </div>
+          </div>
+          <div class="theme-card">
+            <h4>Ocean</h4>
+            <div class="swatch-row">
+              <div
+                class="swatch"
+                style="background: #00ced1"
+                title="Recording"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #4169e1"
+                title="Processing"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #20b2aa"
+                title="Success"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #5f9ea0"
+                title="Waveform"
+              ></div>
+            </div>
+            <div class="swatch-label">
+              <span>Rec</span><span>Proc</span><span>Done</span
+              ><span>Wave</span>
+            </div>
+            <div class="theme-bg">
+              <div
+                class="bg-swatch"
+                style="background: #0b132b"
+                title="BG Dark"
+              ></div>
+              <div
+                class="bg-swatch"
+                style="background: #1c2541"
+                title="BG Light"
+              ></div>
+            </div>
+          </div>
+          <div class="theme-card">
+            <h4>Sunset</h4>
+            <div class="swatch-row">
+              <div
+                class="swatch"
+                style="background: #ff6b35"
+                title="Recording"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #d63384"
+                title="Processing"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #ffc107"
+                title="Success"
+              ></div>
+              <div
+                class="swatch"
+                style="background: #e85d75"
+                title="Waveform"
+              ></div>
+            </div>
+            <div class="swatch-label">
+              <span>Rec</span><span>Proc</span><span>Done</span
+              ><span>Wave</span>
+            </div>
+            <div class="theme-bg">
+              <div
+                class="bg-swatch"
+                style="background: #1a0a0a"
+                title="BG Dark"
+              ></div>
+              <div
+                class="bg-swatch"
+                style="background: #2d1b1b"
+                title="BG Light"
+              ></div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="theme-card">
-        <h4>Classic</h4>
-        <div class="swatch-row">
-          <div class="swatch" style="background:#4A90D9" title="Recording"></div>
-          <div class="swatch" style="background:#7B68EE" title="Processing"></div>
-          <div class="swatch" style="background:#50C878" title="Success"></div>
-          <div class="swatch" style="background:#6495ED" title="Waveform"></div>
-        </div>
-        <div class="swatch-label"><span>Rec</span><span>Proc</span><span>Done</span><span>Wave</span></div>
-        <div class="theme-bg">
-          <div class="bg-swatch" style="background:#1A1A2E" title="BG Dark"></div>
-          <div class="bg-swatch" style="background:#16213E" title="BG Light"></div>
-        </div>
-      </div>
-      <div class="theme-card">
-        <h4>Ocean</h4>
-        <div class="swatch-row">
-          <div class="swatch" style="background:#00CED1" title="Recording"></div>
-          <div class="swatch" style="background:#4169E1" title="Processing"></div>
-          <div class="swatch" style="background:#20B2AA" title="Success"></div>
-          <div class="swatch" style="background:#5F9EA0" title="Waveform"></div>
-        </div>
-        <div class="swatch-label"><span>Rec</span><span>Proc</span><span>Done</span><span>Wave</span></div>
-        <div class="theme-bg">
-          <div class="bg-swatch" style="background:#0B132B" title="BG Dark"></div>
-          <div class="bg-swatch" style="background:#1C2541" title="BG Light"></div>
+    </section>
+
+    <!-- ════ Overlay Demo ════ -->
+    <section>
+      <div class="container">
+        <h2>Overlay <span class="accent">Demo</span></h2>
+        <div class="demo-container">
+          <div class="demo-tabs">
+            <button class="demo-tab active" data-state="recording">
+              Recording
+            </button>
+            <button class="demo-tab" data-state="processing">Processing</button>
+            <button class="demo-tab" data-state="done">Done</button>
+          </div>
+          <div class="demo-overlay" data-state="recording">
+            <div class="demo-status">Recording</div>
+            <div class="demo-waveform" id="demoWaveform"></div>
+            <div class="demo-text">Listening...</div>
+          </div>
         </div>
       </div>
-      <div class="theme-card">
-        <h4>Sunset</h4>
-        <div class="swatch-row">
-          <div class="swatch" style="background:#FF6B35" title="Recording"></div>
-          <div class="swatch" style="background:#D63384" title="Processing"></div>
-          <div class="swatch" style="background:#FFC107" title="Success"></div>
-          <div class="swatch" style="background:#E85D75" title="Waveform"></div>
+    </section>
+
+    <!-- ════ Download ════ -->
+    <section id="get">
+      <div class="container download-section">
+        <h2><span class="accent">Get</span> TextEcho</h2>
+        <p>macOS 14+ &middot; Apple Silicon</p>
+        <div style="margin: 32px 0">
+          <a
+            href="https://github.com/braxcat/textecho/releases/latest"
+            class="btn-primary"
+            style="font-size: 1.2rem; padding: 16px 40px"
+            >Download TextEcho.dmg</a
+          >
         </div>
-        <div class="swatch-label"><span>Rec</span><span>Proc</span><span>Done</span><span>Wave</span></div>
-        <div class="theme-bg">
-          <div class="bg-swatch" style="background:#1A0A0A" title="BG Dark"></div>
-          <div class="bg-swatch" style="background:#2D1B1B" title="BG Light"></div>
-        </div>
+        <p
+          style="color: var(--text-dim); font-size: 0.9rem; margin-bottom: 32px"
+        >
+          Signed &amp; notarized with Apple Developer ID. No Gatekeeper
+          warnings.
+        </p>
+        <details style="max-width: 540px; margin: 0 auto; text-align: left">
+          <summary
+            style="cursor: pointer; color: var(--cyan); margin-bottom: 12px"
+          >
+            Or build from source
+          </summary>
+          <div class="terminal">
+            <div class="terminal-bar">
+              <div class="terminal-dot r"></div>
+              <div class="terminal-dot y"></div>
+              <div class="terminal-dot g"></div>
+              <div class="terminal-title">Terminal</div>
+              <div style="width: 50px"></div>
+            </div>
+            <div class="terminal-body">
+              <div class="line">
+                git clone https://github.com/braxcat/textecho.git
+              </div>
+              <div class="line">cd textecho</div>
+              <div class="line">./build_native_app.sh</div>
+              <div class="line">cp -R dist/TextEcho.app /Applications/</div>
+              <div class="comment">requires Xcode CLI tools</div>
+            </div>
+          </div>
+        </details>
       </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<!-- ════ Overlay Demo ════ -->
-<section>
-  <div class="container">
-    <h2>Overlay <span class="accent">Demo</span></h2>
-    <div class="demo-container">
-      <div class="demo-tabs">
-        <button class="demo-tab active" data-state="recording">Recording</button>
-        <button class="demo-tab" data-state="processing">Processing</button>
-        <button class="demo-tab" data-state="done">Done</button>
+    <!-- ════ Footer ════ -->
+    <footer>
+      <div class="container">
+        <p>
+          <a href="https://github.com/braxcat/textecho">GitHub</a> &middot; MIT
+          License &middot; Made in Australia
+        </p>
       </div>
-      <div class="demo-overlay" data-state="recording">
-        <div class="demo-status">Recording</div>
-        <div class="demo-waveform" id="demoWaveform"></div>
-        <div class="demo-text">Listening...</div>
-      </div>
-    </div>
-  </div>
-</section>
+    </footer>
 
-<!-- ════ Download ════ -->
-<section id="get">
-  <div class="container download-section">
-    <h2><span class="accent">Get</span> TextEcho</h2>
-    <p>macOS 14+ &middot; Apple Silicon</p>
-    <div style="margin:32px 0">
-      <a href="https://github.com/braxcat/textecho/releases/latest" class="btn-primary" style="font-size:1.2rem;padding:16px 40px">Download TextEcho.dmg</a>
-    </div>
-    <p style="color:var(--text-dim);font-size:0.9rem;margin-bottom:32px">Signed &amp; notarized with Apple Developer ID. No Gatekeeper warnings.</p>
-    <details style="max-width:540px;margin:0 auto;text-align:left">
-      <summary style="cursor:pointer;color:var(--cyan);margin-bottom:12px">Or build from source</summary>
-      <div class="terminal">
-        <div class="terminal-bar">
-          <div class="terminal-dot r"></div>
-          <div class="terminal-dot y"></div>
-          <div class="terminal-dot g"></div>
-          <div class="terminal-title">Terminal</div>
-          <div style="width:50px"></div>
-        </div>
-        <div class="terminal-body">
-          <div class="line">git clone https://github.com/braxcat/textecho.git</div>
-          <div class="line">cd textecho</div>
-          <div class="line">./build_native_app.sh</div>
-          <div class="line">cp -R dist/TextEcho.app /Applications/</div>
-          <div class="comment">requires Xcode CLI tools</div>
-        </div>
-      </div>
-    </details>
-  </div>
-</section>
+    <script>
+      // Generate waveform bars
+      function createBars(container, count, baseColor) {
+        for (let i = 0; i < count; i++) {
+          const bar = document.createElement("div");
+          bar.className = "bar";
+          bar.style.animationDelay = i * 0.03 + "s";
+          bar.style.background = `linear-gradient(180deg, ${baseColor}, ${baseColor}44)`;
+          container.appendChild(bar);
+        }
+      }
 
-<!-- ════ Footer ════ -->
-<footer>
-  <div class="container">
-    <p>
-      <a href="https://github.com/braxcat/textecho">GitHub</a> &middot;
-      MIT License &middot;
-      Made in Australia
-    </p>
-  </div>
-</footer>
+      createBars(document.getElementById("heroWaveform"), 40, "#00E6FF");
+      createBars(document.getElementById("demoWaveform"), 24, "#00E6FF");
 
-<script>
-// Generate waveform bars
-function createBars(container, count, baseColor) {
-  for (let i = 0; i < count; i++) {
-    const bar = document.createElement('div');
-    bar.className = 'bar';
-    bar.style.animationDelay = (i * 0.03) + 's';
-    bar.style.background = `linear-gradient(180deg, ${baseColor}, ${baseColor}44)`;
-    container.appendChild(bar);
-  }
-}
+      // Demo tabs
+      const overlay = document.querySelector(".demo-overlay");
+      const statusEl = overlay.querySelector(".demo-status");
+      const textEl = overlay.querySelector(".demo-text");
+      const tabs = document.querySelectorAll(".demo-tab");
 
-createBars(document.getElementById('heroWaveform'), 40, '#00E6FF');
-createBars(document.getElementById('demoWaveform'), 24, '#00E6FF');
+      const states = {
+        recording: { status: "Recording", text: "Listening..." },
+        processing: {
+          status: "Processing",
+          text: "Transcribing with Parakeet TDT...",
+        },
+        done: { status: "Done", text: '"Voice-to-text that just works."' },
+      };
 
-// Demo tabs
-const overlay = document.querySelector('.demo-overlay');
-const statusEl = overlay.querySelector('.demo-status');
-const textEl = overlay.querySelector('.demo-text');
-const tabs = document.querySelectorAll('.demo-tab');
-
-const states = {
-  recording: { status: 'Recording', text: 'Listening...' },
-  processing: { status: 'Processing', text: 'Transcribing with Parakeet TDT...' },
-  done: { status: 'Done', text: '"Voice-to-text that just works."' }
-};
-
-tabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const state = tab.dataset.state;
-    tabs.forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    overlay.dataset.state = state;
-    statusEl.textContent = states[state].status;
-    textEl.textContent = states[state].text;
-  });
-});
-</script>
-</body>
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const state = tab.dataset.state;
+          tabs.forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          overlay.dataset.state = state;
+          statusEl.textContent = states[state].status;
+          textEl.textContent = states[state].text;
+        });
+      });
+    </script>
+  </body>
 </html>

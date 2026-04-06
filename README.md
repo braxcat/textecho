@@ -139,6 +139,8 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 
 ## Architecture
 
+![TextEcho Transcription Architecture](docs/architecture-diagram.png)
+
 ```
                     ┌──────────────────────────────────────────┐
                     │          TextEcho.app (Swift)             │

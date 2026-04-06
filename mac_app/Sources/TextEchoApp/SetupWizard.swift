@@ -751,10 +751,18 @@ struct SetupWizardView: View {
                     }
 
                     if let error = streamingDownloadError {
-                        Text(error)
-                            .font(.system(size: 10))
-                            .foregroundColor(.red)
-                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Text(error)
+                                .font(.system(size: 10))
+                                .foregroundColor(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            Button("Retry") {
+                                startStreamingModelDownload()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
                     }
                 }
             }
@@ -874,10 +882,18 @@ struct SetupWizardView: View {
                         }
 
                         if let error = llmDownloadError {
-                            Text(error)
-                                .font(.system(size: 10))
-                                .foregroundColor(.red)
-                                .fixedSize(horizontal: false, vertical: true)
+                            HStack {
+                                Text(error)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.red)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                                Button("Retry") {
+                                    startLLMDownload()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
                         }
 
                         Divider().padding(.vertical, 4)
@@ -1056,6 +1072,7 @@ struct SetupWizardView: View {
                     currentStep = .ready
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(llmDownloading || streamingDownloading)
 
             case .ready:
                 Button("Start Using TextEcho") {

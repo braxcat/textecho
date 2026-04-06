@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TextEcho — Silence Skip &amp; Streaming Plan</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0a0a1a;
+        color: #c8c8e0;
+        min-height: 100vh;
+        padding: 32px 24px;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 700;
+        color: #00e6ff;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .subtitle {
+        font-size: 11px;
+        color: #4d6070;
+        letter-spacing: 1px;
+        margin-bottom: 32px;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid #1a1a3a;
+        padding-bottom: 0;
+      }
+      .tab {
+        padding: 8px 18px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        cursor: pointer;
+        color: #4d6070;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+        user-select: none;
+      }
+      .tab.active {
+        color: #00e6ff;
+        border-bottom-color: #00e6ff;
+      }
+      .tab:hover:not(.active) {
+        color: #8ab0c0;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
+      }
+
+      .section {
+        background: #0f0f24;
+        border: 1px solid #1a1a3a;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        overflow: hidden;
+      }
+      .section-header {
+        padding: 14px 18px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid #1a1a3a;
+      }
+      .section-header .badge {
+        font-size: 9px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+      .badge-low {
+        background: #1a3a1a;
+        color: #4dd9a6;
+      }
+      .badge-medium {
+        background: #3a2a10;
+        color: #ffc200;
+      }
+      .badge-high {
+        background: #3a1a1a;
+        color: #ff6060;
+      }
+      .badge-info {
+        background: #0f2030;
+        color: #00e6ff;
+      }
+
+      .check-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 11px 18px;
+        border-bottom: 1px solid #0f0f24;
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+      .check-item:last-child {
+        border-bottom: none;
+      }
+      .check-item:hover {
+        background: #12122a;
+      }
+      .check-item.done {
+        opacity: 0.5;
+      }
+      .check-item.done .label {
+        text-decoration: line-through;
+      }
+
+      .checkbox {
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid #2a3a4a;
+        border-radius: 4px;
+        flex-shrink: 0;
+        margin-top: 2px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+      }
+      .check-item.done .checkbox {
+        background: #4dd9a6;
+        border-color: #4dd9a6;
+      }
+      .check-item.done .checkbox::after {
+        content: "✓";
+        font-size: 10px;
+        color: #0a1a10;
+        font-weight: 900;
+      }
+
+      .label {
+        font-size: 13px;
+        line-height: 1.5;
+        color: #c8c8e0;
+      }
+      .note {
+        font-size: 11px;
+        color: #4d6070;
+        margin-top: 3px;
+        line-height: 1.4;
+      }
+      .code {
+        font-family: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+        font-size: 10px;
+        background: #0a0a1a;
+        color: #8a5cf6;
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+
+      .risk-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        margin: 0;
+      }
+      .risk-table th {
+        background: #0a0a1a;
+        color: #4d6070;
+        font-size: 10px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding: 10px 16px;
+        text-align: left;
+        font-weight: 600;
+      }
+      .risk-table td {
+        padding: 10px 16px;
+        border-bottom: 1px solid #0f0f24;
+        vertical-align: top;
+        line-height: 1.5;
+      }
+      .risk-table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .summary-card {
+        background: #0f0f24;
+        border: 1px solid #1a1a3a;
+        border-radius: 10px;
+        padding: 18px;
+      }
+      .summary-card h3 {
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #4d6070;
+        margin-bottom: 12px;
+        font-weight: 700;
+      }
+      .kv {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 12px;
+      }
+      .kv .k {
+        color: #7a8a9a;
+      }
+      .kv .v {
+        color: #c8c8e0;
+        font-weight: 600;
+      }
+      .kv .v.low {
+        color: #4dd9a6;
+      }
+      .kv .v.medium {
+        color: #ffc200;
+      }
+      .kv .v.high {
+        color: #ff6060;
+      }
+
+      .progress-bar {
+        height: 4px;
+        background: #1a1a3a;
+        border-radius: 2px;
+        margin-bottom: 6px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #00e6ff, #4dd9a6);
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+      .progress-label {
+        font-size: 10px;
+        color: #4d6070;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .phase-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 18px;
+        border-bottom: 1px solid #1a1a3a;
+      }
+      .phase-badge {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        padding: 3px 9px;
+        border-radius: 4px;
+        background: #0a1a2a;
+        color: #00e6ff;
+        border: 1px solid #1a3a5a;
+      }
+      .phase-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #c8c8e0;
+        letter-spacing: 0.5px;
+      }
+      .phase-desc {
+        font-size: 11px;
+        color: #4d6070;
+        margin-left: auto;
+      }
+
+      .warning-box {
+        background: #1a1a0a;
+        border: 1px solid #3a3a10;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 12px;
+        color: #c8c080;
+        margin: 16px 18px;
+        line-height: 1.6;
+      }
+      .warning-box strong {
+        color: #ffc200;
+      }
+
+      footer {
+        margin-top: 40px;
+        text-align: center;
+        font-size: 10px;
+        color: #2a3a4a;
+        letter-spacing: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TextEcho // Feature Plan</h1>
+    <div class="subtitle">
+      Silence Skip Removal (Issue #34) &amp; Streaming Transcription
+      &nbsp;·&nbsp; 2026-04-06
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('overview')">Overview</div>
+      <div class="tab" onclick="showTab('silence')">
+        Issue #34 — Silence Skip
+      </div>
+      <div class="tab" onclick="showTab('streaming')">
+        Streaming Transcription
+      </div>
+      <div class="tab" onclick="showTab('risks')">Risks</div>
+    </div>
+
+    <!-- OVERVIEW TAB -->
+    <div id="tab-overview" class="panel active">
+      <div class="summary-grid">
+        <div class="summary-card">
+          <h3>Feature 1 — Silence Skip Removal</h3>
+          <div class="kv">
+            <span class="k">Complexity</span><span class="v low">Low</span>
+          </div>
+          <div class="kv">
+            <span class="k">Risk</span><span class="v low">Low</span>
+          </div>
+          <div class="kv">
+            <span class="k">Files changed</span><span class="v">2</span>
+          </div>
+          <div class="kv">
+            <span class="k">New deps</span><span class="v">None</span>
+          </div>
+          <div class="kv">
+            <span class="k">New model download</span><span class="v">No</span>
+          </div>
+          <div class="kv">
+            <span class="k">Protocol changes</span><span class="v">No</span>
+          </div>
+          <div class="kv">
+            <span class="k">Issue</span><span class="v">#34</span>
+          </div>
+        </div>
+        <div class="summary-card">
+          <h3>Feature 2 — Streaming Transcription</h3>
+          <div class="kv">
+            <span class="k">Complexity</span><span class="v high">High</span>
+          </div>
+          <div class="kv">
+            <span class="k">Risk</span><span class="v medium">Medium</span>
+          </div>
+          <div class="kv">
+            <span class="k">Files changed</span><span class="v">7</span>
+          </div>
+          <div class="kv">
+            <span class="k">New deps</span
+            ><span class="v">FluidAudio EOU (in SDK)</span>
+          </div>
+          <div class="kv">
+            <span class="k">New model download</span
+            ><span class="v medium">Yes — EOU 120M</span>
+          </div>
+          <div class="kv">
+            <span class="k">Protocol changes</span
+            ><span class="v">Yes — StreamingTranscriber</span>
+          </div>
+          <div class="kv">
+            <span class="k">Config changes</span
+            ><span class="v">streamingEnabled flag</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header" style="color: #4dd9a6">
+          Recommended Sequencing
+        </div>
+        <div class="check-item">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Do Feature 1 first — it is a small, safe cleanup that unblocks
+              whispered speech
+            </div>
+            <div class="note">
+              Two files, four line-groups removed. No protocol changes. Ready to
+              ship in one session.
+            </div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Do Feature 2 in phases — infrastructure first, then engine, then
+              UI
+            </div>
+            <div class="note">
+              Phase A (protocol + AudioRecorder + Overlay) → Phase B
+              (ParakeetTranscriber streaming engine) → validate EOU accuracy →
+              Phase C (AppState wiring) → Phase D (UI polish)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header" style="color: #00e6ff">
+          Key Finding — FluidAudio Streaming API
+          <span class="badge badge-info">IMPORTANT</span>
+        </div>
+        <div
+          style="
+            padding: 14px 18px;
+            font-size: 13px;
+            line-height: 1.7;
+            color: #c8c8e0;
+          "
+        >
+          FluidAudio ships a complete streaming ASR architecture as part of the
+          SDK already included in TextEcho.
+          <span class="code">StreamingEouAsrManager</span> provides per-chunk
+          partial callbacks via
+          <span class="code">setPartialTranscriptCallback(_:)</span>. The
+          streaming model (<span class="code"
+            >parakeet-realtime-eou-120m-v1</span
+          >) is a <strong>separate download</strong> from the TDT V2/V3 batch
+          models — users must opt in. Chunk latency:
+          <strong>160ms</strong> (lowest), 320ms, 1280ms. WhisperKit has
+          <span class="code">AudioStreamTranscriber</span> but it owns its own
+          audio tap and conflicts with TextEcho's
+          <span class="code">AudioRecorder</span> — skip for Phase 1.
+        </div>
+      </div>
+    </div>
+
+    <!-- SILENCE SKIP TAB -->
+    <div id="tab-silence" class="panel">
+      <div class="section">
+        <div class="section-header" style="color: #4dd9a6">What Exists Now</div>
+        <div
+          style="
+            padding: 14px 18px;
+            font-size: 12px;
+            line-height: 1.7;
+            color: #c8c8e0;
+          "
+        >
+          Both <span class="code">ParakeetTranscriber.swift</span> and
+          <span class="code">WhisperKitTranscriber.swift</span>
+          apply an RMS gate before calling inference. If audio RMS &lt; 0.005 (≈
+          −46 dBFS), transcription is skipped entirely and an empty string is
+          returned silently. This was added as a cheap hallucination filter —
+          both models can emit fabricated text on silence. However, the check
+          also silently discards quiet speech (whispered, far-field,
+          soft-spoken).
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header" style="color: #ffc200">
+          Why Safe to Remove
+        </div>
+        <div class="check-item">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              WhisperKit already has
+              <span class="code">isHallucination()</span> post-inference
+            </div>
+            <div class="note">
+              Checks known hallucination phrases ("thank you for watching",
+              etc.) + repetition detection. Covers the silence hallucination
+              case adequately.
+            </div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Parakeet TDT emits empty text on silence — not hallucinations
+            </div>
+            <div class="note">
+              The TDT architecture produces no tokens on silent input in
+              practice. The comment "less prone but still possible" in the code
+              was precautionary.
+            </div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              AppState already handles empty transcription cleanly
+            </div>
+            <div class="note">
+              <span class="code">if text.isEmpty { overlay.hide() }</span> — an
+              empty result from the engine produces the same UX as the RMS skip,
+              but without silently failing on quiet speech.
+            </div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              AudioRecorder's silence detection is separate and untouched
+            </div>
+            <div class="note">
+              <span class="code">checkSilence()</span> /
+              <span class="code">silenceThreshold</span> in AudioRecorder
+              handles auto-stop. These must NOT be changed.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header" style="color: #00e6ff">
+          Implementation Checklist
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              ParakeetTranscriber.swift — remove
+              <span class="code">silenceRMSThreshold</span> constant
+            </div>
+            <div class="note">
+              Line 55:
+              <span class="code"
+                >private static let silenceRMSThreshold: Float = 0.005</span
+              >
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              ParakeetTranscriber.swift — remove RMS guard block
+            </div>
+            <div class="note">
+              Lines 91–95: the <span class="code">computeRMS()</span> call and
+              <span class="code">if rms &lt; ... { return "" }</span> block
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              ParakeetTranscriber.swift — remove
+              <span class="code">computeRMS()</span> helper
+            </div>
+            <div class="note">
+              Lines 214–221. Not used anywhere else in the file after the guard
+              is removed.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              WhisperKitTranscriber.swift — remove
+              <span class="code">silenceRMSThreshold</span> constant
+            </div>
+            <div class="note">
+              Line 71:
+              <span class="code"
+                >private static let silenceRMSThreshold: Float = 0.005</span
+              >
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              WhisperKitTranscriber.swift — remove RMS guard block
+            </div>
+            <div class="note">Lines 101–105: same pattern as Parakeet</div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              WhisperKitTranscriber.swift — remove
+              <span class="code">computeRMS()</span> helper
+            </div>
+            <div class="note">
+              Lines 396–402. Not used elsewhere after guard removed.
+              <span class="code">isHallucination()</span> is untouched.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Verify: test with whispered speech that it now transcribes
+              correctly
+            </div>
+            <div class="note">
+              Record "hello" in a quiet voice — should now produce text rather
+              than a silent empty result
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Verify: test with true silence that the overlay hides cleanly
+            </div>
+            <div class="note">
+              Record with no speech — engine should return empty string;
+              overlay.hide() fires
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Run <span class="code">./install_dev.sh</span> and deploy for
+              manual testing
+            </div>
+            <div class="note"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STREAMING TAB -->
+    <div id="tab-streaming" class="panel">
+      <div class="warning-box">
+        <strong>New model download required.</strong> The EOU streaming model
+        (<span class="code">parakeet-realtime-eou-120m-v1</span>) is a separate
+        CoreML model set from the TDT V2/V3 batch models already cached. Users
+        must explicitly opt in and download it. Estimated size: ~300–500MB. The
+        batch transcription path (TDT) continues working without it.
+      </div>
+
+      <div class="section">
+        <div class="phase-header">
+          <span class="phase-badge">PHASE A</span>
+          <span class="phase-title"
+            >Infrastructure — no visible feature yet</span
+          >
+          <span class="phase-desc">Complexity: Low–Medium</span>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add <span class="code">StreamingTranscriber</span> protocol to
+              <span class="code">Transcriber.swift</span>
+            </div>
+            <div class="note">
+              New protocol: <span class="code">beginStreaming()</span>,
+              <span class="code">appendAudio(_:sampleRate:)</span>,
+              <span class="code">endStreaming() → String</span>,
+              <span class="code">setPartialCallback(_:)</span>,
+              <span class="code">supportsStreaming: Bool</span>. Keep existing
+              <span class="code">Transcriber</span> protocol unchanged.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add <span class="code">onAudioChunk: ((Data) → Void)?</span> to
+              <span class="code">AudioRecorder</span>
+            </div>
+            <div class="note">
+              Fire in the AVAudioEngine tap callback alongside the existing
+              <span class="code">bufferData.append()</span>. Accumulate tap
+              buffers (~64ms each) into 160ms chunks before firing. The main
+              <span class="code">bufferData</span> accumulation is untouched.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add <span class="code">.streamingPartial(text: String)</span> to
+              <span class="code">OverlayState</span>
+            </div>
+            <div class="note">
+              In <span class="code">Overlay.swift</span>. Add
+              <span class="code">showStreamingPartial(_:)</span> to
+              <span class="code">OverlayViewModel</span> and
+              <span class="code">OverlayWindowController</span>.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add ghost text display to
+              <span class="code">OverlayView</span> for
+              <span class="code">.streamingPartial</span>
+            </div>
+            <div class="note">
+              Show waveform + growing text below it. Text at ~50% opacity to
+              signal "not yet confirmed". Different colour from final result
+              text.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add <span class="code">streamingEnabled: Bool</span> to
+              <span class="code">AppConfig</span>
+            </div>
+            <div class="note">
+              Default <span class="code">false</span> — existing users
+              unaffected. Only Parakeet engine when streaming model is
+              downloaded.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="phase-header">
+          <span class="phase-badge">PHASE B</span>
+          <span class="phase-title"
+            >ParakeetTranscriber — streaming engine</span
+          >
+          <span class="phase-desc">Complexity: High</span>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add <span class="code">StreamingTranscriber</span> conformance to
+              <span class="code">ParakeetTranscriber</span>
+            </div>
+            <div class="note">
+              Add
+              <span class="code"
+                >streamingManager: StreamingEouAsrManager?</span
+              >
+              property. <span class="code">supportsStreaming</span> returns
+              <span class="code">true</span>.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Implement <span class="code">beginStreaming()</span> — load EOU
+              model if needed
+            </div>
+            <div class="note">
+              Call
+              <span class="code"
+                >StreamingAsrEngineFactory.create(.parakeetEou160ms)</span
+              >, then <span class="code">loadModels()</span>. Reset engine
+              state. EOU model stored in its own cache dir (<span class="code"
+                >FluidAudio/Models/parakeet-eou-streaming/</span
+              >) — separate from TDT.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Implement <span class="code">appendAudio(_:sampleRate:)</span> —
+              forward chunks to EOU engine
+            </div>
+            <div class="note">
+              Convert <span class="code">Data</span> (Int16 PCM) to
+              <span class="code">AVAudioPCMBuffer</span>, call
+              <span class="code">streamingManager.appendAudio(_:)</span> then
+              <span class="code">processBufferedAudio()</span> asynchronously.
+              Mind actor isolation —
+              <span class="code">ParakeetTranscriber</span> is an actor,
+              <span class="code">StreamingEouAsrManager</span> is also an actor.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Implement <span class="code">setPartialCallback(_:)</span> — wire
+              to EOU partial callback
+            </div>
+            <div class="note">
+              Store callback locally; forward to
+              <span class="code"
+                >streamingManager.setPartialTranscriptCallback(_:)</span
+              >
+              after init.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Implement <span class="code">endStreaming() → String</span> —
+              flush and return final transcript
+            </div>
+            <div class="note">
+              Call <span class="code">streamingManager.finish()</span>. Apply
+              existing hallucination text filtering if needed. Reset EOU engine
+              state for next recording.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Add EOU model download status to
+              <span class="code">SettingsWindow</span>
+            </div>
+            <div class="note">
+              New section under Parakeet engine settings: "Streaming Model" with
+              download button, progress indicator, and cache status. Gate the
+              <span class="code">streamingEnabled</span> toggle on model being
+              downloaded.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">Benchmark EOU 120M accuracy vs TDT V3 batch</div>
+            <div class="note">
+              Test with a range of speech samples. EOU is a different model —
+              verify WER is acceptable before shipping. TDT V3 target is ~2.1%
+              WER.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="phase-header">
+          <span class="phase-badge">PHASE C</span>
+          <span class="phase-title"
+            >AppState — wiring the streaming pipeline</span
+          >
+          <span class="phase-desc">Complexity: Medium</span>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Detect streaming capability in
+              <span class="code">AppState.beginRecording()</span>
+            </div>
+            <div class="note">
+              Cast transcriber to
+              <span class="code">any StreamingTranscriber</span> and check
+              <span class="code">supportsStreaming</span> and
+              <span class="code">config.model.streamingEnabled</span>.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Wire <span class="code">recorder.onAudioChunk</span> →
+              <span class="code">transcriber.appendAudio()</span> during
+              streaming sessions
+            </div>
+            <div class="note">
+              Only in streaming mode. In non-streaming mode
+              <span class="code">onAudioChunk</span> remains nil. Clear the
+              wiring in <span class="code">endRecording</span>.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Wire partial callback →
+              <span class="code">overlay.showStreamingPartial(_:)</span>
+            </div>
+            <div class="note">
+              Ensure <span class="code">@MainActor</span> dispatch when updating
+              overlay from the partial callback (which fires from actor
+              context).
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Update <span class="code">endRecording()</span> to call
+              <span class="code">endStreaming()</span> instead of batch
+              transcribe
+            </div>
+            <div class="note">
+              In streaming mode:
+              <span class="code"
+                >let text = try await transcriber.endStreaming()</span
+              >. Use the returned final text for injection, same as batch path.
+              Fallback to batch if streaming returns empty and batch is
+              available.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">Handle ESC cancel during streaming session</div>
+            <div class="note">
+              <span class="code">cancelRecording()</span> must call
+              <span class="code">transcriber.reset()</span> on the streaming
+              engine to clear accumulated state.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="phase-header">
+          <span class="phase-badge">PHASE D</span>
+          <span class="phase-title">Overlay UI polish</span>
+          <span class="phase-desc">Complexity: Low</span>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Ghost text styling — lower opacity, distinct colour from confirmed
+              result
+            </div>
+            <div class="note">
+              Suggested:
+              <span class="code">theme.recording.opacity(0.6)</span> for partial
+              text. Final confirmed result uses
+              <span class="code">theme.success</span> as today.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Smooth text update animation — avoid jarring redraws as words
+              appear
+            </div>
+            <div class="note">
+              Use
+              <span class="code"
+                >.animation(.easeIn(duration: 0.1), value:
+                viewModel.resultText)</span
+              >
+              or similar. Test with fast speech.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Show waveform + ghost text simultaneously during streaming
+            </div>
+            <div class="note">
+              Waveform remains visible (recording is ongoing). Ghost text
+              appears below it. Ensure overlay does not grow too tall for short
+              sentences.
+            </div>
+          </div>
+        </div>
+        <div class="check-item" onclick="toggle(this)">
+          <div class="checkbox"></div>
+          <div>
+            <div class="label">
+              Update status text to "STREAMING" during streaming recording
+            </div>
+            <div class="note">
+              Distinguish from "RECORDING" (batch mode) so users know what mode
+              they are in.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RISKS TAB -->
+    <div id="tab-risks" class="panel">
+      <div class="section">
+        <div class="section-header" style="color: #ffc200">
+          Feature 1 — Silence Skip Risks
+        </div>
+        <table class="risk-table">
+          <tr>
+            <th>Risk</th>
+            <th>Severity</th>
+            <th>Mitigation</th>
+          </tr>
+          <tr>
+            <td>WhisperKit hallucinates on near-silent audio</td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td>
+              <span class="code">isHallucination()</span> post-inference filter
+              already covers this. Known phrases and repetition loops are
+              caught.
+            </td>
+          </tr>
+          <tr>
+            <td>Parakeet returns spurious tokens on silence</td>
+            <td><span class="badge badge-low">Low</span></td>
+            <td>
+              TDT architecture emits empty text on silence. Empty string →
+              overlay hides. No user-visible impact.
+            </td>
+          </tr>
+          <tr>
+            <td>Wasted Neural Engine inference on empty recordings</td>
+            <td><span class="badge badge-low">Low</span></td>
+            <td>
+              Inference is 50–200ms. Cost of accidental silent recording is
+              small and rare.
+            </td>
+          </tr>
+          <tr>
+            <td>LLM mode receives hallucinated text on silent recording</td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td>
+              AppState already checks
+              <span class="code">text.isEmpty</span> before entering LLM path.
+              WhisperKit's hallucination filter runs before LLM.
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="section">
+        <div class="section-header" style="color: #ff6060">
+          Feature 2 — Streaming Risks
+        </div>
+        <table class="risk-table">
+          <tr>
+            <th>Risk</th>
+            <th>Severity</th>
+            <th>Mitigation</th>
+          </tr>
+          <tr>
+            <td>EOU model download burden on users</td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td>
+              Opt-in via <span class="code">streamingEnabled</span> flag. Clear
+              UI affordance in Settings. Batch transcription unaffected if
+              streaming not downloaded.
+            </td>
+          </tr>
+          <tr>
+            <td>EOU 120M accuracy vs TDT V3 batch accuracy</td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td>
+              Must benchmark before shipping Phase C. If EOU WER is
+              unacceptable, final result falls back to batch transcription of
+              accumulated audio buffer.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              Actor isolation deadlock — ParakeetTranscriber +
+              StreamingEouAsrManager
+            </td>
+            <td><span class="badge badge-medium">Medium</span></td>
+            <td>
+              Both are actors. Chunk forwarding must use
+              <span class="code"
+                >Task { await streamingManager.appendAudio(...) }</span
+              >
+              inside ParakeetTranscriber, not a synchronous bridge. Careful
+              design in Phase B.
+            </td>
+          </tr>
+          <tr>
+            <td>AVAudioEngine tap cadence vs EOU chunk size mismatch</td>
+            <td><span class="badge badge-low">Low</span></td>
+            <td>
+              AudioRecorder tap fires every ~64ms (bufferSize 1024 at 16kHz).
+              EOU expects 160ms chunks. Accumulate 2–3 tap callbacks before
+              forwarding. Implement in the
+              <span class="code">onAudioChunk</span> accumulator.
+            </td>
+          </tr>
+          <tr>
+            <td>Ghost text diverges from final transcript</td>
+            <td><span class="badge badge-low">Low</span></td>
+            <td>
+              Final <span class="code">endStreaming()</span> result is
+              authoritative. Overlay updates to confirmed text at paste time.
+              Acceptable UX tradeoff — clearly communicated by ghost text
+              opacity.
+            </td>
+          </tr>
+          <tr>
+            <td>WhisperKit not streaming-capable in this implementation</td>
+            <td><span class="badge badge-low">Low</span></td>
+            <td>
+              WhisperKit falls back to existing batch path.
+              <span class="code">supportsStreaming</span> returns
+              <span class="code">false</span>. No regression.
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <footer>
+      TextEcho // textecho/plans/silence-skip-and-streaming-plan.md //
+      2026-04-06
+    </footer>
+
+    <script>
+      function showTab(name) {
+        document.querySelectorAll(".tab").forEach((t, i) => {
+          const names = ["overview", "silence", "streaming", "risks"];
+          t.classList.toggle("active", names[i] === name);
+        });
+        document
+          .querySelectorAll(".panel")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById("tab-" + name).classList.add("active");
+      }
+
+      function toggle(el) {
+        el.classList.toggle("done");
+        saveState();
+      }
+
+      function saveState() {
+        const items = document.querySelectorAll(".check-item");
+        const state = Array.from(items).map((el) =>
+          el.classList.contains("done"),
+        );
+        localStorage.setItem(
+          "textecho-silence-streaming-plan",
+          JSON.stringify(state),
+        );
+      }
+
+      function loadState() {
+        try {
+          const saved = JSON.parse(
+            localStorage.getItem("textecho-silence-streaming-plan") || "[]",
+          );
+          const items = document.querySelectorAll(".check-item");
+          saved.forEach((done, i) => {
+            if (done && items[i]) items[i].classList.add("done");
+          });
+        } catch (e) {}
+      }
+
+      loadState();
+    </script>
+  </body>
+</html>

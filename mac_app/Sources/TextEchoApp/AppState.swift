@@ -25,6 +25,7 @@ final class AppState {
     private var isLLMMode = false
     private var isModelLoading = false
     private var hasPreloaded = false
+    private var isStreaming = false
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
@@ -196,6 +197,22 @@ final class AppState {
                 NotificationCenter.default.post(name: AppState.modelLoadingNotification, object: false)
                 self?.overlay.hide()
             }
+
+            // If streaming is enabled and the transcriber supports it, preload the
+            // streaming model in the background after the main model is ready.
+            let streamingEnabled = await MainActor.run { AppConfig.shared.model.streamingEnabled }
+            if streamingEnabled, let streamingTranscriber = transcriber as? (any StreamingTranscriber) {
+                do {
+                    try await streamingTranscriber.preloadStreamingModel()
+                    await MainActor.run {
+                        AppLogger.shared.info("Streaming model preloaded")
+                    }
+                } catch {
+                    await MainActor.run {
+                        AppLogger.shared.error("Streaming model preload failed: \(error.localizedDescription)")
+                    }
+                }
+            }
         }
     }
 
@@ -262,6 +279,7 @@ final class AppState {
             return
         }
         isRecording = true
+        isStreaming = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: true)
         isLLMMode = (mode == .llm)
 
@@ -272,6 +290,49 @@ final class AppState {
         let deviceUID = config.model.inputDeviceUID
         if !deviceUID.isEmpty, let deviceID = AudioRecorder.deviceID(forUID: deviceUID) {
             recorder.setInputDevice(deviceID: deviceID)
+        }
+
+        // Activate streaming if enabled, Parakeet is the engine, and the streaming model is loaded.
+        // LLM mode always uses the batch path (streaming result would be discarded anyway).
+        let streamingEnabled = config.model.streamingEnabled && !isLLMMode
+        if streamingEnabled,
+           let streamingTranscriber = transcriber as? (any StreamingTranscriber) {
+            Task(priority: .userInitiated) {
+                guard await streamingTranscriber.isStreamingModelLoaded else {
+                    self.logger.info("Streaming model not loaded — falling back to batch transcription")
+                    return
+                }
+                do {
+                    try await streamingTranscriber.beginStreaming()
+                } catch {
+                    self.logger.error("beginStreaming failed: \(error.localizedDescription)")
+                    return
+                }
+
+                // Register partial callback — fires on the FluidAudio internal thread.
+                // Dispatch to MainActor for overlay updates.
+                streamingTranscriber.setPartialCallback { [weak self] partial in
+                    guard !partial.isEmpty else { return }
+                    Task { @MainActor [weak self] in
+                        self?.overlay.showStreamingPartial(partial)
+                    }
+                }
+
+                // Forward raw AVAudioPCMBuffer taps to the streaming engine.
+                // The tap callback is on AVAudioEngine's internal thread — dispatch
+                // the actual appendAudio work into a Task to avoid blocking.
+                // Capture the transcriber directly — it's an actor (reference type)
+                // so no retain cycle risk, and protocols can't be 'weak'.
+                let st = streamingTranscriber
+                self.recorder.onAudioBuffer = { buffer in
+                    Task(priority: .userInitiated) {
+                        try? await st.appendAudioBuffer(buffer)
+                    }
+                }
+
+                self.isStreaming = true
+                self.logger.info("Streaming transcription active")
+            }
         }
 
         recorder.start(
@@ -287,19 +348,55 @@ final class AppState {
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
 
         logger.info("Recording stopped (userInitiated=\(userInitiated))")
-        overlay.showProcessing(isLLM: isLLMMode)
 
+        // Clear the buffer tap so no more audio is forwarded after stop.
+        recorder.onAudioBuffer = nil
+
+        let wasStreaming = isStreaming
+        isStreaming = false
         let isLLM = self.isLLMMode
-        recorder.stop { [weak self] audioData in
-            guard let self else { return }
-            guard let audioData else {
-                self.overlay.showError("No audio captured")
-                return
-            }
+        let streamingTranscriber = wasStreaming ? (transcriber as? (any StreamingTranscriber)) : nil
 
-            // Dispatch transcription off the main thread to avoid blocking CGEventTap
+        overlay.showProcessing(isLLM: isLLM)
+
+        if wasStreaming, let st = streamingTranscriber {
+            // Streaming path: call endStreaming() to get the final transcript.
+            // The recorder still needs to be stopped to release the tap.
+            recorder.stop { _ in }
             Task(priority: .userInitiated) {
-                await self.transcribe(audioData: audioData, isLLM: isLLM)
+                do {
+                    let text = try await st.endStreaming()
+                    await MainActor.run {
+                        if text.isEmpty {
+                            self.logger.info("Streaming: no speech detected")
+                            self.overlay.hide()
+                        } else {
+                            TranscriptionHistory.shared.add(text: text)
+                            self.logger.info("Streaming transcription: \(text)")
+                            self.overlay.showResult(text, isLLM: false)
+                            self.textInjector.inject(text)
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.logger.error("Streaming endStreaming failed: \(error.localizedDescription)")
+                        self.overlay.showError(error.localizedDescription)
+                    }
+                }
+            }
+        } else {
+            // Batch path — unchanged behaviour.
+            recorder.stop { [weak self] audioData in
+                guard let self else { return }
+                guard let audioData else {
+                    self.overlay.showError("No audio captured")
+                    return
+                }
+
+                // Dispatch transcription off the main thread to avoid blocking CGEventTap
+                Task(priority: .userInitiated) {
+                    await self.transcribe(audioData: audioData, isLLM: isLLM)
+                }
             }
         }
     }
@@ -308,7 +405,9 @@ final class AppState {
         guard isRecording else { return }
         logger.info("Recording cancelled")
         isRecording = false
+        isStreaming = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
+        recorder.onAudioBuffer = nil
         recorder.stop { _ in }
         overlay.hide()
     }

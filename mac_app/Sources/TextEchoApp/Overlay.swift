@@ -90,6 +90,7 @@ final class OverlayViewModel: ObservableObject {
         statusText = "PROCESSING // LLM"
         promptText = prompt
         resultText = ""
+        llmModeHint = ""
     }
 
     func showLLMPartial(prompt: String, partial: String) {
@@ -97,6 +98,7 @@ final class OverlayViewModel: ObservableObject {
         statusText = "LLM RESPONSE"
         promptText = prompt
         resultText = partial
+        llmModeHint = ""
     }
 
     func showLLMReview(prompt: String, response: String) {
@@ -104,6 +106,15 @@ final class OverlayViewModel: ObservableObject {
         statusText = "LLM READY"
         promptText = prompt
         resultText = response
+        llmModeHint = "↵ paste  ·  ESC dismiss"
+    }
+
+    func showLLMPreSend(prompt: String, mode: String) {
+        state = .llmReview
+        statusText = "LLM // \(mode.uppercased())"
+        promptText = prompt
+        resultText = ""
+        llmModeHint = "↵ send  ·  Ctrl+Shift+M cycle  ·  ESC cancel"
     }
 
     func showLLMModeCycled(mode: String) {
@@ -386,8 +397,8 @@ struct OverlayView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
-                // LLM mode hint — shows during LLM recording
-                if !viewModel.llmModeHint.isEmpty, case .recording = viewModel.state {
+                // LLM mode hint — shows during LLM recording and pre-send review
+                if !viewModel.llmModeHint.isEmpty {
                     Text(viewModel.llmModeHint)
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundColor(theme.processing.opacity(0.5))
@@ -427,13 +438,6 @@ struct OverlayView: View {
                         .foregroundColor(resultTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    if case .llmReview = viewModel.state {
-                        Text("↵ paste  ·  ESC dismiss")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(theme.loading.opacity(0.5))
-                            .tracking(0.8)
-                            .padding(.top, 4)
-                    }
                 }
 
                 // Bottom bar: model badge
@@ -836,6 +840,16 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
                 self.show()
             }
             self.autoHide(after: 15.0)
+        }
+    }
+
+    func showLLMPreSend(prompt: String, mode: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMPreSend(prompt: prompt, mode: mode)
+            if self.window?.isVisible != true {
+                self.show()
+            }
         }
     }
 

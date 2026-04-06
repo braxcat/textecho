@@ -27,8 +27,11 @@ final class AppState {
     private var hasPreloaded = false
     private var isStreaming = false
     private var isAwaitingLLMConfirm = false
+    private var isAwaitingLLMSend = false   // waiting for Enter to send to LLM
+    private var pendingLLMText = ""         // transcribed text waiting to be sent
     private var pendingLLMResponse = ""
     private var llmModeOverride: LLMMode?
+    private var llmGenerationTask: Task<Void, Never>?
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
@@ -133,8 +136,11 @@ final class AppState {
     /// Creates the transcriber for the engine/model the user chose, then preloads it.
     func finalizeFirstLaunchSetup() {
         guard transcriber == nil else { return }
-        let model = config.model
+        // Re-read config fresh — wizard just wrote it
+        let model = AppConfig.shared.model
         let engine = model.transcriptionEngine
+        logger.info("finalizeFirstLaunchSetup: engine=\(engine), streaming=\(model.streamingEnabled), llmAvailable=\(model.llmAvailable), llmEngine=\(model.llmEngine), llmModelID=\(model.llmModelID)")
+
         if engine == "whisper" {
             transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
             loadedEngine = "whisper"
@@ -149,7 +155,10 @@ final class AppState {
 
         // Load LLM model if the wizard enabled it and downloaded the model
         if model.llmAvailable {
+            logger.info("finalizeFirstLaunchSetup: loading LLM model")
             loadLLMModel()
+        } else {
+            logger.info("finalizeFirstLaunchSetup: LLM not available (llmEngine=\(model.llmEngine))")
         }
     }
 
@@ -273,17 +282,24 @@ final class AppState {
         case .escape:
             if isAwaitingLLMConfirm {
                 discardLLMPaste()
+            } else if isAwaitingLLMSend {
+                cancelLLMSend()
+            } else if llmGenerationTask != nil {
+                cancelLLMGeneration()
             } else {
                 cancelRecording()
             }
         case .confirmPaste:
-            confirmLLMPaste()
+            if isAwaitingLLMSend {
+                sendToLLM()
+            } else {
+                confirmLLMPaste()
+            }
         case .selectLLMMode(let mode):
             guard isRecording && isLLMMode else { return }
             llmModeOverride = mode
             overlay.showRecordingLLMMode(mode: mode.displayName, hint: "Ctrl+Shift+M to cycle")
         case .cycleLLMMode:
-            guard !isRecording else { return }
             cycleLLMMode()
         case .register(let index):
             textInjector.captureClipboardToRegister(index)
@@ -472,8 +488,15 @@ final class AppState {
             model.llmMode = nextMode.rawValue
         }
 
-        // Flash overlay briefly showing the new mode
-        overlay.showLLMModeCycled(mode: nextMode.displayName)
+        if isAwaitingLLMSend {
+            // Update the pre-send review overlay with the new mode
+            overlay.showLLMPreSend(prompt: pendingLLMText, mode: nextMode.displayName)
+        } else if isRecording && isLLMMode {
+            overlay.showRecordingLLMMode(mode: nextMode.displayName, hint: "Ctrl+Shift+M to cycle")
+        } else {
+            // Flash overlay briefly showing the new mode
+            overlay.showLLMModeCycled(mode: nextMode.displayName)
+        }
         logger.info("LLM mode cycled to: \(nextMode.displayName)")
 
         // Update menu bar title
@@ -537,21 +560,37 @@ final class AppState {
             return
         }
 
+        // Show pre-send review: user sees their text + current mode, can cycle
+        // mode with Ctrl+Shift+M, press Enter to send, or ESC to cancel.
+        pendingLLMText = text
+        isAwaitingLLMSend = true
+        inputMonitor.shouldConsumeReturn = true
+        let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        overlay.showLLMPreSend(prompt: text, mode: mode.displayName)
+        logger.info("LLM pre-send: awaiting Enter to process with mode=\(mode.displayName)")
+    }
+
+    private func sendToLLM() {
+        guard isAwaitingLLMSend else { return }
+        isAwaitingLLMSend = false
+        let text = pendingLLMText
+        pendingLLMText = ""
+
         let context = textInjector.registersContext()
         let mode = llmModeOverride ?? LLMMode(rawValue: config.model.llmMode) ?? .grammar
         let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
         llmModeOverride = nil
 
-        // Show the user's spoken prompt while LLM processes
         overlay.showLLMProcessing(prompt: text)
+        inputMonitor.shouldConsumeReturn = false
 
-        Task(priority: .userInitiated) {
+        llmGenerationTask = Task(priority: .userInitiated) {
             do {
                 if !(await llmProcessor.isLoaded) {
                     await MainActor.run {
                         self.overlay.showError("LLM model not loaded.\nOpen Settings (Cmd+Opt+Space) →\nLLM Processing → Download & Load Model")
                     }
-                    AppLogger.shared.info("LLM trigger ignored — model not loaded. User needs to download via Settings.")
+                    AppLogger.shared.info("LLM trigger ignored — model not loaded.")
                     return
                 }
 
@@ -566,7 +605,10 @@ final class AppState {
                     }
                 }
 
+                guard !Task.isCancelled else { return }
+
                 await MainActor.run {
+                    self.llmGenerationTask = nil
                     TranscriptionHistory.shared.add(text: response, isLLM: true)
                     if self.config.model.llmAutoPaste {
                         self.overlay.showResult(response, isLLM: true)
@@ -579,12 +621,29 @@ final class AppState {
                     }
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    self.llmGenerationTask = nil
                     self.overlay.showError(error.localizedDescription)
                 }
                 AppLogger.shared.error("LLM processing failed: \(error)")
             }
         }
+    }
+
+    private func cancelLLMSend() {
+        isAwaitingLLMSend = false
+        pendingLLMText = ""
+        inputMonitor.shouldConsumeReturn = false
+        overlay.hide()
+        logger.info("LLM pre-send: cancelled")
+    }
+
+    private func cancelLLMGeneration() {
+        llmGenerationTask?.cancel()
+        llmGenerationTask = nil
+        overlay.hide()
+        logger.info("LLM generation: cancelled by user")
     }
 
     func openSettings(onOpenSetupWizard: @escaping () -> Void = {}) {

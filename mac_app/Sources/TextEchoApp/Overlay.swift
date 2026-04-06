@@ -431,13 +431,17 @@ struct OverlayView: View {
                         .transition(.opacity)
                 }
 
-                // Result text — expands to show full transcription or LLM response
+                // Result text — scrollable with max height to prevent overlay growing off-screen
                 if !viewModel.resultText.isEmpty {
-                    Text(viewModel.resultText)
-                        .font(.system(size: 12, weight: .regular, design: .monospaced))
-                        .foregroundColor(resultTextColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    ScrollView {
+                        Text(viewModel.resultText)
+                            .font(.system(size: 12, weight: .regular, design: .monospaced))
+                            .foregroundColor(resultTextColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 300)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
                 // Bottom bar: model badge

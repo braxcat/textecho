@@ -68,8 +68,14 @@ actor MLXLLMProcessor {
     private var modelContainer: ModelContainer?
     private var currentModelID: String?
     private var _isLoaded = false
+    private var _shouldCancel = false
 
     var isLoaded: Bool { _isLoaded }
+
+    /// Cancel the current generation. Safe to call from any thread.
+    func cancelGeneration() {
+        _shouldCancel = true
+    }
 
     /// Validates a model ID is from a trusted source.
     private static func isModelIDTrusted(_ id: String) -> Bool {
@@ -121,6 +127,7 @@ actor MLXLLMProcessor {
         let parameters = GenerateParameters(maxTokens: 2048, temperature: 0.7)
 
         var fullResponse = ""
+        _shouldCancel = false
 
         let _ = try await container.perform { [input, parameters] context in
             let prepared = try await context.processor.prepare(input: input)
@@ -128,7 +135,10 @@ actor MLXLLMProcessor {
                 input: prepared,
                 parameters: parameters,
                 context: context
-            ) { tokens in
+            ) { [self] tokens in
+                if self._shouldCancel {
+                    return .stop
+                }
                 let decoded = context.tokenizer.decode(tokens: tokens)
                 fullResponse = decoded
                 onToken?(decoded)

@@ -153,12 +153,16 @@ final class AppState {
         // Always preload after wizard — models were downloaded during setup
         startPreloadTask()
 
-        // Load LLM model if the wizard enabled it and downloaded the model
-        if model.llmAvailable {
-            logger.info("finalizeFirstLaunchSetup: loading LLM model")
-            loadLLMModel()
-        } else {
-            logger.info("finalizeFirstLaunchSetup: LLM not available (llmEngine=\(model.llmEngine))")
+        // Load LLM model if the wizard enabled it and downloaded the model.
+        // Re-read config fresh since the wizard just wrote llmEngine.
+        let freshModel = AppConfig.shared.model
+        logger.info("finalizeFirstLaunchSetup: llmEngine=\(freshModel.llmEngine), llmAvailable=\(freshModel.llmAvailable), llmModelID=\(freshModel.llmModelID)")
+        if freshModel.llmAvailable {
+            logger.info("finalizeFirstLaunchSetup: loading LLM model \(freshModel.llmModelID)")
+            // Delay slightly to let AppState finish initialization
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.loadLLMModel()
+            }
         }
     }
 
@@ -642,6 +646,10 @@ final class AppState {
     private func cancelLLMGeneration() {
         llmGenerationTask?.cancel()
         llmGenerationTask = nil
+        // Tell the MLX processor to stop generating tokens
+        Task {
+            await llmProcessor.cancelGeneration()
+        }
         overlay.hide()
         logger.info("LLM generation: cancelled by user")
     }

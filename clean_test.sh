@@ -28,8 +28,7 @@ FLUID_MODELS="$HOME/Library/Application Support/FluidAudio"
 WHISPER_MODELS="$HOME/Documents/huggingface/models/argmaxinc"
 MLX_CACHE="$HOME/.cache/huggingface/hub"
 
-MLX_MODELS="$MLX_CACHE/models--mlx-community--*"
-
+# All paths to remove (pipe-separated: path|label)
 items=(
     "$CONFIG|Config file"
     "$HISTORY|History file"
@@ -38,6 +37,16 @@ items=(
     "$FLUID_MODELS|Parakeet/FluidAudio models (~2GB)"
     "$WHISPER_MODELS|WhisperKit models (~1.6GB)"
 )
+
+# Debug: show actual paths being checked
+if [[ "${2:-}" == "--debug" ]]; then
+    echo "DEBUG paths:"
+    for item in "${items[@]}"; do
+        path="${item%%|*}"
+        echo "  exists=$(test -e "$path" && echo YES || echo NO) $path"
+    done
+    echo "  MLX glob: $(ls -d "$MLX_CACHE"/models--mlx-community--* 2>/dev/null | wc -l | tr -d ' ') matches"
+fi
 
 echo "Will remove:"
 for item in "${items[@]}"; do
@@ -51,7 +60,7 @@ for item in "${items[@]}"; do
 done
 
 # Check MLX models separately (glob pattern)
-mlx_count=$(ls -d $MLX_MODELS 2>/dev/null | wc -l | tr -d ' ')
+mlx_count=$(ls -d "$MLX_CACHE"/models--mlx-community--* 2>/dev/null | wc -l | tr -d ' ')
 if [[ "$mlx_count" -gt 0 ]]; then
     echo -e "  ${RED}✗${NC} MLX/LLM models ($mlx_count cached) — $MLX_CACHE/models--mlx-community--*"
 else
@@ -81,11 +90,13 @@ for item in "${items[@]}"; do
     fi
 done
 
-# Remove MLX models
-if ls -d $MLX_MODELS &>/dev/null; then
-    rm -rf $MLX_MODELS
-    echo -e "  ${RED}Removed${NC} MLX/LLM models"
-fi
+# Remove MLX models (glob must be unquoted for expansion)
+for mlx_dir in "$MLX_CACHE"/models--mlx-community--*; do
+    if [[ -d "$mlx_dir" ]]; then
+        rm -rf "$mlx_dir"
+        echo -e "  ${RED}Removed${NC} MLX: $(basename "$mlx_dir")"
+    fi
+done
 
 echo ""
 echo -e "${GREEN}Clean! Ready for fresh test:${NC}"

@@ -2,10 +2,10 @@
 
 ## Required Permissions
 
-| Permission | Why | Granted To |
-|------------|-----|------------|
+| Permission        | Why                                                     | Granted To   |
+| ----------------- | ------------------------------------------------------- | ------------ |
 | **Accessibility** | CGEventTap for global hotkeys, text injection via Cmd+V | TextEcho.app |
-| **Microphone** | Audio recording for transcription | TextEcho.app |
+| **Microphone**    | Audio recording for transcription                       | TextEcho.app |
 
 Permissions are tied to the app's code signature. Re-building with a new binary requires re-granting in System Settings > Privacy & Security.
 
@@ -30,12 +30,14 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 ## Automated Security Scanning
 
 ### CodeQL (SAST)
+
 - **Workflow:** `.github/workflows/codeql.yml`
 - **Runs:** On PRs to main + weekly Monday 9am UTC
 - **Scans:** Swift source for injection, path traversal, data races, etc.
 - **Runner:** `macos-latest` (required for Swift compilation)
 
 ### Dependabot
+
 - **Config:** `.github/dependabot.yml`
 - **Monitors:** SwiftPM dependencies (WhisperKit etc.) + GitHub Actions versions
 - **Schedule:** Weekly Monday checks
@@ -48,7 +50,7 @@ Permissions are tied to the app's code signature. Re-building with a new binary 
 - **Config file:** `~/.textecho_config` (plaintext JSON, no secrets, atomic writes, 0600 permissions)
 - **History file:** `~/.textecho_history.json` (0600 permissions, atomic writes)
 - **Registers file:** `~/.textecho_registers.json` (plaintext, user clipboard snippets)
-- **Logs:** `~/Library/Logs/TextEcho/` (app.log, python.log)
+- **Logs:** `~/Library/Logs/TextEcho/` (app.log)
 - **Model cache:** `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/`
 
 ## Hardening Measures

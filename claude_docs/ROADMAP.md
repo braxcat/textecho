@@ -2,21 +2,24 @@
 
 ## Phase Summary
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 1 | COMPLETE | Documentation Alignment — chippy methodology |
-| 2 | COMPLETE | Critical Stability Fixes — process lifecycle, socket timeouts, thread safety |
-| 3 | COMPLETE | Resource Management Hardening — log rotation, graceful shutdown, thread safety |
-| 4 | COMPLETE | Dead Code Removal — 4,500+ lines of legacy Python UI, stale files |
-| 5 | COMPLETE | Code Quality — user-friendly errors, final docs |
-| 6 | COMPLETE | MLX Whisper Upgrade — mlx-whisper + large-v3-turbo |
-| 7 | COMPLETE | Native WhisperKit Migration — replace Python daemon with Swift WhisperKit |
-| 8 | COMPLETE | UX Polish — pedal actions, auto-detect, cyberpunk overlay, wizard redesign |
-| 9 | COMPLETE | Signed Release Pipeline — Developer ID signing, notarization, GitHub Actions |
-| 10 | COMPLETE | Parakeet TDT Integration — dual-engine transcription, Parakeet default |
-| 11 | PLANNED | Enhanced Transcription — multi-language, speaker diarization |
+| Phase | Status   | Description                                                                    |
+| ----- | -------- | ------------------------------------------------------------------------------ |
+| 1     | COMPLETE | Documentation Alignment — chippy methodology                                   |
+| 2     | COMPLETE | Critical Stability Fixes — process lifecycle, socket timeouts, thread safety   |
+| 3     | COMPLETE | Resource Management Hardening — log rotation, graceful shutdown, thread safety |
+| 4     | COMPLETE | Dead Code Removal — 4,500+ lines of legacy Python UI, stale files              |
+| 5     | COMPLETE | Code Quality — user-friendly errors, final docs                                |
+| 6     | COMPLETE | MLX Whisper Upgrade — mlx-whisper + large-v3-turbo                             |
+| 7     | COMPLETE | Native WhisperKit Migration — replace Python daemon with Swift WhisperKit      |
+| 8     | COMPLETE | UX Polish — pedal actions, auto-detect, cyberpunk overlay, wizard redesign     |
+| 9     | COMPLETE | Signed Release Pipeline — Developer ID signing, notarization, GitHub Actions   |
+| 10    | COMPLETE | Parakeet TDT Integration — dual-engine transcription, Parakeet default         |
+| 10.5  | COMPLETE | Native MLX LLM — on-device language model, xcodebuild migration                |
+| 11    | PLANNED  | Live Transcription Preview — real-time partial text during recording           |
+| 12    | PLANNED  | Enhanced Transcription — multi-language, speaker diarization                   |
 
 ## Phase 10: Parakeet TDT Integration (v2.2.0)
+
 **Status:** COMPLETE
 
 - Evaluated all major local STT models (Whisper, Distil-Whisper, Moonshine, NVIDIA Canary/Parakeet, Apple SpeechAnalyzer, MLX Whisper)
@@ -27,15 +30,17 @@
 - CC-BY-4.0 attribution for NVIDIA Parakeet model weights
 
 ## Phase 9: Signed Release Pipeline
+
 **Status:** COMPLETE
 
 - Developer ID signing with hardened runtime
 - Apple notarization via App Store Connect API key
-- GitHub Actions release workflow (triggered by v* tags)
+- GitHub Actions release workflow (triggered by v\* tags)
 - Sigstore build attestation for verifiable provenance
 - Tag protection and CODEOWNERS for workflow/signing files
 
 ## Phase 8: UX Polish & Cyberpunk Overlay
+
 **Status:** COMPLETE
 
 - Per-pedal actions: center=push-to-talk, left=paste, right=enter
@@ -48,6 +53,7 @@
 - Fixed model cache detection and name resolution
 
 ## Phase 7: Native WhisperKit Migration
+
 **Status:** COMPLETE
 
 - Replaced Python MLX Whisper daemon with native Swift WhisperKit (Core ML / Neural Engine)

@@ -4,18 +4,18 @@ Native macOS menu bar app for voice-to-text dictation. Dual transcription engine
 
 ### Documentation Index
 
-| Document | Purpose | Update when... |
-|----------|---------|----------------|
-| [README.md](README.md) | Project overview, installation, usage | Features or setup changes |
-| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design, transcription flow, build pipeline | Architectural changes |
-| [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md) | Release history | After each deploy |
-| [claude_docs/FEATURES.md](claude_docs/FEATURES.md) | Feature inventory | Any feature ships/changes |
-| [claude_docs/PLANNING.md](claude_docs/PLANNING.md) | Future features, research | New ideas or research |
-| [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md) | Phase plan + future work | Planning or completing phases |
-| [claude_docs/SECURITY.md](claude_docs/SECURITY.md) | Permissions, signing, data handling | Security changes |
-| [claude_docs/TESTING.md](claude_docs/TESTING.md) | Test strategy | Test stack changes |
-| [claude_docs/WORKLOG.md](claude_docs/WORKLOG.md) | Dev session log | After each session |
-| [docs/SIGNING.md](docs/SIGNING.md) | Code signing, notarization, secret rotation | Signing or release changes |
+| Document                                                   | Purpose                                           | Update when...                |
+| ---------------------------------------------------------- | ------------------------------------------------- | ----------------------------- |
+| [README.md](README.md)                                     | Project overview, installation, usage             | Features or setup changes     |
+| [claude_docs/ARCHITECTURE.md](claude_docs/ARCHITECTURE.md) | System design, transcription flow, build pipeline | Architectural changes         |
+| [claude_docs/CHANGELOG.md](claude_docs/CHANGELOG.md)       | Release history                                   | After each deploy             |
+| [claude_docs/FEATURES.md](claude_docs/FEATURES.md)         | Feature inventory                                 | Any feature ships/changes     |
+| [claude_docs/PLANNING.md](claude_docs/PLANNING.md)         | Future features, research                         | New ideas or research         |
+| [claude_docs/ROADMAP.md](claude_docs/ROADMAP.md)           | Phase plan + future work                          | Planning or completing phases |
+| [claude_docs/SECURITY.md](claude_docs/SECURITY.md)         | Permissions, signing, data handling               | Security changes              |
+| [claude_docs/TESTING.md](claude_docs/TESTING.md)           | Test strategy                                     | Test stack changes            |
+| [claude_docs/WORKLOG.md](claude_docs/WORKLOG.md)           | Dev session log                                   | After each session            |
+| [docs/SIGNING.md](docs/SIGNING.md)                         | Code signing, notarization, secret rotation       | Signing or release changes    |
 
 ## Quick Start
 
@@ -35,16 +35,15 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `./install_dev.sh` | **Dev workflow**: debug build, kill, deploy to /Applications, reset Accessibility, relaunch |
-| `./reset_accessibility.sh` | Reset Accessibility permission after a rebuild invalidates the signature |
-| `./build_native_app.sh` | Release build — outputs to `dist/TextEcho.app` |
-| `./build_native_app.sh --debug` | Debug build — faster incremental rebuilds, outputs to `dist/TextEcho.app` |
-| `./build_native_app.sh --sign` | Release build with Developer ID signing + hardened runtime + notarization |
-| `./build_native_app.sh --with-llm` | Build with native MLX LLM module |
-| `swift build -c release --package-path mac_app` | Build Swift only (no .app bundle) |
-| `./build_native_dmg.sh` | Create distributable DMG |
+| Command                            | Description                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| `./install_dev.sh`                 | **Dev workflow**: debug build, kill, deploy to /Applications, reset Accessibility, relaunch |
+| `./reset_accessibility.sh`         | Reset Accessibility permission after a rebuild invalidates the signature                    |
+| `./build_native_app.sh`            | Release build — outputs to `dist/TextEcho.app`                                              |
+| `./build_native_app.sh --debug`    | Debug build — faster incremental rebuilds, outputs to `dist/TextEcho.app`                   |
+| `./build_native_app.sh --sign`     | Release build with Developer ID signing + hardened runtime + notarization                   |
+| `./build_native_app.sh --with-llm` | Build with bundled Python LLM (legacy — MLX is built-in)                                    |
+| `./build_native_dmg.sh`            | Create distributable DMG                                                                    |
 
 ## Architecture
 
@@ -70,36 +69,36 @@ Transcription and LLM processing are fully native Swift — no IPC, no temp file
 
 `~/.textecho_config` (JSON):
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `trigger_button` | `2` | Mouse button (2=middle) |
-| `dictation_keycode` | `2` | Keyboard trigger (2=D key) |
-| `silence_duration` | `2.5` | Seconds before auto-stop |
-| `transcription_engine` | `parakeet` | Engine: `parakeet` or `whisper` |
-| `parakeet_model` | `parakeet-tdt-v3` | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
-| `whisper_model` | `openai_whisper-large-v3_turbo` | WhisperKit model name |
-| `whisper_idle_timeout` | `0` | Seconds before model unloads from RAM (0=never) |
-| `llm_enabled` | `false` | Enable LLM processing (requires --with-llm build) |
-| `llm_model` | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID) |
-| `llm_mode` | `clean` | LLM mode: `clean`, `fix`, `expand`, `custom` |
-| `llm_custom_prompt` | `""` | Custom system prompt for `custom` mode |
-| `trackpad_enabled` | `false` | Enable Magic Trackpad as dictation trigger |
-| `trackpad_gesture` | `force_click` | Trackpad gesture: `force_click` or `right_click` |
-| `trackpad_mode` | `hold` | Trackpad mode: `hold` or `toggle` |
+| Field                  | Default                                    | Description                                            |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------------ |
+| `trigger_button`       | `2`                                        | Mouse button (2=middle)                                |
+| `dictation_keycode`    | `2`                                        | Keyboard trigger (2=D key)                             |
+| `silence_duration`     | `2.5`                                      | Seconds before auto-stop                               |
+| `transcription_engine` | `parakeet`                                 | Engine: `parakeet` or `whisper`                        |
+| `parakeet_model`       | `parakeet-tdt-v3`                          | Parakeet model: `parakeet-tdt-v3` or `parakeet-tdt-v2` |
+| `whisper_model`        | `openai_whisper-large-v3_turbo`            | WhisperKit model name                                  |
+| `whisper_idle_timeout` | `0`                                        | Seconds before model unloads from RAM (0=never)        |
+| `llm_enabled`          | `false`                                    | Enable LLM processing (requires --with-llm build)      |
+| `llm_model`            | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID)                    |
+| `llm_mode`             | `clean`                                    | LLM mode: `clean`, `fix`, `expand`, `custom`           |
+| `llm_custom_prompt`    | `""`                                       | Custom system prompt for `custom` mode                 |
+| `trackpad_enabled`     | `false`                                    | Enable Magic Trackpad as dictation trigger             |
+| `trackpad_gesture`     | `force_click`                              | Trackpad gesture: `force_click` or `right_click`       |
+| `trackpad_mode`        | `hold`                                     | Trackpad mode: `hold` or `toggle`                      |
 
 ## Hotkeys
 
-| Action | Hotkey |
-|--------|--------|
-| Transcribe & paste (mouse) | Middle-click (hold to record) |
-| Transcribe & paste (keyboard) | Ctrl+D (hold to record) |
-| LLM prompt (mouse) | Shift + Middle-click |
-| LLM prompt (keyboard) | Ctrl+Shift+D |
-| Save clipboard to register | Cmd+Option+[1-9] |
-| Clear all registers | Cmd+Option+0 |
-| Settings dialog | Cmd+Option+Space |
+| Action                        | Hotkey                                    |
+| ----------------------------- | ----------------------------------------- |
+| Transcribe & paste (mouse)    | Middle-click (hold to record)             |
+| Transcribe & paste (keyboard) | Ctrl+D (hold to record)                   |
+| LLM prompt (mouse)            | Shift + Middle-click                      |
+| LLM prompt (keyboard)         | Ctrl+Shift+D                              |
+| Save clipboard to register    | Cmd+Option+[1-9]                          |
+| Clear all registers           | Cmd+Option+0                              |
+| Settings dialog               | Cmd+Option+Space                          |
 | Transcribe & paste (trackpad) | Force click or right-click (configurable) |
-| Cancel recording | ESC |
+| Cancel recording              | ESC                                       |
 
 ## Development Guidelines
 
@@ -114,15 +113,19 @@ Transcription and LLM processing are fully native Swift — no IPC, no temp file
 ## Known Gotchas
 
 ### macOS 14 Minimum
+
 WhisperKit requires macOS 14+ for Core ML Neural Engine support. All Apple Silicon Macs support macOS 14.
 
 ### CGEventTap Gotcha
+
 **CGEventTap callbacks MUST return fast** — macOS disables the tap if callback blocks too long. All WhisperKit transcription runs via `Task(priority:)` off the main thread.
 
 ### Accessibility Permission Annoyance
+
 **Ad-hoc code signing changes the signature every rebuild** — macOS invalidates Accessibility grant when signature changes. User must re-grant in System Settings.
 
 ### Model Download on First Launch
+
 First launch requires internet to download the WhisperKit Core ML model (~1.6GB for large-v3-turbo). After that, the app is fully offline.
 
 ## Project Structure

@@ -69,10 +69,10 @@ LLM is fully native Swift (MLX framework) — no Python, no IPC, no external pro
 
 `build_native_app.sh` produces `dist/TextEcho.app`:
 
-1. `swift build -c release --package-path mac_app` — compile Swift + WhisperKit
+1. `xcodebuild` — compile Swift + WhisperKit + MLX (Metal shaders require xcodebuild, not swift build)
 2. Create .app bundle structure (Contents/MacOS, Contents/Resources)
 3. Copy Swift binary to MacOS/TextEcho
-4. (Optional, `--with-llm`) Include MLX LLM module in build
+4. Copy resource bundles (`.metallib` for MLX GPU operations)
 5. Write Info.plist (LSMinimumSystemVersion: 14.0)
 6. Ad-hoc code sign
 
@@ -108,15 +108,15 @@ Tag push (v*) → GitHub Actions release.yml
 
 ## Key Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Transcription | Parakeet TDT (default) / WhisperKit (fallback) | Parakeet: 2.1% WER, 3-6x faster; both run on Neural Engine, no Python |
-| Model loading | Lazy (on first use) | Avoids startup delay; model cached after first download |
-| RAM management | Auto-unload after idle | Frees Neural Engine/RAM when not in use |
-| LLM | Native MLX (Swift) | On-device, 6 models, 4 modes, no Python/IPC overhead |
-| Input monitoring | CGEventTap | System-wide hotkeys without extra frameworks; 30s health check auto-recreates tap |
-| Trackpad input | IOKit HID (TrackpadMonitor) | Matches Magic Trackpad by vendor/product ID; force click or right-click gestures |
-| Text injection | Clipboard + Cmd+V | Most reliable cross-app method on macOS |
-| Concurrency | Swift actor for transcriber | No shared mutable state, no data races |
-| Thread safety | @MainActor on AppState | All UI state mutations on main thread; background work via Task.detached |
-| File safety | Atomic writes for config/history | Prevents corruption on crash; history has 0600 permissions |
+| Decision         | Choice                                         | Rationale                                                                         |
+| ---------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| Transcription    | Parakeet TDT (default) / WhisperKit (fallback) | Parakeet: 2.1% WER, 3-6x faster; both run on Neural Engine, no Python             |
+| Model loading    | Lazy (on first use)                            | Avoids startup delay; model cached after first download                           |
+| RAM management   | Auto-unload after idle                         | Frees Neural Engine/RAM when not in use                                           |
+| LLM              | Native MLX (Swift)                             | On-device, 6 models, 4 modes, no Python/IPC overhead                              |
+| Input monitoring | CGEventTap                                     | System-wide hotkeys without extra frameworks; 30s health check auto-recreates tap |
+| Trackpad input   | IOKit HID (TrackpadMonitor)                    | Matches Magic Trackpad by vendor/product ID; force click or right-click gestures  |
+| Text injection   | Clipboard + Cmd+V                              | Most reliable cross-app method on macOS                                           |
+| Concurrency      | Swift actor for transcriber                    | No shared mutable state, no data races                                            |
+| Thread safety    | @MainActor on AppState                         | All UI state mutations on main thread; background work via Task.detached          |
+| File safety      | Atomic writes for config/history               | Prevents corruption on crash; history has 0600 permissions                        |

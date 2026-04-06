@@ -7,49 +7,82 @@ TextEcho is a native macOS menu bar application written in Swift. Transcription 
 ## Component Diagram
 
 ```
-┌──────────────────────────────────────────────┐
-│              TextEcho.app (Swift)             │
-│                                              │
-│  AppMain ──► AppState (orchestrator)         │
-│                │                             │
-│  ┌─────────────┼──────────────────────┐      │
-│  │             │                      │      │
-│  InputMonitor  AudioRecorder  TextInjector   │
-│  (CGEventTap)  (AVAudioEngine) (Cmd+V)      │
-│                                              │
-│  TrackpadMonitor  StreamDeckPedalMonitor     │
-│  (IOKit HID)      (IOKit HID)               │
-│                │                             │
-│  Overlay ◄─────┤                             │
-│  (SwiftUI)     │                             │
-│                Transcriber (protocol)         │
-│                ├── ParakeetTranscriber        │
-│                │   (FluidAudio, default)      │
-│                ├── WhisperKitTranscriber      │
-│                │   (WhisperKit, fallback)     │
-│                │   ┌── Core ML ──┐           │
-│                │   │ Neural Engine│           │
-│                │   └─────────────┘           │
-│                │                             │
-│                MLXLLMProcessor                │
-│                │ (native MLX, optional)      │
-│                │ 6 models, 4 modes           │
-└────────────────┼─────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                TextEcho.app (Swift)               │
+│                                                  │
+│  AppMain ──► AppState (orchestrator)             │
+│                │                                 │
+│  ┌─────────────┼──────────────────────┐          │
+│  │             │                      │          │
+│  InputMonitor  AudioRecorder  TextInjector       │
+│  (CGEventTap)  (AVAudioEngine) (Cmd+V)          │
+│                │                                 │
+│  TrackpadMonitor  StreamDeckPedalMonitor         │
+│  (IOKit HID)      (IOKit HID)                   │
+│                │                                 │
+│  Overlay ◄─────┤                                 │
+│  (SwiftUI)     │                                 │
+│                │                                 │
+│   ┌────────────┴──────────────────────────┐      │
+│   │         Transcription path            │      │
+│   │                                       │      │
+│   │  streaming_enabled=false (default)    │      │
+│   │  ─────────────────────────────────    │      │
+│   │  Transcriber (protocol)               │      │
+│   │  ├── ParakeetTranscriber              │      │
+│   │  │   (FluidAudio TDT V3, default)     │      │
+│   │  └── WhisperKitTranscriber            │      │
+│   │      (WhisperKit, fallback)           │      │
+│   │                                       │      │
+│   │  streaming_enabled=true (opt-in)      │      │
+│   │  ─────────────────────────────────    │      │
+│   │  StreamingTranscriber (protocol)      │      │
+│   │  └── StreamingEouAsrManager           │      │
+│   │      (FluidAudio EOU 120M)            │      │
+│   │      160ms chunk callbacks            │      │
+│   │      → .streamingPartial overlay      │      │
+│   └───────────────────────────────────────┘      │
+│                │                                 │
+│                MLXLLMProcessor                   │
+│                (native MLX, optional)            │
+│                6 models, 4 modes                │
+└──────────────────────────────────────────────────┘
 ```
 
 ## Transcription Flow
 
-1. Swift `AudioRecorder` captures PCM Int16 audio via `AVAudioEngine`
-2. `AppState.transcribe()` calls the active transcriber (selected by `transcription_engine` config) via Swift async/await
+### Batch mode (default, `streaming_enabled = false`)
+
+1. `AudioRecorder` captures PCM Int16 audio via `AVAudioEngine`
+2. User releases activation key → full audio buffer passed to `AppState.transcribe()`
 3. **ParakeetTranscriber** (default) or **WhisperKitTranscriber** (fallback), both actors:
    - Converts Int16 PCM → Float32 array
-   - Checks RMS silence threshold (skips if too quiet)
    - Resamples to 16kHz if needed (linear interpolation)
-   - Runs inference on Apple Neural Engine via Core ML (FluidAudio SDK for Parakeet, WhisperKit for Whisper)
+   - Runs inference on Apple Neural Engine via Core ML (FluidAudio TDT V3 or WhisperKit)
    - Filters hallucinations (17 known phrases + repeated segment detection)
 4. Result returned to `AppState` → `TextInjector.inject()` pastes via clipboard + Cmd+V
 
-No temp files, no IPC, no Python process involved in transcription. Engine selection is persisted in `~/.textecho_config`.
+### Streaming mode (opt-in, `streaming_enabled = true`)
+
+1. `AudioRecorder` fires `onAudioBuffer` callback with 160ms PCM chunks during recording
+2. **`StreamingEouAsrManager`** feeds each chunk into the FluidAudio EOU 120M model
+3. Partial transcription results delivered via callback → `AppState` updates overlay to `.streamingPartial` (ghost text)
+4. User releases activation key → `StreamingEouAsrManager` finalises the transcript
+5. Final result → `TextInjector.inject()` pastes via clipboard + Cmd+V
+
+The two paths are mutually exclusive. When streaming is enabled, the TDT V3 model is not used. When streaming is disabled, EOU is not loaded.
+
+No temp files, no IPC, no Python process involved in either path. Mode is persisted via `streaming_enabled` in `~/.textecho_config`.
+
+### Overlay States
+
+| State               | Visual            | When                                        |
+| ------------------- | ----------------- | ------------------------------------------- |
+| `.recording`        | Pink + waveform   | Active recording (both modes)               |
+| `.streamingPartial` | Ghost text (dim)  | Streaming mode — partial result in progress |
+| `.processing`       | Purple + spinner  | Batch mode — inference running post-release |
+| `.result`           | Neon green + text | Transcription complete, pasting             |
+| `.error`            | Red               | Transcription or injection failure          |
 
 ## LLM Flow (Optional)
 
@@ -108,15 +141,18 @@ Tag push (v*) → GitHub Actions release.yml
 
 ## Key Design Decisions
 
-| Decision         | Choice                                         | Rationale                                                                         |
-| ---------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
-| Transcription    | Parakeet TDT (default) / WhisperKit (fallback) | Parakeet: 2.1% WER, 3-6x faster; both run on Neural Engine, no Python             |
-| Model loading    | Lazy (on first use)                            | Avoids startup delay; model cached after first download                           |
-| RAM management   | Auto-unload after idle                         | Frees Neural Engine/RAM when not in use                                           |
-| LLM              | Native MLX (Swift)                             | On-device, 6 models, 4 modes, no Python/IPC overhead                              |
-| Input monitoring | CGEventTap                                     | System-wide hotkeys without extra frameworks; 30s health check auto-recreates tap |
-| Trackpad input   | IOKit HID (TrackpadMonitor)                    | Matches Magic Trackpad by vendor/product ID; force click or right-click gestures  |
-| Text injection   | Clipboard + Cmd+V                              | Most reliable cross-app method on macOS                                           |
-| Concurrency      | Swift actor for transcriber                    | No shared mutable state, no data races                                            |
-| Thread safety    | @MainActor on AppState                         | All UI state mutations on main thread; background work via Task.detached          |
-| File safety      | Atomic writes for config/history               | Prevents corruption on crash; history has 0600 permissions                        |
+| Decision            | Choice                                         | Rationale                                                                         |
+| ------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| Batch transcription | Parakeet TDT (default) / WhisperKit (fallback) | Parakeet: 2.1% WER, 3-6x faster; both run on Neural Engine, no Python             |
+| Streaming model     | FluidAudio EOU 120M                            | Lightweight model tuned for end-of-utterance detection; low latency on-device     |
+| Streaming vs batch  | Either/or, not simultaneous                    | Avoids model contention on Neural Engine; user picks mode in Settings             |
+| Silence gate        | Removed from pre-model path                    | RMS filter was discarding quiet/whispered speech; model handles low-energy audio  |
+| Model loading       | Lazy (on first use)                            | Avoids startup delay; model cached after first download                           |
+| RAM management      | Auto-unload after idle                         | Frees Neural Engine/RAM when not in use                                           |
+| LLM                 | Native MLX (Swift)                             | On-device, 6 models, 4 modes, no Python/IPC overhead                              |
+| Input monitoring    | CGEventTap                                     | System-wide hotkeys without extra frameworks; 30s health check auto-recreates tap |
+| Trackpad input      | IOKit HID (TrackpadMonitor)                    | Matches Magic Trackpad by vendor/product ID; force click or right-click gestures  |
+| Text injection      | Clipboard + Cmd+V                              | Most reliable cross-app method on macOS                                           |
+| Concurrency         | Swift actor for transcriber                    | No shared mutable state, no data races                                            |
+| Thread safety       | @MainActor on AppState                         | All UI state mutations on main thread; background work via Task.detached          |
+| File safety         | Atomic writes for config/history               | Prevents corruption on crash; history has 0600 permissions                        |

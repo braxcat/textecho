@@ -4,6 +4,8 @@ Voice-to-text dictation for macOS with native on-device transcription on Apple S
 
 **Default engine: Parakeet TDT v3** (2.1% WER, 3-6x faster than Whisper) via FluidAudio SDK. WhisperKit available as fallback. Choose your engine in Setup Wizard or Settings.
 
+**Streaming (Beta):** Enable real-time partial transcription — text appears live as you speak, powered by FluidAudio's EOU 120M model. Enable in Settings → Streaming (Beta).
+
 **Author:** Braxton Bragg
 **Contributor:** [Lochie](https://github.com/MachinationsContinued) — UI rework, settings redesign, model management, activation modes, transcription history
 
@@ -25,9 +27,11 @@ Voice-to-text dictation for macOS with native on-device transcription on Apple S
 ## Features
 
 - **Dual transcription engines** — Parakeet TDT v3 (default, 2.1% WER) or WhisperKit, both via Apple Neural Engine (Core ML)
+- **Real-time streaming (Beta)** — opt-in live transcription via EOU 120M model; partial text appears in overlay as you speak
+- **Whispers heard** — pre-model silence gate removed; quiet and whispered speech now reaches the transcription model
 - **Push-to-talk** — middle-click, Ctrl+D, or Stream Deck Pedal
 - **Theme presets** — 5 built-in themes (TextEcho, Cyber, Classic, Ocean, Sunset) + custom color picker + saveable user presets
-- **Cyberpunk overlay** — pink→purple→neon green states, waveform visualization
+- **Cyberpunk overlay** — pink→purple→neon green states, waveform visualization, ghost text during streaming
 - **Stream Deck Pedal** — center=dictate, left=paste, right=enter (auto-detect, no Elgato software)
 - **Instant paste** — transcribed text goes straight to your cursor via clipboard
 - **Fully offline** — no cloud, no accounts, audio never leaves your Mac
@@ -52,6 +56,8 @@ Download the latest signed DMG from [GitHub Releases](https://github.com/braxcat
    - **Accessibility** — System Settings → Privacy & Security → Accessibility → enable TextEcho
    - **Microphone** — System Settings → Privacy & Security → Microphone → enable TextEcho
 5. **Setup Wizard** — on first launch, the wizard walks you through engine selection (Parakeet recommended), model download, activation method, theme, and silence timeout.
+6. **Optional — Streaming Beta** — go to Settings → Streaming (Beta), download the EOU 120M model, and enable the toggle to get live partial transcription while speaking.
+7. **Optional — Native LLM** — go to Settings → LLM, enable and choose from 6 on-device MLX models. Use Shift+Middle-click (or Ctrl+Shift+D) to transcribe and process with the LLM in one action.
 
 **Verify the signature:**
 
@@ -134,64 +140,81 @@ Transcriptions are saved automatically (enable in Settings). Access recent trans
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────┐
-                    │         TextEcho.app (Swift)         │
-                    │                                     │
-  Hotkey/Mouse/     │  AppMain → AppState (orchestrator)  │
-  Pedal input  ───► │      │         │          │         │
-                    │  InputMonitor  │    StreamDeck       │
-                    │  (CGEventTap)  │    PedalMonitor     │
-                    │                │    (IOKit HID)      │
-                    │         AudioRecorder                │
-                    │         (AVAudioEngine)              │
-                    │                │                     │
-                    │                ▼                     │
-                    │    Transcriber (protocol)            │
-                    │    ┌────────────────────────┐       │
-                    │    │ ParakeetTranscriber     │       │
-                    │    │ (FluidAudio/Core ML)    │       │
-                    │    │ Parakeet TDT v3 default │       │
-                    │    ├────────────────────────┤       │
-                    │    │ WhisperKitTranscriber   │       │
-                    │    │ (WhisperKit/Core ML)    │       │
-                    │    │ Whisper large-v3-turbo  │       │
-                    │    └────────────────────────┘       │
-                    │                │                     │
-                    │                ▼                     │
-                    │         TextInjector                 │
-  Text pasted  ◄─── │    (clipboard + Cmd+V paste)        │
-  into app          │                                     │
-                    │         Overlay (SwiftUI)            │
-                    │    ┌────────────────────────┐       │
-                    │    │ ● RECORDING   TEXTECHO │       │
-                    │    │ ▐█▌▐██▌▐█▌▐▌▐██▌▐███▌ │       │
-                    │    │   WHISPER // LG V3 TURBO│      │
-                    │    └────────────────────────┘       │
-                    │                                     │
-                    │    MLXLLMProcessor (native MLX LLM)   │
-                    │    (6 models, 4 modes, built-in)      │
-                    └─────────────────────────────────────┘
+                    ┌──────────────────────────────────────────┐
+                    │          TextEcho.app (Swift)             │
+                    │                                          │
+  Hotkey/Mouse/     │  AppMain → AppState (orchestrator)       │
+  Pedal input  ───► │      │         │          │              │
+                    │  InputMonitor  │    StreamDeck            │
+                    │  (CGEventTap)  │    PedalMonitor          │
+                    │                │    (IOKit HID)           │
+                    │         AudioRecorder                     │
+                    │         (AVAudioEngine)                   │
+                    │                │                          │
+                    │       ┌────────┴────────┐                 │
+                    │       │                 │                 │
+                    │  streaming=false   streaming=true         │
+                    │  (default)         (opt-in)               │
+                    │       │                 │                 │
+                    │  Transcriber      StreamingTranscriber    │
+                    │  ┌──────────────┐  ┌────────────────────┐ │
+                    │  │ Parakeet TDT │  │ StreamingEouAsrMgr │ │
+                    │  │ V3 (default) │  │ EOU 120M model     │ │
+                    │  ├──────────────┤  │ 160ms chunks       │ │
+                    │  │ WhisperKit   │  │ partial callbacks  │ │
+                    │  │ (fallback)   │  └────────────────────┘ │
+                    │  └──────────────┘        │                │
+                    │       │            .streamingPartial       │
+                    │       └────────┬────────┘                 │
+                    │                ▼                          │
+                    │         TextInjector                      │
+  Text pasted  ◄─── │    (clipboard + Cmd+V paste)             │
+  into app          │                                          │
+                    │         Overlay (SwiftUI)                 │
+                    │    ┌──────────────────────────┐          │
+                    │    │ ● RECORDING   TEXTECHO   │          │
+                    │    │ partial text... (ghost)  │  ← stream │
+                    │    │ ▐█▌▐██▌▐█▌▐▌▐██▌▐███▌   │          │
+                    │    └──────────────────────────┘          │
+                    │                                          │
+                    │    MLXLLMProcessor (native MLX LLM)       │
+                    │    (6 models, 4 modes, built-in)          │
+                    └──────────────────────────────────────────┘
 ```
 
 ### Data Flow
 
+**Batch mode (default):**
+
 1. **Input** — CGEventTap (keyboard/mouse) or IOKit HID (pedal) triggers recording
-2. **Capture** — AVAudioEngine records PCM Int16 audio via tap callback
-3. **Transcribe** — selected transcriber (Parakeet or WhisperKit) converts to Float32, resamples to 16kHz, runs inference on Neural Engine
-4. **Filter** — RMS silence check, hallucination filter (17 known phrases + repeat detection)
-5. **Paste** — TextInjector writes to clipboard, sends Cmd+V keystroke to active app
-6. **Display** — Cyberpunk overlay shows state: pink recording → purple processing → neon green result
+2. **Capture** — AVAudioEngine records PCM Int16 audio
+3. **Release** — full audio buffer sent to Parakeet TDT V3 (or WhisperKit fallback) on Neural Engine
+4. **Filter** — hallucination filter (17 known phrases + repeat detection)
+5. **Paste** — TextInjector writes to clipboard, sends Cmd+V to active app
+6. **Display** — pink recording → purple processing → neon green result
+
+**Streaming mode (opt-in, Settings → Streaming Beta):**
+
+1. **Input** — same activation methods
+2. **Capture** — `onAudioBuffer` fires every 160ms during recording
+3. **Partial** — EOU 120M model processes each chunk; ghost text appears live in overlay (`.streamingPartial` state)
+4. **Release** — EOU finalises transcript
+5. **Paste** — TextInjector pastes final result
+6. **Display** — pink recording with live ghost text → neon green result
 
 ### Key Design Decisions
 
-| Decision       | Choice                              | Why                                                              |
-| -------------- | ----------------------------------- | ---------------------------------------------------------------- |
-| Transcription  | Parakeet TDT (default) / WhisperKit | Neural Engine, no Python; Parakeet: 2.1% WER, 3-6x faster        |
-| Concurrency    | Swift actor                         | No shared mutable state, no data races                           |
-| Audio start    | DispatchQueue.main.async            | IOKit HID callbacks block AVAudioEngine if started synchronously |
-| Text injection | Clipboard + Cmd+V                   | Most reliable cross-app method on macOS                          |
-| LLM            | Native MLX (Swift)                  | On-device, 6 models, 4 modes, no Python needed                   |
-| Pedal          | IOKit HID (shared mode)             | No kernel extension, no Elgato software needed                   |
+| Decision         | Choice                              | Why                                                              |
+| ---------------- | ----------------------------------- | ---------------------------------------------------------------- |
+| Batch engine     | Parakeet TDT (default) / WhisperKit | Neural Engine, no Python; Parakeet: 2.1% WER, 3-6x faster        |
+| Streaming engine | FluidAudio EOU 120M                 | Lightweight, low-latency; tuned for end-of-utterance detection   |
+| Mode selection   | Either/or, not simultaneous         | Avoids Neural Engine contention; simpler model lifecycle         |
+| Silence gate     | Removed from pre-model path         | RMS filter discarded quiet speech; model handles it natively     |
+| Concurrency      | Swift actor                         | No shared mutable state, no data races                           |
+| Audio start      | DispatchQueue.main.async            | IOKit HID callbacks block AVAudioEngine if started synchronously |
+| Text injection   | Clipboard + Cmd+V                   | Most reliable cross-app method on macOS                          |
+| LLM              | Native MLX (Swift)                  | On-device, 6 models, 4 modes, no Python needed                   |
+| Pedal            | IOKit HID (shared mode)             | No kernel extension, no Elgato software needed                   |
 
 ## Transcription Engines & Models
 
@@ -238,6 +261,7 @@ Models download on first use and cache locally. Select engine and model in Setup
 | `llm_model`            | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID)                    |
 | `llm_mode`             | `clean`                                    | LLM mode: `clean`, `fix`, `expand`, `custom`           |
 | `llm_custom_prompt`    | `""`                                       | Custom system prompt for `custom` mode                 |
+| `streaming_enabled`    | `false`                                    | Enable streaming transcription (Beta, EOU 120M model)  |
 
 ## Stream Deck Pedal
 

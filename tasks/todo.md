@@ -2,7 +2,7 @@
 
 ## Open Issues
 
-- [ ] **#34** Remove pre-transcription RMS silence skip
+_(none)_
 
 ## Closed (already fixed)
 
@@ -12,6 +12,9 @@
 
 ## Completed
 
+- [x] v2.5.0 — Streaming transcription via EOU 120M model (PR #41, merged 2026-04-06)
+- [x] v2.5.0 — Silence skip removal from ParakeetTranscriber + WhisperKitTranscriber (PR #40, merged 2026-04-06)
+- [x] **#34** Remove pre-transcription RMS silence skip (resolved via PR #40)
 - [x] v2.4.0 — Native MLX LLM processing (PR #36, merged 2026-04-06)
 - [x] Signed release pipeline (v2.3.0)
 - [x] Parakeet TDT v3 default engine (v2.2.0)

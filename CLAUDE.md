@@ -51,13 +51,15 @@ On first launch, choose a transcription model (~1.6GB download for recommended m
 TextEcho.app (Swift)
 ├── AppMain → AppState (orchestrator)
 ├── InputMonitor (CGEventTap → hotkeys, 30s health check timer)
-├── AudioRecorder (AVAudioEngine → PCM)
-├── Transcriber protocol (swappable backend)
-│   ├── ParakeetTranscriber (FluidAudio SDK → Core ML, default)
+├── AudioRecorder (AVAudioEngine → PCM, onAudioBuffer for streaming chunks)
+├── Transcriber protocol (batch backend, swappable)
+│   ├── ParakeetTranscriber (FluidAudio TDT V3 → Core ML, default)
 │   └── WhisperKitTranscriber (WhisperKit → Core ML, fallback)
+├── StreamingTranscriber protocol (streaming backend, opt-in)
+│   └── StreamingEouAsrManager (FluidAudio EOU 120M, 160ms chunks, partial callbacks)
 ├── StreamDeckPedalMonitor (IOKit HID, exponential backoff retry)
 ├── TrackpadMonitor (IOKit HID, disabled by default)
-├── Overlay (SwiftUI floating window)
+├── Overlay (SwiftUI floating window, .streamingPartial state for ghost text)
 ├── TextInjector (clipboard + Cmd+V paste)
 ├── HelpWindow (embedded user docs)
 └── MLXLLMProcessor (native MLX LLM, 6 models, 4 modes)
@@ -82,6 +84,7 @@ Transcription and LLM processing are fully native Swift — no IPC, no temp file
 | `llm_model`            | `mlx-community/Llama-3.2-3B-Instruct-4bit` | MLX LLM model (HuggingFace repo ID)                    |
 | `llm_mode`             | `clean`                                    | LLM mode: `clean`, `fix`, `expand`, `custom`           |
 | `llm_custom_prompt`    | `""`                                       | Custom system prompt for `custom` mode                 |
+| `streaming_enabled`    | `false`                                    | Enable streaming transcription Beta (EOU 120M model)   |
 | `trackpad_enabled`     | `false`                                    | Enable Magic Trackpad as dictation trigger             |
 | `trackpad_gesture`     | `force_click`                              | Trackpad gesture: `force_click` or `right_click`       |
 | `trackpad_mode`        | `hold`                                     | Trackpad mode: `hold` or `toggle`                      |

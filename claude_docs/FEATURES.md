@@ -31,6 +31,15 @@
 - Default Whisper model: large-v3-turbo (~1.6GB download, ~1.6GB RAM, 7.8% WER)
 - Available models: large-v3 (highest quality), base.en (fastest, smallest)
 
+## Streaming Transcription (Beta)
+
+- **Opt-in real-time streaming** — partial text appears live in the overlay while speaking, before releasing the activation key
+- Powered by FluidAudio's EOU 120M model, processing audio in 160ms chunks during recording
+- **Either/or architecture:** streaming uses EOU 120M; standard batch uses Parakeet TDT V3 (~600M params). Not simultaneous.
+- New `.streamingPartial` overlay state shows ghost text during recording; result finalises on release
+- Enable via Settings → Streaming (Beta): download EOU model, then toggle on
+- Controlled by `streaming_enabled` config key (default `false`)
+
 ## Shared Transcription Features
 
 - Engine selection in Setup Wizard and Settings (`transcription_engine` config field)
@@ -39,7 +48,7 @@
 - Lazy model loading — first use downloads/loads, subsequent uses instant
 - Configurable idle timeout: Never / 1hr / 4hr / 8hr / Custom (default: Never — stays loaded)
 - Hallucination filtering (17 known phrases + repeated segment detection)
-- RMS silence detection (skip transcription if audio too quiet)
+- Pre-transcription RMS silence gate removed — quiet/whispered speech reaches the model (silence_threshold still used for auto-stop)
 - 30-second timeout on inference to prevent indefinite hangs
 
 ## Native LLM Processing (Optional)

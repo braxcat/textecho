@@ -20,11 +20,18 @@
 
 ## Completed (2026-03-29)
 
-- **Signed release pipeline:** Developer ID signing, notarization, GitHub Actions release workflow (v* tags), Sigstore attestation
+- **Signed release pipeline:** Developer ID signing, notarization, GitHub Actions release workflow (v\* tags), Sigstore attestation
 - **Parakeet TDT v3 (v2.2.0):** Default transcription engine. Evaluated all major local STT models (Whisper, Distil-Whisper, Moonshine, NVIDIA Canary/Parakeet, Apple SpeechAnalyzer, MLX Whisper). Parakeet won on accuracy (2.1% WER, 3.7x better than Whisper), speed (3-6x faster), and Swift support (FluidAudio SDK, Core ML). WhisperKit kept as fallback for 99 languages vs Parakeet's 25.
+
+## Completed (2026-04-06)
+
+- **Streaming transcription (PR #41):** Opt-in real-time transcription via FluidAudio EOU 120M model. 160ms chunks, ghost text in overlay during recording, finalises on release. Settings → Streaming (Beta). `streaming_enabled` config key.
+- **Silence skip removal (PR #40):** Removed pre-model RMS silence gate from ParakeetTranscriber and WhisperKitTranscriber. Quiet/whispered speech now reaches the transcription model.
 
 ## Next
 
+- [ ] **WhisperKit streaming** — extend streaming path to WhisperKit backend (currently EOU/Parakeet only)
+- [ ] **Streaming accuracy benchmarking** — compare EOU 120M streaming vs TDT V3 batch on real-world dictation
 - [ ] **Auto-update mechanism** — Sparkle or similar for in-app updates
 - [ ] **Apple SpeechAnalyzer** — Evaluate as third engine option when macOS 26 ships
 - [ ] **App Store distribution** — Sandbox entitlements, App Store Connect setup

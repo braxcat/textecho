@@ -15,7 +15,8 @@
 | 9     | COMPLETE | Signed Release Pipeline — Developer ID signing, notarization, GitHub Actions   |
 | 10    | COMPLETE | Parakeet TDT Integration — dual-engine transcription, Parakeet default         |
 | 10.5  | COMPLETE | Native MLX LLM — on-device language model, xcodebuild migration                |
-| 11    | PLANNED  | Live Transcription Preview — real-time partial text during recording           |
+| 11    | COMPLETE | Streaming Transcription — real-time partial text via EOU 120M model            |
+| 11.5  | COMPLETE | Silence Skip Removal — quiet/whispered speech no longer discarded pre-model    |
 | 12    | PLANNED  | Enhanced Transcription — multi-language, speaker diarization                   |
 
 ## Phase 10: Parakeet TDT Integration (v2.2.0)
@@ -65,8 +66,30 @@
 - In-app Help window with embedded user documentation
 - macOS 14+ minimum (required by WhisperKit)
 
-## Phase 11+: Future Work (TBD)
+## Phase 11: Streaming Transcription (v2.5.0)
 
+**Status:** COMPLETE
+
+- Opt-in real-time streaming via FluidAudio EOU 120M model
+- Audio processed in 160ms chunks during recording; partial text appears live in overlay
+- New `.streamingPartial` overlay state for ghost text display
+- `StreamingTranscriber` protocol + `StreamingEouAsrManager` for chunk delivery and partial callbacks
+- Either/or architecture: EOU streaming XOR TDT batch — not simultaneous
+- `streaming_enabled` config key (default `false`); enable via Settings → Streaming (Beta)
+- EOU model downloaded separately on first use (~120M params)
+
+## Phase 11.5: Silence Skip Removal (v2.5.0)
+
+**Status:** COMPLETE
+
+- Removed RMS silence gate from `ParakeetTranscriber` and `WhisperKitTranscriber`
+- Quiet/whispered speech now reaches the transcription model instead of being discarded
+- `silence_threshold` config key retained solely for auto-stop silence detection
+
+## Phase 12+: Future Work (TBD)
+
+- **WhisperKit streaming** — extend streaming path to WhisperKit backend (currently EOU/Parakeet only)
+- **Streaming accuracy benchmarking** — compare EOU streaming vs TDT batch on real-world dictation
 - **Apple SpeechAnalyzer (macOS 26)** — Apple's on-device speech framework, potential third engine option when macOS 26 ships
 - Auto-update mechanism (Sparkle or similar)
 - Multi-language transcription support

@@ -10,6 +10,7 @@ enum OverlayState: Equatable {
     case loadingModel
     case downloading
     case result(isLLM: Bool)
+    case llmReview
     case error
 
     static func == (lhs: OverlayState, rhs: OverlayState) -> Bool {
@@ -19,6 +20,8 @@ enum OverlayState: Equatable {
             return true
         case (.result(let a), .result(let b)):
             return a == b
+        case (.llmReview, .llmReview):
+            return true
         case (.streamingPartial(let a), .streamingPartial(let b)):
             return a == b
         default:
@@ -68,6 +71,12 @@ final class OverlayViewModel: ObservableObject {
         state = .downloading
         statusText = "DOWNLOADING MODEL"
         resultText = "This only happens once."
+    }
+
+    func showLLMReview(_ text: String) {
+        state = .llmReview
+        statusText = "LLM READY"
+        resultText = text
     }
 
     func showError(_ message: String) {
@@ -363,6 +372,13 @@ struct OverlayView: View {
                         .foregroundColor(resultTextColor)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    if case .llmReview = viewModel.state {
+                        Text("↵ paste  ·  ESC dismiss")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(theme.loading.opacity(0.5))
+                            .tracking(0.8)
+                            .padding(.top, 4)
+                    }
                 }
 
                 // Bottom bar: model badge
@@ -438,6 +454,12 @@ struct OverlayView: View {
                 .fill(Color(red: 0.3, green: 0.85, blue: 0.65))
                 .frame(width: 8, height: 8)
                 .shadow(color: Color(red: 0.3, green: 0.85, blue: 0.65).opacity(0.5), radius: 4)
+        case .llmReview:
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulseScale)
+                .shadow(color: Color.orange.opacity(0.6), radius: 4)
         case .error:
             Circle()
                 .fill(CyberColors.red)
@@ -502,6 +524,7 @@ struct OverlayView: View {
         case .loadingModel: return theme.loading
         case .downloading: return theme.loading
         case .result(let isLLM): return isLLM ? theme.processing : theme.success
+        case .llmReview: return theme.loading
         case .error: return theme.error
         case .hidden: return theme.success
         }
@@ -518,6 +541,7 @@ struct OverlayView: View {
     private var resultTextColor: Color {
         switch viewModel.state {
         case .result(let isLLM): return isLLM ? theme.processing.opacity(0.9) : theme.success.opacity(0.9)
+        case .llmReview: return theme.loading.opacity(0.9)
         case .streamingPartial: return theme.recording.opacity(0.7)
         case .error: return theme.error.opacity(0.9)
         default: return theme.success.opacity(0.9)
@@ -715,6 +739,17 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
             self.cancelAutoHide()
             self.viewModel.showDownloading()
             self.show()
+        }
+    }
+
+    func showLLMReview(_ text: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMReview(text)
+            if self.window?.isVisible != true {
+                self.show()
+            }
+            self.autoHide(after: 15.0)
         }
     }
 

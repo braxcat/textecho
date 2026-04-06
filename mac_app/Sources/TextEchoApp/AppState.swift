@@ -297,15 +297,21 @@ final class AppState {
         let streamingEnabled = config.model.streamingEnabled && !isLLMMode
         if streamingEnabled,
            let streamingTranscriber = transcriber as? (any StreamingTranscriber) {
-            Task(priority: .userInitiated) {
+            Task(priority: .userInitiated) { [weak self] in
                 guard await streamingTranscriber.isStreamingModelLoaded else {
-                    self.logger.info("Streaming model not loaded — falling back to batch transcription")
+                    await MainActor.run { self?.logger.info("Streaming model not loaded — falling back to batch transcription") }
                     return
                 }
+                guard await MainActor.run(body: { self?.isRecording == true }) else { return }
+
                 do {
                     try await streamingTranscriber.beginStreaming()
                 } catch {
-                    self.logger.error("beginStreaming failed: \(error.localizedDescription)")
+                    await MainActor.run { self?.logger.error("beginStreaming failed: \(error.localizedDescription)") }
+                    return
+                }
+                guard await MainActor.run(body: { self?.isRecording == true }) else {
+                    _ = try? await streamingTranscriber.endStreaming()
                     return
                 }
 
@@ -319,19 +325,16 @@ final class AppState {
                 }
 
                 // Forward raw AVAudioPCMBuffer taps to the streaming engine.
-                // The tap callback is on AVAudioEngine's internal thread — dispatch
-                // the actual appendAudio work into a Task to avoid blocking.
-                // Capture the transcriber directly — it's an actor (reference type)
-                // so no retain cycle risk, and protocols can't be 'weak'.
                 let st = streamingTranscriber
-                self.recorder.onAudioBuffer = { buffer in
-                    Task(priority: .userInitiated) {
-                        try? await st.appendAudioBuffer(buffer)
+                await MainActor.run { [weak self] in
+                    self?.recorder.onAudioBuffer = { buffer in
+                        Task(priority: .userInitiated) {
+                            try? await st.appendAudioBuffer(buffer)
+                        }
                     }
+                    self?.isStreaming = true
+                    self?.logger.info("Streaming transcription active")
                 }
-
-                self.isStreaming = true
-                self.logger.info("Streaming transcription active")
             }
         }
 
@@ -360,28 +363,26 @@ final class AppState {
         overlay.showProcessing(isLLM: isLLM)
 
         if wasStreaming, let st = streamingTranscriber {
-            // Streaming path: call endStreaming() to get the final transcript.
-            // The recorder still needs to be stopped to release the tap.
-            recorder.stop { _ in }
-            Task(priority: .userInitiated) {
-                do {
-                    let text = try await st.endStreaming()
-                    await MainActor.run {
-                        if text.isEmpty {
-                            self.logger.info("Streaming: no speech detected")
-                            self.overlay.hide()
-                        } else {
-                            TranscriptionHistory.shared.add(text: text)
-                            self.logger.info("Streaming transcription: \(text)")
-                            self.overlay.showResult(text, isLLM: false)
-                            self.textInjector.inject(text)
-                        }
-                    }
-                } catch {
-                    await MainActor.run {
-                        self.logger.error("Streaming endStreaming failed: \(error.localizedDescription)")
-                        self.overlay.showError(error.localizedDescription)
-                    }
+            // Dual-pass: streaming showed real-time partials from EOU 120M during
+            // recording. Now stop the recorder (capturing the full audio buffer),
+            // clean up the streaming engine, and re-run through the batch TDT V3
+            // model for an accurate final transcript.
+            recorder.stop { [weak self] audioData in
+                guard let self else { return }
+
+                // Clean up streaming engine in background (discard its result).
+                Task(priority: .utility) {
+                    _ = try? await st.endStreaming()
+                }
+
+                guard let audioData else {
+                    self.overlay.showError("No audio captured")
+                    return
+                }
+
+                // Run batch transcription for accurate final result.
+                Task(priority: .userInitiated) {
+                    await self.transcribe(audioData: audioData, isLLM: isLLM)
                 }
             }
         } else {
@@ -405,11 +406,19 @@ final class AppState {
         guard isRecording else { return }
         logger.info("Recording cancelled")
         isRecording = false
+        let wasStreaming = isStreaming
         isStreaming = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
         recorder.onAudioBuffer = nil
         recorder.stop { _ in }
         overlay.hide()
+
+        // Clean up streaming engine if it was active (discard partial result).
+        if wasStreaming, let st = transcriber as? (any StreamingTranscriber) {
+            Task(priority: .utility) {
+                _ = try? await st.endStreaming()
+            }
+        }
     }
 
     private func transcribe(audioData: Data, isLLM: Bool) async {
@@ -430,10 +439,8 @@ final class AppState {
                 } else if isLLM {
                     self.handleLLM(text: text)
                 } else {
-                    if !text.isEmpty && !isLLM {
-                        TranscriptionHistory.shared.add(text: text)
-                    }
-                    self.logger.info("Transcription: \(text)")
+                    TranscriptionHistory.shared.add(text: text)
+                    self.logger.info("Transcription complete (\(text.count) chars)")
                     self.overlay.showResult(text, isLLM: false)
                     self.textInjector.inject(text)
                 }

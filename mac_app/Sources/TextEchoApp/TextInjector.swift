@@ -67,6 +67,8 @@ final class TextInjector {
     private func saveRegisters() {
         if let data = try? JSONEncoder().encode(registers) {
             try? data.write(to: registersURL)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: registersURL.path)
         }
     }
 

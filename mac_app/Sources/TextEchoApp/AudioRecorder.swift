@@ -155,6 +155,10 @@ final class AudioRecorder {
     }
 
     private func startEngine(sampleRate: Double) {
+        // Guard against deferred-start / immediate-cancel race: if stop() was
+        // called before this dispatched block ran, don't start the engine.
+        guard isRecording else { return }
+
         // Ensure clean state
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()

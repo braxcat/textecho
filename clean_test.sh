@@ -28,6 +28,8 @@ FLUID_MODELS="$HOME/Library/Application Support/FluidAudio"
 WHISPER_MODELS="$HOME/Documents/huggingface/models/argmaxinc"
 MLX_CACHE="$HOME/.cache/huggingface/hub"
 
+MLX_MODELS="$MLX_CACHE/models--mlx-community--*"
+
 items=(
     "$CONFIG|Config file"
     "$HISTORY|History file"
@@ -47,10 +49,14 @@ for item in "${items[@]}"; do
         echo -e "  ${GREEN}✓${NC} $label — (not found, skipping)"
     fi
 done
-echo ""
-echo -e "${YELLOW}Note:${NC} MLX/LLM models are in $MLX_CACHE"
-echo "  These are shared with other apps. Remove manually if needed:"
-echo "  rm -rf $MLX_CACHE/models--mlx-community--*"
+
+# Check MLX models separately (glob pattern)
+mlx_count=$(ls -d $MLX_MODELS 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$mlx_count" -gt 0 ]]; then
+    echo -e "  ${RED}✗${NC} MLX/LLM models ($mlx_count cached) — $MLX_CACHE/models--mlx-community--*"
+else
+    echo -e "  ${GREEN}✓${NC} MLX/LLM models — (not found, skipping)"
+fi
 echo ""
 
 if [[ "$FORCE" != true ]]; then
@@ -74,6 +80,12 @@ for item in "${items[@]}"; do
         echo -e "  ${RED}Removed${NC} $label"
     fi
 done
+
+# Remove MLX models
+if ls -d $MLX_MODELS &>/dev/null; then
+    rm -rf $MLX_MODELS
+    echo -e "  ${RED}Removed${NC} MLX/LLM models"
+fi
 
 echo ""
 echo -e "${GREEN}Clean! Ready for fresh test:${NC}"

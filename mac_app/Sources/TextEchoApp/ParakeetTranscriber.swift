@@ -50,10 +50,6 @@ actor ParakeetTranscriber: Transcriber {
         }
     }
 
-    // MARK: - Hallucination filter (shared with WhisperKit — Parakeet is less prone but still possible)
-
-    private static let silenceRMSThreshold: Float = 0.005
-
     // MARK: - Init
 
     init(modelVersion: AsrModelVersion = .v3, idleTimeout: Int = 0) {
@@ -86,13 +82,6 @@ actor ParakeetTranscriber: Transcriber {
 
         // Convert Int16 PCM → Float array
         let floatSamples = convertPCMToFloat(audioData)
-
-        // RMS silence check
-        let rms = computeRMS(floatSamples)
-        if rms < Self.silenceRMSThreshold {
-            AppLogger.shared.info("Skipping transcription: audio too quiet (RMS=\(String(format: "%.6f", rms)))")
-            return ""
-        }
 
         // Resample to 16kHz if needed (FluidAudio expects 16kHz)
         let samples: [Float]
@@ -209,15 +198,6 @@ actor ParakeetTranscriber: Transcriber {
             }
             return floats
         }
-    }
-
-    private func computeRMS(_ samples: [Float]) -> Float {
-        guard !samples.isEmpty else { return 0.0 }
-        var sumSquares: Float = 0.0
-        for s in samples {
-            sumSquares += s * s
-        }
-        return sqrtf(sumSquares / Float(samples.count))
     }
 
     private func resample(_ samples: [Float], from sourceSR: Double, to targetSR: Double) -> [Float] {

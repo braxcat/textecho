@@ -302,7 +302,7 @@ final class AppState {
 
         // Activate streaming if enabled, Parakeet is the engine, and the streaming model is loaded.
         // LLM mode always uses the batch path (streaming result would be discarded anyway).
-        let streamingEnabled = config.model.streamingEnabled && !isLLMMode
+        let streamingEnabled = config.model.streamingEnabled
         if streamingEnabled,
            let streamingTranscriber = transcriber as? (any StreamingTranscriber) {
             Task(priority: .userInitiated) {
@@ -485,7 +485,8 @@ final class AppState {
         let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
         let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
 
-        overlay.showProcessing(isLLM: true)
+        // Show the user's spoken prompt while LLM processes
+        overlay.showLLMProcessing(prompt: text)
 
         Task(priority: .userInitiated) {
             do {
@@ -497,13 +498,14 @@ final class AppState {
                     return
                 }
 
+                let prompt = text
                 let response = try await llmProcessor.generate(
                     prompt: text,
                     systemPrompt: systemPrompt,
                     context: context
                 ) { [weak self] partialText in
                     Task { @MainActor in
-                        self?.overlay.showResult(partialText, isLLM: true)
+                        self?.overlay.showLLMPartial(prompt: prompt, partial: partialText)
                     }
                 }
 
@@ -516,7 +518,7 @@ final class AppState {
                         self.pendingLLMResponse = response
                         self.isAwaitingLLMConfirm = true
                         self.inputMonitor.shouldConsumeReturn = true
-                        self.overlay.showLLMReview(response)
+                        self.overlay.showLLMReview(prompt: prompt, response: response)
                     }
                 }
             } catch {

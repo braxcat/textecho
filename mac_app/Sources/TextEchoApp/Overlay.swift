@@ -34,6 +34,7 @@ final class OverlayViewModel: ObservableObject {
     @Published var state: OverlayState = .hidden
     @Published var statusText: String = ""
     @Published var resultText: String = ""
+    @Published var promptText: String = ""
     @Published var waveform: [Double] = Array(repeating: 0.0, count: 40)
     @Published var appearTrigger: Bool = false
 
@@ -41,6 +42,7 @@ final class OverlayViewModel: ObservableObject {
         state = .recording
         statusText = isLLM ? "RECORDING // LLM" : "RECORDING"
         resultText = ""
+        promptText = ""
         waveform = Array(repeating: 0.0, count: 40)
     }
 
@@ -73,10 +75,25 @@ final class OverlayViewModel: ObservableObject {
         resultText = "This only happens once."
     }
 
-    func showLLMReview(_ text: String) {
+    func showLLMProcessing(prompt: String) {
+        state = .processing
+        statusText = "PROCESSING // LLM"
+        promptText = prompt
+        resultText = ""
+    }
+
+    func showLLMPartial(prompt: String, partial: String) {
+        state = .result(isLLM: true)
+        statusText = "LLM RESPONSE"
+        promptText = prompt
+        resultText = partial
+    }
+
+    func showLLMReview(prompt: String, response: String) {
         state = .llmReview
         statusText = "LLM READY"
-        resultText = text
+        promptText = prompt
+        resultText = response
     }
 
     func showError(_ message: String) {
@@ -365,7 +382,17 @@ struct OverlayView: View {
                         .transition(.opacity)
                 }
 
-                // Result text — expands to show full transcription
+                // Prompt text — shows the user's spoken question during LLM flow
+                if !viewModel.promptText.isEmpty {
+                    Text(viewModel.promptText)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundColor(theme.recording.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 4)
+                        .transition(.opacity)
+                }
+
+                // Result text — expands to show full transcription or LLM response
                 if !viewModel.resultText.isEmpty {
                     Text(viewModel.resultText)
                         .font(.system(size: 12, weight: .regular, design: .monospaced))
@@ -742,10 +769,30 @@ final class OverlayWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    func showLLMReview(_ text: String) {
+    func showLLMProcessing(prompt: String) {
         DispatchQueue.main.async {
             self.cancelAutoHide()
-            self.viewModel.showLLMReview(text)
+            self.viewModel.showLLMProcessing(prompt: prompt)
+            if self.window?.isVisible != true {
+                self.show()
+            }
+        }
+    }
+
+    func showLLMPartial(prompt: String, partial: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMPartial(prompt: prompt, partial: partial)
+            if self.window?.isVisible != true {
+                self.show()
+            }
+        }
+    }
+
+    func showLLMReview(prompt: String, response: String) {
+        DispatchQueue.main.async {
+            self.cancelAutoHide()
+            self.viewModel.showLLMReview(prompt: prompt, response: response)
             if self.window?.isVisible != true {
                 self.show()
             }

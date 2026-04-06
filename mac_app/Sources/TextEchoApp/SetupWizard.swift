@@ -1,5 +1,8 @@
 import AppKit
 import AVFoundation
+import FluidAudio
+import MLXLLM
+import MLXLMCommon
 import SwiftUI
 
 final class SetupWizardController {
@@ -92,6 +95,10 @@ struct SetupWizardView: View {
     @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
     @State private var streamingEnabled: Bool = AppConfig.shared.model.streamingEnabled
+    @State private var streamingDownloading: Bool = false
+    @State private var streamingDownloadProgress: Double = 0.0
+    @State private var streamingDownloadError: String? = nil
+    @State private var streamingModelReady: Bool = ParakeetTranscriber.isStreamingModelCached()
     @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
     @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
     @State private var llmModelID: String = AppConfig.shared.model.llmModelID
@@ -705,10 +712,51 @@ struct SetupWizardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Live preview (Streaming Beta)", isOn: $streamingEnabled)
                     .font(.system(size: 14, weight: .semibold))
-                Text("Shows your words on screen as you speak. Uses a smaller, faster model for the live preview, then the full model for the final transcription. Requires a separate ~200MB model download.")
+                Text("Shows your words on screen as you speak. Uses a smaller, faster model for the live preview, then the full model for the final transcription.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if streamingEnabled {
+                    if streamingModelReady {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Streaming model ready")
+                                .font(.system(size: 12))
+                                .foregroundColor(.green)
+                        }
+                    } else if streamingDownloading {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(streamingDownloadProgress < 1.0 ? "Downloading streaming model..." : "Loading model...")
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                if streamingDownloadProgress < 1.0 {
+                                    Text("\(Int(streamingDownloadProgress * 100))%")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            ProgressView(value: min(streamingDownloadProgress, 1.0))
+                                .progressViewStyle(.linear)
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        Button("Download Streaming Model (~200 MB)") {
+                            startStreamingModelDownload()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+
+                    if let error = streamingDownloadError {
+                        Text(error)
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
 
             Divider()
@@ -1326,29 +1374,72 @@ struct SetupWizardView: View {
         }
     }
 
+    private func startStreamingModelDownload() {
+        streamingDownloading = true
+        streamingDownloadProgress = 0.0
+        streamingDownloadError = nil
+        Task.detached(priority: .userInitiated) {
+            do {
+                let engine = StreamingEouAsrManager()
+                try await engine.loadModelsFromHuggingFace(
+                    progressHandler: { progress in
+                        Task { @MainActor in
+                            self.streamingDownloadProgress = progress.fractionCompleted
+                        }
+                    }
+                )
+                await MainActor.run {
+                    self.streamingDownloading = false
+                    self.streamingModelReady = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.streamingDownloading = false
+                    self.streamingDownloadError = "Download failed: \(error.localizedDescription)"
+                }
+                AppLogger.shared.error("Streaming model download failed: \(error)")
+            }
+        }
+    }
+
     private func startLLMDownload() {
         llmDownloading = true
         llmDownloadProgress = 0.0
         llmDownloadError = nil
         let modelID = llmModelID
+        let modelSize = recommendedLLMModels.first(where: { $0.id == modelID })?.sizeGB ?? 0
+        AppLogger.shared.info("Wizard LLM download starting: \(modelID) (~\(String(format: "%.1f", modelSize))GB)")
+
         Task.detached(priority: .userInitiated) {
+            var lastReportedPct = -1
             do {
-                let processor = MLXLLMProcessor()
-                try await processor.loadModel(id: modelID) { progress in
+                let config = ModelConfiguration(id: modelID)
+                let container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: config
+                ) { progress in
+                    let pct = Int(progress.fractionCompleted * 100)
+                    guard pct != lastReportedPct else { return }
+                    lastReportedPct = pct
+                    if pct % 10 == 0 {
+                        AppLogger.shared.info("Wizard LLM download: \(pct)%")
+                    }
                     Task { @MainActor in
-                        self.llmDownloadProgress = progress
+                        self.llmDownloadProgress = progress.fractionCompleted
                     }
                 }
+                _ = container
+                AppLogger.shared.info("Wizard LLM model ready: \(modelID)")
                 await MainActor.run {
                     self.llmDownloading = false
                     self.llmModelReady = true
                 }
             } catch {
+                AppLogger.shared.error("Wizard LLM download failed at \(lastReportedPct)%: \(error)")
+                AppLogger.shared.error("Wizard LLM error detail: \(String(describing: error))")
                 await MainActor.run {
                     self.llmDownloading = false
-                    self.llmDownloadError = "Download failed: \(error.localizedDescription)"
+                    self.llmDownloadError = "Failed at \(lastReportedPct)%: \(error.localizedDescription)"
                 }
-                AppLogger.shared.error("LLM model download failed: \(error)")
             }
         }
     }

@@ -646,10 +646,8 @@ final class AppState {
     private func cancelLLMGeneration() {
         llmGenerationTask?.cancel()
         llmGenerationTask = nil
-        // Tell the MLX processor to stop generating tokens
-        Task {
-            await llmProcessor.cancelGeneration()
-        }
+        // Tell the MLX processor to stop generating tokens (nonisolated, immediate)
+        llmProcessor.cancelGeneration()
         overlay.hide()
         logger.info("LLM generation: cancelled by user")
     }

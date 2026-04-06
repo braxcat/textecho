@@ -440,9 +440,10 @@ struct SetupWizardView: View {
                     ProgressView()
                         .progressViewStyle(.linear)
                         .padding(.top, 2)
-                    Text("Downloading…")
+                    Text("Downloading & loading model — this may take a few minutes…")
                         .font(.system(size: 9))
                         .foregroundColor(.orange)
+                    DownloadElapsedTimer()
                 }
             }
 
@@ -1208,28 +1209,29 @@ struct SetupWizardView: View {
     private func startModelDownload(modelName: String) {
         downloadingModel = modelName
         downloadError = nil
-        Task {
+        // Use .detached to avoid inheriting @MainActor — heavy download + model
+        // init must not block the UI thread.
+        Task.detached(priority: .userInitiated) {
             do {
-                if selectedEngine == "parakeet" {
+                if await self.selectedEngine == "parakeet" {
                     // FluidAudio handles download + load in one call
-                    var transcriber: ParakeetTranscriber? = ParakeetTranscriber(
+                    let transcriber = ParakeetTranscriber(
                         modelName: modelName,
                         idleTimeout: AppConfig.shared.model.whisperIdleTimeout
                     )
-                    try await transcriber?.preload()
-                    transcriber = nil
+                    try await transcriber.preload()
                     await MainActor.run {
                         self.downloadingModel = nil
                         self.downloadedModels.insert(modelName)
                         self.modelReadyByModel[modelName] = true
+                        self.selectedModel = modelName
                     }
                 } else {
-                    var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
+                    let transcriber = WhisperKitTranscriber(
                         modelName: modelName,
                         idleTimeout: AppConfig.shared.model.whisperIdleTimeout
                     )
-                    try await transcriber?.preload()
-                    transcriber = nil
+                    try await transcriber.preload()
                     await MainActor.run {
                         self.downloadingModel = nil
                         self.validatingModels.insert(modelName)
@@ -1240,6 +1242,7 @@ struct SetupWizardView: View {
                         if isValid {
                             self.downloadedModels.insert(modelName)
                             self.modelReadyByModel[modelName] = true
+                            self.selectedModel = modelName
                         } else {
                             self.downloadError = "Download completed but validation failed. Try again."
                         }
@@ -1264,5 +1267,27 @@ struct SetupWizardView: View {
     private static func defaultActivationSelection(_ keyPath: KeyPath<AppConfig.Model, Bool>) -> Bool {
         let model = AppConfig.shared.model
         return model.firstLaunch ? false : model[keyPath: keyPath]
+    }
+}
+
+/// Shows elapsed time during model download so the user knows it's not frozen.
+private struct DownloadElapsedTimer: View {
+    @State private var elapsed: Int = 0
+    @State private var timer: Timer?
+
+    var body: some View {
+        Text("Elapsed: \(elapsed / 60)m \(elapsed % 60)s")
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundColor(.secondary)
+            .onAppear {
+                elapsed = 0
+                timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                    elapsed += 1
+                }
+            }
+            .onDisappear {
+                timer?.invalidate()
+                timer = nil
+            }
     }
 }

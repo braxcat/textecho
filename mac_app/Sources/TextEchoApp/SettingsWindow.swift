@@ -1408,8 +1408,8 @@ struct SettingsView: View {
                 let engine = StreamingEouAsrManager()
                 try await engine.loadModelsFromHuggingFace(
                     progressHandler: { progress in
-                        Task { @MainActor [weak self] in
-                            self?.streamingModelDownloadProgress = progress.fractionCompleted
+                        Task { @MainActor in
+                            self.streamingModelDownloadProgress = progress.fractionCompleted
                         }
                     }
                 )

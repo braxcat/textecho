@@ -15,5 +15,5 @@ jobs:
             -configuration Release \
             -destination 'platform=macOS' \
             -derivedDataPath .build/xcode \
-            -skipPackagePluginValidation \
-            -quiet
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipPackagePluginValidation

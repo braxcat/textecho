@@ -431,7 +431,7 @@ struct OverlayView: View {
         .scaleEffect(popScale)
         .opacity(popOpacity)
         .onAppear { startAnimations() }
-        .onChange(of: viewModel.appearTrigger) { _ in
+        .onChange(of: viewModel.appearTrigger) {
             popScale = 0.92
             popOpacity = 0.0
             withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {

@@ -60,7 +60,7 @@ struct LogsView: View {
                 load()
             }
         }
-        .onChange(of: selectedLog) { _ in
+        .onChange(of: selectedLog) {
             load()
         }
         .onDisappear {

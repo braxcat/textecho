@@ -385,8 +385,8 @@ struct OverlayView: View {
                 // Prompt text — shows the user's spoken question during LLM flow
                 if !viewModel.promptText.isEmpty {
                     Text(viewModel.promptText)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundColor(theme.recording.opacity(0.6))
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(theme.recording.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 4)
                         .transition(.opacity)
@@ -550,8 +550,8 @@ struct OverlayView: View {
         case .processing: return theme.processing
         case .loadingModel: return theme.loading
         case .downloading: return theme.loading
-        case .result(let isLLM): return isLLM ? theme.processing : theme.success
-        case .llmReview: return theme.loading
+        case .result(let isLLM): return isLLM ? theme.success : theme.success
+        case .llmReview: return theme.success
         case .error: return theme.error
         case .hidden: return theme.success
         }
@@ -567,8 +567,8 @@ struct OverlayView: View {
 
     private var resultTextColor: Color {
         switch viewModel.state {
-        case .result(let isLLM): return isLLM ? theme.processing.opacity(0.9) : theme.success.opacity(0.9)
-        case .llmReview: return theme.loading.opacity(0.9)
+        case .result(let isLLM): return isLLM ? theme.success.opacity(0.9) : theme.success.opacity(0.9)
+        case .llmReview: return theme.success.opacity(0.9)
         case .streamingPartial: return theme.recording.opacity(0.7)
         case .error: return theme.error.opacity(0.9)
         default: return theme.success.opacity(0.9)

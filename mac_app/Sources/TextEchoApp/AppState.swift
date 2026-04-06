@@ -321,8 +321,10 @@ final class AppState {
                 // Forward raw AVAudioPCMBuffer taps to the streaming engine.
                 // The tap callback is on AVAudioEngine's internal thread — dispatch
                 // the actual appendAudio work into a Task to avoid blocking.
-                self.recorder.onAudioBuffer = { [weak streamingTranscriber] buffer in
-                    guard let st = streamingTranscriber else { return }
+                // Capture the transcriber directly — it's an actor (reference type)
+                // so no retain cycle risk, and protocols can't be 'weak'.
+                let st = streamingTranscriber
+                self.recorder.onAudioBuffer = { buffer in
                     Task(priority: .userInitiated) {
                         try? await st.appendAudioBuffer(buffer)
                     }

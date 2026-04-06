@@ -5,7 +5,7 @@ import FluidAudio
 /// Parakeet TDT transcriber — runs NVIDIA Parakeet on Apple Neural Engine via Core ML.
 /// Uses FluidAudio SDK for model management and inference.
 /// Actor isolation prevents data races on the AsrManager instance and model state.
-actor ParakeetTranscriber: Transcriber, StreamingTranscriber {
+actor ParakeetTranscriber: Transcriber, @preconcurrency StreamingTranscriber {
 
     // MARK: - Configuration
 
@@ -184,7 +184,7 @@ actor ParakeetTranscriber: Transcriber, StreamingTranscriber {
 
     func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
         guard let engine = streamingEngine else { return }
-        try engine.appendAudio(buffer)
+        try await engine.appendAudio(buffer)
         try await engine.processBufferedAudio()
     }
 

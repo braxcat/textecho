@@ -1409,8 +1409,7 @@ struct SettingsView: View {
                 try await engine.loadModelsFromHuggingFace(
                     progressHandler: { progress in
                         Task { @MainActor [weak self] in
-                            // progress is 0.0–1.0
-                            self?.streamingModelDownloadProgress = progress
+                            self?.streamingModelDownloadProgress = progress.fractionCompleted
                         }
                     }
                 )

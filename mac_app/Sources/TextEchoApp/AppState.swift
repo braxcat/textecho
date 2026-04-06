@@ -26,6 +26,8 @@ final class AppState {
     private var isModelLoading = false
     private var hasPreloaded = false
     private var isStreaming = false
+    private var isAwaitingLLMConfirm = false
+    private var pendingLLMResponse = ""
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
@@ -264,7 +266,13 @@ final class AppState {
         case .settingsHotkey:
             openSettings()
         case .escape:
-            cancelRecording()
+            if isAwaitingLLMConfirm {
+                discardLLMPaste()
+            } else {
+                cancelRecording()
+            }
+        case .confirmPaste:
+            confirmLLMPaste()
         case .register(let index):
             textInjector.captureClipboardToRegister(index)
         case .clearRegisters:
@@ -412,6 +420,26 @@ final class AppState {
         overlay.hide()
     }
 
+    private func confirmLLMPaste() {
+        guard isAwaitingLLMConfirm else { return }
+        isAwaitingLLMConfirm = false
+        inputMonitor.shouldConsumeReturn = false
+        let response = pendingLLMResponse
+        pendingLLMResponse = ""
+        textInjector.inject(response)
+        overlay.hide()
+        logger.info("LLM review: confirmed paste (\(response.count) chars)")
+    }
+
+    private func discardLLMPaste() {
+        guard isAwaitingLLMConfirm else { return }
+        isAwaitingLLMConfirm = false
+        inputMonitor.shouldConsumeReturn = false
+        pendingLLMResponse = ""
+        overlay.hide()
+        logger.info("LLM review: discarded")
+    }
+
     private func transcribe(audioData: Data, isLLM: Bool) async {
         guard let transcriber else {
             await MainActor.run { self.overlay.showError("No transcription model loaded") }
@@ -480,11 +508,16 @@ final class AppState {
                 }
 
                 await MainActor.run {
-                    self.overlay.showResult(response, isLLM: true)
-                    if self.config.model.llmAutoPaste {
-                        self.textInjector.inject(response)
-                    }
                     TranscriptionHistory.shared.add(text: response, isLLM: true)
+                    if self.config.model.llmAutoPaste {
+                        self.overlay.showResult(response, isLLM: true)
+                        self.textInjector.inject(response)
+                    } else {
+                        self.pendingLLMResponse = response
+                        self.isAwaitingLLMConfirm = true
+                        self.inputMonitor.shouldConsumeReturn = true
+                        self.overlay.showLLMReview(response)
+                    }
                 }
             } catch {
                 await MainActor.run {

@@ -10,9 +10,12 @@ enum InputEvent {
     case dictateLLMUp
     case settingsHotkey
     case escape
+    case confirmPaste
     case register(Int)
     case clearRegisters
     case capsLockChanged(Bool)
+    case selectLLMMode(LLMMode)
+    case cycleLLMMode
 }
 
 final class InputMonitor {
@@ -46,6 +49,8 @@ final class InputMonitor {
     }
     private var dictationActive = false
     private var dictationLLM = false
+    var shouldConsumeReturn = false
+    var shouldCaptureLLMMode = false
 
     func start() {
         guard eventTap == nil else { return }
@@ -157,6 +162,20 @@ final class InputMonitor {
         case .rightMouseDown, .rightMouseUp:
             handleMouseButton(button: 1, down: type == .rightMouseDown)
         case .keyDown:
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keyCode == 36 && shouldConsumeReturn {
+                _onEvent?(.confirmPaste)
+                return nil // consume the Return keypress
+            }
+            // Number keys 1-4 during LLM recording to switch mode
+            if shouldCaptureLLMMode {
+                // macOS keycodes: 18=1, 19=2, 20=3
+                let modes: [Int64: LLMMode] = [18: .grammar, 19: .rephrase, 20: .answer]
+                if let mode = modes[keyCode] {
+                    _onEvent?(.selectLLMMode(mode))
+                    return nil // consume the keypress
+                }
+            }
             handleKeyDown(event: event)
         case .keyUp:
             handleKeyUp(event: event)
@@ -218,6 +237,15 @@ final class InputMonitor {
 
         let cmd = flags.contains(.maskCommand)
         let opt = flags.contains(.maskAlternate)
+
+        let ctrl = flags.contains(.maskControl)
+        let shift = flags.contains(.maskShift)
+
+        // Ctrl+Shift+M — cycle LLM mode
+        if ctrl && shift && keyCode == 46 {
+            _onEvent?(.cycleLLMMode)
+            return
+        }
 
         if cmd && opt {
             switch keyCode {

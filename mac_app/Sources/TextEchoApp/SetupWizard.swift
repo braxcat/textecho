@@ -1,5 +1,8 @@
 import AppKit
 import AVFoundation
+import FluidAudio
+import MLXLLM
+import MLXLMCommon
 import SwiftUI
 
 final class SetupWizardController {
@@ -91,6 +94,18 @@ struct SetupWizardView: View {
     @State private var pedalPosition: Int = AppConfig.shared.model.pedalPosition
     @State private var silenceEnabled: Bool = AppConfig.shared.model.silenceEnabled
     @State private var silenceDuration: Double = AppConfig.shared.model.silenceDuration
+    @State private var streamingEnabled: Bool = AppConfig.shared.model.streamingEnabled
+    @State private var streamingDownloading: Bool = false
+    @State private var streamingDownloadProgress: Double = 0.0
+    @State private var streamingDownloadError: String? = nil
+    @State private var streamingModelReady: Bool = ParakeetTranscriber.isStreamingModelCached()
+    @State private var llmEnabled: Bool = AppConfig.shared.model.llmEnabled
+    @State private var llmAutoPaste: Bool = AppConfig.shared.model.llmAutoPaste
+    @State private var llmModelID: String = AppConfig.shared.model.llmModelID
+    @State private var llmDownloading: Bool = false
+    @State private var llmDownloadProgress: Double = 0.0
+    @State private var llmDownloadError: String? = nil
+    @State private var llmModelReady: Bool = false
     @State private var idleTimeoutPreset: Int = {
         let t = AppConfig.shared.model.whisperIdleTimeout
         return [0, 3600, 14400, 28800].contains(t) ? t : -1
@@ -434,12 +449,17 @@ struct SetupWizardView: View {
                     Text(detail).font(.system(size: 10)).foregroundColor(.secondary)
                 }
                 if isDownloading {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .padding(.top, 2)
-                    Text("Downloading…")
-                        .font(.system(size: 9))
-                        .foregroundColor(.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Downloading & loading model…")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            DownloadElapsedTimer()
+                        }
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
 
@@ -690,6 +710,66 @@ struct SetupWizardView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
+                Toggle("Live preview (Streaming Beta)", isOn: $streamingEnabled)
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Shows your words on screen as you speak. Uses a smaller, faster model for the live preview, then the full model for the final transcription.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if streamingEnabled {
+                    if streamingModelReady {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Streaming model ready")
+                                .font(.system(size: 12))
+                                .foregroundColor(.green)
+                        }
+                    } else if streamingDownloading {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(streamingDownloadProgress < 1.0 ? "Downloading streaming model..." : "Loading model...")
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                if streamingDownloadProgress < 1.0 {
+                                    Text("\(Int(streamingDownloadProgress * 100))%")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            ProgressView(value: min(streamingDownloadProgress, 1.0))
+                                .progressViewStyle(.linear)
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        Button("Download Streaming Model (~200 MB)") {
+                            startStreamingModelDownload()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+
+                    if let error = streamingDownloadError {
+                        HStack {
+                            Text(error)
+                                .font(.system(size: 10))
+                                .foregroundColor(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            Button("Retry") {
+                                startStreamingModelDownload()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Model Memory")
                     .font(.system(size: 14, weight: .semibold))
                 Text("The transcription model uses ~1.6GB RAM when loaded. Choose how long it stays in memory after your last transcription.")
@@ -722,6 +802,125 @@ struct SetupWizardView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            // MARK: - LLM (AI Assistant)
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Enable AI Assistant (LLM)", isOn: $llmEnabled)
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Ask questions by voice — hold Shift while recording. TextEcho transcribes your question, sends it to a local AI model, and shows the answer. Everything runs on your Mac, nothing leaves your device.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if llmEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("AI Model")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Choose a model based on your Mac's RAM. Larger models give better answers but need more memory.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Picker("Model", selection: $llmModelID) {
+                            ForEach(recommendedLLMModels, id: \.id) { model in
+                                VStack(alignment: .leading) {
+                                    Text(model.displayName)
+                                }
+                                .tag(model.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .disabled(llmDownloading)
+                        .onChange(of: llmModelID) {
+                            // Reset state when user picks a different model
+                            llmModelReady = false
+                            llmDownloadError = nil
+                        }
+
+                        if let selected = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
+                            Text("\(selected.description) — ~\(String(format: "%.1f", selected.sizeGB)) GB download")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        // Download / status
+                        if llmModelReady {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("Model ready")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.green)
+                            }
+                        } else if llmDownloading {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(llmDownloadProgress < 1.0 ? "Downloading..." : "Compiling model...")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Spacer()
+                                    if llmDownloadProgress < 1.0 {
+                                        Text("\(Int(llmDownloadProgress * 100))%")
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                ProgressView(value: min(llmDownloadProgress, 1.0))
+                                    .progressViewStyle(.linear)
+                            }
+                            .padding(.vertical, 4)
+                        } else {
+                            Button("Download & Load Model") {
+                                startLLMDownload()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+
+                        if let error = llmDownloadError {
+                            HStack {
+                                Text(error)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.red)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                                Button("Retry") {
+                                    startLLMDownload()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+
+                        Divider().padding(.vertical, 4)
+
+                        Text("After Recording")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("When the AI responds, should TextEcho paste it automatically or let you review it first?")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Picker("", selection: $llmAutoPaste) {
+                            Text("Auto-paste — response is pasted immediately").tag(true)
+                            Text("Review first — press Enter to paste, Esc to dismiss").tag(false)
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+
+                        Text(llmAutoPaste
+                            ? "The AI response will be pasted into the active app right away."
+                            : "You'll see the response in a floating overlay. Press Enter to paste it, or Esc to dismiss.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.leading, 4)
+                }
             }
         }
     }
@@ -799,6 +998,19 @@ struct SetupWizardView: View {
                 }
             }
 
+            if llmEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AI Assistant")
+                        .font(.system(size: 12, weight: .semibold))
+                    if let model = recommendedLLMModels.first(where: { $0.id == llmModelID }) {
+                        hotkeyRow(keys: "Shift + trigger", action: "Ask AI (\(model.displayName))")
+                    } else {
+                        hotkeyRow(keys: "Shift + trigger", action: "Ask AI")
+                    }
+                    hotkeyRow(keys: llmAutoPaste ? "Auto-paste" : "Enter / Esc", action: llmAutoPaste ? "Response pasted automatically" : "Review before pasting")
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Other")
                     .font(.system(size: 12, weight: .semibold))
@@ -860,9 +1072,11 @@ struct SetupWizardView: View {
                     currentStep = .ready
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(llmDownloading || streamingDownloading)
 
             case .ready:
                 Button("Start Using TextEcho") {
+                    AppLogger.shared.info("Wizard: 'Start Using TextEcho' tapped, calling onClose")
                     AppConfig.shared.update { model in
                         model.firstLaunch = false
                         model.transcriptionEngine = selectedEngine
@@ -873,6 +1087,7 @@ struct SetupWizardView: View {
                         }
                     }
                     onClose()
+                    AppLogger.shared.info("Wizard: onClose returned")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -929,7 +1144,12 @@ struct SetupWizardView: View {
         AppConfig.shared.update { model in
             model.silenceEnabled = silenceEnabled
             model.silenceDuration = silenceDuration
+            model.streamingEnabled = streamingEnabled
             model.whisperIdleTimeout = timeout
+            model.llmEnabled = llmEnabled
+            model.llmAutoPaste = llmAutoPaste
+            model.llmModelID = llmModelID
+            model.llmEngine = llmEnabled ? "mlx" : "none"
         }
     }
 
@@ -1124,28 +1344,29 @@ struct SetupWizardView: View {
     private func startModelDownload(modelName: String) {
         downloadingModel = modelName
         downloadError = nil
-        Task {
+        // Use .detached to avoid inheriting @MainActor — heavy download + model
+        // init must not block the UI thread.
+        Task.detached(priority: .userInitiated) {
             do {
-                if selectedEngine == "parakeet" {
+                if await self.selectedEngine == "parakeet" {
                     // FluidAudio handles download + load in one call
-                    var transcriber: ParakeetTranscriber? = ParakeetTranscriber(
+                    let transcriber = ParakeetTranscriber(
                         modelName: modelName,
                         idleTimeout: AppConfig.shared.model.whisperIdleTimeout
                     )
-                    try await transcriber?.preload()
-                    transcriber = nil
+                    try await transcriber.preload()
                     await MainActor.run {
                         self.downloadingModel = nil
                         self.downloadedModels.insert(modelName)
                         self.modelReadyByModel[modelName] = true
+                        self.selectedModel = modelName
                     }
                 } else {
-                    var transcriber: WhisperKitTranscriber? = WhisperKitTranscriber(
+                    let transcriber = WhisperKitTranscriber(
                         modelName: modelName,
                         idleTimeout: AppConfig.shared.model.whisperIdleTimeout
                     )
-                    try await transcriber?.preload()
-                    transcriber = nil
+                    try await transcriber.preload()
                     await MainActor.run {
                         self.downloadingModel = nil
                         self.validatingModels.insert(modelName)
@@ -1156,6 +1377,7 @@ struct SetupWizardView: View {
                         if isValid {
                             self.downloadedModels.insert(modelName)
                             self.modelReadyByModel[modelName] = true
+                            self.selectedModel = modelName
                         } else {
                             self.downloadError = "Download completed but validation failed. Try again."
                         }
@@ -1171,6 +1393,76 @@ struct SetupWizardView: View {
         }
     }
 
+    private func startStreamingModelDownload() {
+        streamingDownloading = true
+        streamingDownloadProgress = 0.0
+        streamingDownloadError = nil
+        Task.detached(priority: .userInitiated) {
+            do {
+                let engine = StreamingEouAsrManager()
+                try await engine.loadModelsFromHuggingFace(
+                    progressHandler: { progress in
+                        Task { @MainActor in
+                            self.streamingDownloadProgress = progress.fractionCompleted
+                        }
+                    }
+                )
+                await MainActor.run {
+                    self.streamingDownloading = false
+                    self.streamingModelReady = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.streamingDownloading = false
+                    self.streamingDownloadError = "Download failed: \(error.localizedDescription)"
+                }
+                AppLogger.shared.error("Streaming model download failed: \(error)")
+            }
+        }
+    }
+
+    private func startLLMDownload() {
+        llmDownloading = true
+        llmDownloadProgress = 0.0
+        llmDownloadError = nil
+        let modelID = llmModelID
+        let modelSize = recommendedLLMModels.first(where: { $0.id == modelID })?.sizeGB ?? 0
+        AppLogger.shared.info("Wizard LLM download starting: \(modelID) (~\(String(format: "%.1f", modelSize))GB)")
+
+        Task.detached(priority: .userInitiated) {
+            var lastReportedPct = -1
+            do {
+                let config = ModelConfiguration(id: modelID)
+                let container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: config
+                ) { progress in
+                    let pct = Int(progress.fractionCompleted * 100)
+                    guard pct != lastReportedPct else { return }
+                    lastReportedPct = pct
+                    if pct % 10 == 0 {
+                        AppLogger.shared.info("Wizard LLM download: \(pct)%")
+                    }
+                    Task { @MainActor in
+                        self.llmDownloadProgress = progress.fractionCompleted
+                    }
+                }
+                _ = container
+                AppLogger.shared.info("Wizard LLM model ready: \(modelID)")
+                await MainActor.run {
+                    self.llmDownloading = false
+                    self.llmModelReady = true
+                }
+            } catch {
+                AppLogger.shared.error("Wizard LLM download failed at \(lastReportedPct)%: \(error)")
+                AppLogger.shared.error("Wizard LLM error detail: \(String(describing: error))")
+                await MainActor.run {
+                    self.llmDownloading = false
+                    self.llmDownloadError = "Failed at \(lastReportedPct)%: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     private func openSystemPreferences(anchor: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
@@ -1180,5 +1472,27 @@ struct SetupWizardView: View {
     private static func defaultActivationSelection(_ keyPath: KeyPath<AppConfig.Model, Bool>) -> Bool {
         let model = AppConfig.shared.model
         return model.firstLaunch ? false : model[keyPath: keyPath]
+    }
+}
+
+/// Shows elapsed time during model download so the user knows it's not frozen.
+private struct DownloadElapsedTimer: View {
+    @State private var elapsed: Int = 0
+    @State private var timer: Timer?
+
+    var body: some View {
+        Text("Elapsed: \(elapsed / 60)m \(elapsed % 60)s")
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundColor(.secondary)
+            .onAppear {
+                elapsed = 0
+                timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                    elapsed += 1
+                }
+            }
+            .onDisappear {
+                timer?.invalidate()
+                timer = nil
+            }
     }
 }

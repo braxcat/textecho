@@ -26,6 +26,12 @@ final class AppState {
     private var isModelLoading = false
     private var hasPreloaded = false
     private var isStreaming = false
+    private var isAwaitingLLMConfirm = false
+    private var isAwaitingLLMSend = false   // waiting for Enter to send to LLM
+    private var pendingLLMText = ""         // transcribed text waiting to be sent
+    private var pendingLLMResponse = ""
+    private var llmModeOverride: LLMMode?
+    private var llmGenerationTask: Task<Void, Never>?
 
     nonisolated static let modelLoadingNotification = Notification.Name("TextEchoModelLoading")
     nonisolated static let recordingStateNotification = Notification.Name("TextEchoRecordingState")
@@ -127,22 +133,40 @@ final class AppState {
     }
 
     /// Called by the setup wizard's onClose callback on first launch.
-    /// Creates the transcriber for the engine/model the user chose, then preloads it.
+    /// Mirrors the start() initialization path so behavior is identical to a restart.
     func finalizeFirstLaunchSetup() {
-        guard transcriber == nil else { return }
-        let model = config.model
+        let model = AppConfig.shared.model
         let engine = model.transcriptionEngine
-        if engine == "whisper" {
-            transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
-            loadedEngine = "whisper"
-            loadedModel = model.whisperModel
-        } else {
-            transcriber = ParakeetTranscriber(modelName: model.parakeetModel, idleTimeout: model.whisperIdleTimeout)
-            loadedEngine = "parakeet"
-            loadedModel = model.parakeetModel
-        }
-        if isCurrentModelCached() {
+        logger.info("finalizeFirstLaunchSetup: transcriber=\(transcriber == nil ? "nil" : "set"), engine=\(engine), streaming=\(model.streamingEnabled), llmAvailable=\(model.llmAvailable), llmEngine=\(model.llmEngine)")
+
+        // Create transcriber if not already set.
+        // The .textechoConfigChanged notification may have already triggered
+        // reloadTranscriber() before this method runs — that's fine, skip creation.
+        if transcriber == nil {
+            if engine == "whisper" {
+                transcriber = WhisperKitTranscriber(modelName: model.whisperModel, idleTimeout: model.whisperIdleTimeout)
+                loadedEngine = "whisper"
+                loadedModel = model.whisperModel
+            } else {
+                transcriber = ParakeetTranscriber(modelName: model.parakeetModel, idleTimeout: model.whisperIdleTimeout)
+                loadedEngine = "parakeet"
+                loadedModel = model.parakeetModel
+            }
             startPreloadTask()
+        }
+
+        // Load LLM — reloadTranscriber() doesn't handle this
+        if model.llmAvailable {
+            logger.info("finalizeFirstLaunchSetup: loading LLM model \(model.llmModelID)")
+            loadLLMModel()
+        }
+
+        // Start pedal/trackpad monitors if configured during wizard
+        if model.pedalEnabled && model.pedalInputMode == 0 {
+            startPedalMonitor()
+        }
+        if model.trackpadEnabled {
+            startTrackpadMonitor()
         }
     }
 
@@ -264,7 +288,27 @@ final class AppState {
         case .settingsHotkey:
             openSettings()
         case .escape:
-            cancelRecording()
+            if isAwaitingLLMConfirm {
+                discardLLMPaste()
+            } else if isAwaitingLLMSend {
+                cancelLLMSend()
+            } else if llmGenerationTask != nil {
+                cancelLLMGeneration()
+            } else {
+                cancelRecording()
+            }
+        case .confirmPaste:
+            if isAwaitingLLMSend {
+                sendToLLM()
+            } else {
+                confirmLLMPaste()
+            }
+        case .selectLLMMode(let mode):
+            guard isRecording && isLLMMode else { return }
+            llmModeOverride = mode
+            overlay.showRecordingLLMMode(mode: mode.displayName, hint: "Ctrl+Shift+M to cycle")
+        case .cycleLLMMode:
+            cycleLLMMode()
         case .register(let index):
             textInjector.captureClipboardToRegister(index)
         case .clearRegisters:
@@ -282,9 +326,16 @@ final class AppState {
         isStreaming = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: true)
         isLLMMode = (mode == .llm)
+        llmModeOverride = nil
+        inputMonitor.shouldCaptureLLMMode = isLLMMode
 
         logger.info("Recording started (mode: \(mode.rawValue))")
-        overlay.showRecording(isLLM: isLLMMode)
+        if isLLMMode {
+            let currentMode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+            overlay.showRecordingLLMMode(mode: currentMode.displayName, hint: "Ctrl+Shift+M to cycle")
+        } else {
+            overlay.showRecording(isLLM: false)
+        }
 
         // Set configured input device (empty = system default)
         let deviceUID = config.model.inputDeviceUID
@@ -294,18 +345,24 @@ final class AppState {
 
         // Activate streaming if enabled, Parakeet is the engine, and the streaming model is loaded.
         // LLM mode always uses the batch path (streaming result would be discarded anyway).
-        let streamingEnabled = config.model.streamingEnabled && !isLLMMode
+        let streamingEnabled = config.model.streamingEnabled
         if streamingEnabled,
            let streamingTranscriber = transcriber as? (any StreamingTranscriber) {
-            Task(priority: .userInitiated) {
+            Task(priority: .userInitiated) { [weak self] in
                 guard await streamingTranscriber.isStreamingModelLoaded else {
-                    self.logger.info("Streaming model not loaded — falling back to batch transcription")
+                    await MainActor.run { self?.logger.info("Streaming model not loaded — falling back to batch transcription") }
                     return
                 }
+                guard await MainActor.run(body: { self?.isRecording == true }) else { return }
+
                 do {
                     try await streamingTranscriber.beginStreaming()
                 } catch {
-                    self.logger.error("beginStreaming failed: \(error.localizedDescription)")
+                    await MainActor.run { self?.logger.error("beginStreaming failed: \(error.localizedDescription)") }
+                    return
+                }
+                guard await MainActor.run(body: { self?.isRecording == true }) else {
+                    _ = try? await streamingTranscriber.endStreaming()
                     return
                 }
 
@@ -319,19 +376,16 @@ final class AppState {
                 }
 
                 // Forward raw AVAudioPCMBuffer taps to the streaming engine.
-                // The tap callback is on AVAudioEngine's internal thread — dispatch
-                // the actual appendAudio work into a Task to avoid blocking.
-                // Capture the transcriber directly — it's an actor (reference type)
-                // so no retain cycle risk, and protocols can't be 'weak'.
                 let st = streamingTranscriber
-                self.recorder.onAudioBuffer = { buffer in
-                    Task(priority: .userInitiated) {
-                        try? await st.appendAudioBuffer(buffer)
+                await MainActor.run { [weak self] in
+                    self?.recorder.onAudioBuffer = { buffer in
+                        Task(priority: .userInitiated) {
+                            try? await st.appendAudioBuffer(buffer)
+                        }
                     }
+                    self?.isStreaming = true
+                    self?.logger.info("Streaming transcription active")
                 }
-
-                self.isStreaming = true
-                self.logger.info("Streaming transcription active")
             }
         }
 
@@ -345,6 +399,7 @@ final class AppState {
     func endRecording(userInitiated: Bool) {
         guard isRecording else { return }
         isRecording = false
+        inputMonitor.shouldCaptureLLMMode = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
 
         logger.info("Recording stopped (userInitiated=\(userInitiated))")
@@ -360,28 +415,26 @@ final class AppState {
         overlay.showProcessing(isLLM: isLLM)
 
         if wasStreaming, let st = streamingTranscriber {
-            // Streaming path: call endStreaming() to get the final transcript.
-            // The recorder still needs to be stopped to release the tap.
-            recorder.stop { _ in }
-            Task(priority: .userInitiated) {
-                do {
-                    let text = try await st.endStreaming()
-                    await MainActor.run {
-                        if text.isEmpty {
-                            self.logger.info("Streaming: no speech detected")
-                            self.overlay.hide()
-                        } else {
-                            TranscriptionHistory.shared.add(text: text)
-                            self.logger.info("Streaming transcription: \(text)")
-                            self.overlay.showResult(text, isLLM: false)
-                            self.textInjector.inject(text)
-                        }
-                    }
-                } catch {
-                    await MainActor.run {
-                        self.logger.error("Streaming endStreaming failed: \(error.localizedDescription)")
-                        self.overlay.showError(error.localizedDescription)
-                    }
+            // Dual-pass: streaming showed real-time partials from EOU 120M during
+            // recording. Now stop the recorder (capturing the full audio buffer),
+            // clean up the streaming engine, and re-run through the batch TDT V3
+            // model for an accurate final transcript.
+            recorder.stop { [weak self] audioData in
+                guard let self else { return }
+
+                // Clean up streaming engine in background (discard its result).
+                Task(priority: .utility) {
+                    _ = try? await st.endStreaming()
+                }
+
+                guard let audioData else {
+                    self.overlay.showError("No audio captured")
+                    return
+                }
+
+                // Run batch transcription for accurate final result.
+                Task(priority: .userInitiated) {
+                    await self.transcribe(audioData: audioData, isLLM: isLLM)
                 }
             }
         } else {
@@ -405,11 +458,75 @@ final class AppState {
         guard isRecording else { return }
         logger.info("Recording cancelled")
         isRecording = false
+        let wasStreaming = isStreaming
         isStreaming = false
         NotificationCenter.default.post(name: Self.recordingStateNotification, object: false)
         recorder.onAudioBuffer = nil
         recorder.stop { _ in }
         overlay.hide()
+
+        // Clean up streaming engine if it was active (discard partial result).
+        if wasStreaming, let st = transcriber as? (any StreamingTranscriber) {
+            Task(priority: .utility) {
+                _ = try? await st.endStreaming()
+            }
+        }
+    }
+
+    private func confirmLLMPaste() {
+        guard isAwaitingLLMConfirm else { return }
+        isAwaitingLLMConfirm = false
+        inputMonitor.shouldConsumeReturn = false
+        let response = pendingLLMResponse
+        pendingLLMResponse = ""
+        textInjector.inject(response)
+        overlay.hide()
+        logger.info("LLM review: confirmed paste (\(response.count) chars)")
+    }
+
+    func handleCycleLLMMode() { cycleLLMMode() }
+
+    private func cycleLLMMode() {
+        let allModes: [LLMMode] = [.grammar, .rephrase, .answer]
+        let current = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        let currentIndex = allModes.firstIndex(of: current) ?? 0
+        let nextMode = allModes[(currentIndex + 1) % allModes.count]
+
+        config.update { model in
+            model.llmMode = nextMode.rawValue
+        }
+
+        if isAwaitingLLMSend {
+            // Update the pre-send review overlay with the new mode
+            overlay.showLLMPreSend(prompt: pendingLLMText, mode: nextMode.displayName)
+        } else if isRecording && isLLMMode {
+            overlay.showRecordingLLMMode(mode: nextMode.displayName, hint: "Ctrl+Shift+M to cycle")
+        } else {
+            // Flash overlay briefly showing the new mode
+            overlay.showLLMModeCycled(mode: nextMode.displayName)
+        }
+        logger.info("LLM mode cycled to: \(nextMode.displayName)")
+
+        // Update menu bar title
+        updateMenuBarLLMMode(nextMode)
+    }
+
+    /// Updates the menu bar status item to show current LLM mode.
+    /// Called on cycle and on launch.
+    private func updateMenuBarLLMMode(_ mode: LLMMode) {
+        NotificationCenter.default.post(
+            name: Notification.Name("TextEchoLLMModeChanged"),
+            object: mode.displayName
+        )
+    }
+
+    private func discardLLMPaste() {
+        guard isAwaitingLLMConfirm else { return }
+        isAwaitingLLMConfirm = false
+        inputMonitor.shouldConsumeReturn = false
+        pendingLLMResponse = ""
+        overlay.hide()
+        logger.info("LLM review: discarded")
     }
 
     private func transcribe(audioData: Data, isLLM: Bool) async {
@@ -430,10 +547,8 @@ final class AppState {
                 } else if isLLM {
                     self.handleLLM(text: text)
                 } else {
-                    if !text.isEmpty && !isLLM {
-                        TranscriptionHistory.shared.add(text: text)
-                    }
-                    self.logger.info("Transcription: \(text)")
+                    TranscriptionHistory.shared.add(text: text)
+                    self.logger.info("Transcription complete (\(text.count) chars)")
                     self.overlay.showResult(text, isLLM: false)
                     self.textInjector.inject(text)
                 }
@@ -453,46 +568,92 @@ final class AppState {
             return
         }
 
-        let context = textInjector.registersContext()
+        // Show pre-send review: user sees their text + current mode, can cycle
+        // mode with Ctrl+Shift+M, press Enter to send, or ESC to cancel.
+        pendingLLMText = text
+        isAwaitingLLMSend = true
+        inputMonitor.shouldConsumeReturn = true
         let mode = LLMMode(rawValue: config.model.llmMode) ?? .grammar
+        overlay.showLLMPreSend(prompt: text, mode: mode.displayName)
+        logger.info("LLM pre-send: awaiting Enter to process with mode=\(mode.displayName)")
+    }
+
+    private func sendToLLM() {
+        guard isAwaitingLLMSend else { return }
+        isAwaitingLLMSend = false
+        let text = pendingLLMText
+        pendingLLMText = ""
+
+        let context = textInjector.registersContext()
+        let mode = llmModeOverride ?? LLMMode(rawValue: config.model.llmMode) ?? .grammar
         let systemPrompt = mode == .custom ? config.model.llmCustomPrompt : mode.systemPrompt
+        llmModeOverride = nil
 
-        overlay.showProcessing(isLLM: true)
+        overlay.showLLMProcessing(prompt: text)
+        inputMonitor.shouldConsumeReturn = false
 
-        Task(priority: .userInitiated) {
+        llmGenerationTask = Task(priority: .userInitiated) {
             do {
                 if !(await llmProcessor.isLoaded) {
                     await MainActor.run {
                         self.overlay.showError("LLM model not loaded.\nOpen Settings (Cmd+Opt+Space) →\nLLM Processing → Download & Load Model")
                     }
-                    AppLogger.shared.info("LLM trigger ignored — model not loaded. User needs to download via Settings.")
+                    AppLogger.shared.info("LLM trigger ignored — model not loaded.")
                     return
                 }
 
+                let prompt = text
                 let response = try await llmProcessor.generate(
                     prompt: text,
                     systemPrompt: systemPrompt,
                     context: context
                 ) { [weak self] partialText in
                     Task { @MainActor in
-                        self?.overlay.showResult(partialText, isLLM: true)
+                        self?.overlay.showLLMPartial(prompt: prompt, partial: partialText)
                     }
                 }
 
+                guard !Task.isCancelled else { return }
+
                 await MainActor.run {
-                    self.overlay.showResult(response, isLLM: true)
-                    if self.config.model.llmAutoPaste {
-                        self.textInjector.inject(response)
-                    }
+                    self.llmGenerationTask = nil
                     TranscriptionHistory.shared.add(text: response, isLLM: true)
+                    if self.config.model.llmAutoPaste {
+                        self.overlay.showResult(response, isLLM: true)
+                        self.textInjector.inject(response)
+                    } else {
+                        self.pendingLLMResponse = response
+                        self.isAwaitingLLMConfirm = true
+                        self.inputMonitor.shouldConsumeReturn = true
+                        self.overlay.showLLMReview(prompt: prompt, response: response)
+                    }
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    self.llmGenerationTask = nil
                     self.overlay.showError(error.localizedDescription)
                 }
                 AppLogger.shared.error("LLM processing failed: \(error)")
             }
         }
+    }
+
+    private func cancelLLMSend() {
+        isAwaitingLLMSend = false
+        pendingLLMText = ""
+        inputMonitor.shouldConsumeReturn = false
+        overlay.hide()
+        logger.info("LLM pre-send: cancelled")
+    }
+
+    private func cancelLLMGeneration() {
+        llmGenerationTask?.cancel()
+        llmGenerationTask = nil
+        // Tell the MLX processor to stop generating tokens (nonisolated, immediate)
+        llmProcessor.cancelGeneration()
+        overlay.hide()
+        logger.info("LLM generation: cancelled by user")
     }
 
     func openSettings(onOpenSetupWizard: @escaping () -> Void = {}) {

@@ -30,6 +30,9 @@ struct TextEchoApp: App {
             Divider()
 
             if AppConfig.shared.model.llmAvailable {
+                Button("LLM Mode: \(appModel.llmModeDisplay)") {
+                    appModel.cycleLLMMode()
+                }
                 Button("Start LLM Recording") {
                     appModel.startRecording(llm: true)
                 }
@@ -187,6 +190,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var llmModeDisplay: String {
+        let mode = LLMMode(rawValue: AppConfig.shared.model.llmMode) ?? .grammar
+        return mode.displayName
+    }
+
+    func cycleLLMMode() {
+        appState.handleCycleLLMMode()
+    }
+
     private func refreshHistory() {
         guard AppConfig.shared.model.historyEnabled && AppConfig.shared.model.menuBarHistoryEnabled else {
             recentHistory = []
@@ -250,6 +262,7 @@ final class AppModel: ObservableObject {
 
         if setupWizard == nil {
             setupWizard = SetupWizardController(onClose: { [weak self] in
+                AppLogger.shared.info("Setup wizard onClose fired (self=\(self == nil ? "nil" : "alive"))")
                 self?.setupWizard?.close()
                 self?.setupWizard = nil
                 self?.appState.finalizeFirstLaunchSetup()

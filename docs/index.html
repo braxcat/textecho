@@ -457,6 +457,51 @@
         color: #4dd9a6;
         font-style: italic;
       }
+      .demo-overlay[data-state="llm-review"] .demo-status {
+        color: var(--cyan);
+      }
+      .demo-overlay[data-state="llm-review"] .demo-waveform {
+        display: none;
+      }
+      .demo-overlay[data-state="llm-review"] .demo-text {
+        color: var(--text);
+      }
+      .demo-overlay[data-state="llm-thinking"] .demo-status {
+        color: var(--purple);
+      }
+      .demo-overlay[data-state="llm-thinking"] .demo-waveform .bar {
+        animation: pulse-purple 0.8s ease-in-out infinite;
+        background: linear-gradient(
+          180deg,
+          var(--purple),
+          rgba(138, 92, 246, 0.3)
+        ) !important;
+      }
+      .demo-overlay[data-state="llm-thinking"] .demo-text {
+        color: var(--purple);
+        font-style: italic;
+      }
+      .demo-overlay[data-state="llm-ready"] .demo-status {
+        color: var(--mint);
+      }
+      .demo-overlay[data-state="llm-ready"] .demo-waveform {
+        display: none;
+      }
+      .demo-overlay[data-state="llm-ready"] .demo-text {
+        color: var(--mint);
+      }
+      .demo-tab[data-state^="llm-"].active,
+      .demo-tab[data-state^="llm-"]:hover {
+        background: rgba(138, 92, 246, 0.1);
+        border-color: var(--purple);
+        color: var(--purple);
+      }
+      .demo-tab[data-state="llm-ready"].active,
+      .demo-tab[data-state="llm-ready"]:hover {
+        background: rgba(77, 217, 166, 0.1);
+        border-color: var(--mint);
+        color: var(--mint);
+      }
       @keyframes pulse-purple {
         0%,
         100% {
@@ -868,7 +913,7 @@
       </p>
       <div class="version-badge">
         <div class="v-dot"></div>
-        v2.5.0 &nbsp;&middot;&nbsp; Last updated April 6, 2026
+        v2.6.0 &nbsp;&middot;&nbsp; Last updated April 6, 2026
       </div>
       <div class="waveform" id="heroWaveform"></div>
       <div class="btn-row">
@@ -986,11 +1031,11 @@
             <div class="card-icon">💬</div>
             <h3>On-Device LLM</h3>
             <p>
-              6 curated MLX models: Llama&nbsp;3.2&nbsp;3B, Qwen&nbsp;3&nbsp;8B,
-              Llama&nbsp;3.3&nbsp;8B, Qwen&nbsp;2.5&nbsp;Coder&nbsp;7B,
-              Qwen&nbsp;3&nbsp;4B. 4 modes: Grammar Fix, Rephrase, Answer,
-              Custom. Shift+Middle-click or Ctrl+Shift+D. Runs on GPU — separate
-              from transcription on Neural Engine.
+              6 curated MLX models with 3 modes: Grammar Fix, Rephrase, Answer.
+              Shift+Middle-click to transcribe+process. Pre-send review lets you
+              check text and cycle modes (Ctrl+Shift+M) before sending. ESC
+              cancels generation mid-stream. Runs on GPU — separate from
+              transcription on Neural Engine.
             </p>
           </div>
           <div class="card">
@@ -998,7 +1043,8 @@
             <h3>Setup Wizard</h3>
             <p>
               Guided first-launch wizard handles permissions, model download,
-              and pedal setup in under two minutes.
+              activation method, streaming, and LLM setup. Everything works
+              immediately — no restart needed.
             </p>
           </div>
         </div>
@@ -1490,6 +1536,11 @@
             <button class="demo-tab" data-state="streaming">Streaming</button>
             <button class="demo-tab" data-state="processing">Processing</button>
             <button class="demo-tab" data-state="done">Done</button>
+            <button class="demo-tab" data-state="llm-review">LLM Review</button>
+            <button class="demo-tab" data-state="llm-thinking">
+              LLM Thinking
+            </button>
+            <button class="demo-tab" data-state="llm-ready">LLM Ready</button>
           </div>
           <div class="demo-overlay" data-state="recording">
             <div class="demo-status">Recording</div>
@@ -1700,7 +1751,7 @@
       <div class="container">
         <p>
           <a href="https://github.com/braxcat/textecho">GitHub</a> &middot; MIT
-          License &middot; Made in Australia &middot; v2.5.0 &middot; Last
+          License &middot; Made in Australia &middot; v2.6.0 &middot; Last
           updated April 2026
         </p>
       </div>
@@ -1736,6 +1787,18 @@
           text: "Transcribing with Parakeet TDT...",
         },
         done: { status: "Done", text: '"Voice-to-text that just works."' },
+        "llm-review": {
+          status: "LLM // Grammar Fix",
+          text: '"Fix the grammar in this email draft" — ↵ send · Ctrl+Shift+M cycle · ESC cancel',
+        },
+        "llm-thinking": {
+          status: "Thinking...",
+          text: "Processing with Qwen 3 8B...",
+        },
+        "llm-ready": {
+          status: "LLM Ready",
+          text: '"Fix the grammar in this email draft" — ↵ paste · ESC dismiss',
+        },
       };
 
       let ghostInterval = null;
@@ -1781,20 +1844,19 @@
           statusEl.textContent = states[state].status;
 
           if (state === "streaming") {
-            // restore waveform display (in case coming from done)
             waveformEl.style.display = "";
-            // re-init bars with green color
             waveformEl.innerHTML = "";
             createBars(waveformEl, 24, "#4dd9a6");
             startGhostText();
+          } else if (state === "llm-thinking") {
+            waveformEl.style.display = "";
+            waveformEl.innerHTML = "";
+            createBars(waveformEl, 24, "#8a5cf6");
+            textEl.textContent = states[state].text;
           } else {
-            // restore cyan bars if coming from streaming
-            if (
-              overlay.querySelector(".demo-waveform .bar") &&
-              overlay
-                .querySelector(".demo-waveform .bar")
-                .style.background.includes("4dd9a6")
-            ) {
+            // restore cyan bars if coming from streaming/llm
+            if (state === "recording" || state === "processing") {
+              waveformEl.style.display = "";
               waveformEl.innerHTML = "";
               createBars(waveformEl, 24, "#00E6FF");
             }

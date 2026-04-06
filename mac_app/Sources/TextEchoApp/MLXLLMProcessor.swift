@@ -61,6 +61,30 @@ let recommendedLLMModels: [LLMModelInfo] = [
                  sizeGB: 2.5),
 ]
 
+/// Thread-safe cancellation flag for LLM generation.
+private final class CancellationFlag: @unchecked Sendable {
+    private var _cancelled = false
+    private let lock = NSLock()
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        _cancelled = true
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        _cancelled = false
+        lock.unlock()
+    }
+}
+
 /// Native LLM processor using Apple's MLX framework.
 /// Runs on GPU via unified memory — separate from Parakeet (Neural Engine).
 actor MLXLLMProcessor {
@@ -68,8 +92,14 @@ actor MLXLLMProcessor {
     private var modelContainer: ModelContainer?
     private var currentModelID: String?
     private var _isLoaded = false
+    private let cancellation = CancellationFlag()
 
     var isLoaded: Bool { _isLoaded }
+
+    /// Cancel the current generation. Safe to call from any isolation context.
+    nonisolated func cancelGeneration() {
+        cancellation.cancel()
+    }
 
     /// Validates a model ID is from a trusted source.
     private static func isModelIDTrusted(_ id: String) -> Bool {
@@ -121,6 +151,8 @@ actor MLXLLMProcessor {
         let parameters = GenerateParameters(maxTokens: 2048, temperature: 0.7)
 
         var fullResponse = ""
+        cancellation.reset()
+        let flag = cancellation
 
         let _ = try await container.perform { [input, parameters] context in
             let prepared = try await context.processor.prepare(input: input)
@@ -129,6 +161,9 @@ actor MLXLLMProcessor {
                 parameters: parameters,
                 context: context
             ) { tokens in
+                if flag.isCancelled {
+                    return .stop
+                }
                 let decoded = context.tokenizer.decode(tokens: tokens)
                 fullResponse = decoded
                 onToken?(decoded)

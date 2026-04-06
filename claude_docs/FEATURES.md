@@ -51,15 +51,20 @@
 - Pre-transcription RMS silence gate removed — quiet/whispered speech reaches the model (silence_threshold still used for auto-stop)
 - 30-second timeout on inference to prevent indefinite hangs
 
-## Native LLM Processing (Optional)
+## Native LLM Processing (Built-in)
 
 - **MLXLLMProcessor** — fully native Swift via MLX framework (no Python, no external daemon)
-- Must build with `--with-llm` flag (not included in default build)
 - **6 models** supported (HuggingFace MLX Community repos, auto-downloaded on first use)
-- **4 modes:** clean (cleanup transcription), fix (grammar/spelling), expand (elaborate), custom (user system prompt)
+- **3 modes:** Grammar Fix, Rephrase, Answer — cycle with **Ctrl+Shift+M**
 - **Shift+Middle-click** or Ctrl+Shift+D to transcribe then LLM-process
+- **Pre-send review** — after transcription, overlay shows text + mode. Enter to send, Ctrl+Shift+M to cycle, ESC to cancel
+- **ESC cancels generation** — thread-safe CancellationFlag with NSLock stops MLX mid-stream
+- **Thinking/responding labels** — "THINKING..." (purple) → "RESPONDING" (green) → "LLM READY"
+- **Post-review** — Enter to paste LLM response, ESC to discard
+- **Dynamic overlay** — 560px wide for LLM (vs 420px normal), 300px max height with auto-scroll
+- Menu bar indicator shows current LLM mode (click to cycle)
 - 9-register clipboard context system for multi-snippet LLM prompts
-- Streaming response display in overlay
+- Streaming response display with token-by-token auto-scroll
 - Reasoning tag stripping (<think>/<reasoning> blocks)
 - Runs in-process — no Unix socket, no IPC, no external process
 
@@ -78,7 +83,8 @@
 - Theme-aware: colors driven by active theme preset
 - Silver TEXT + neon green ECHO logo (default TextEcho theme)
 - Model badge: "WHISPER // LARGE V3 TURBO" at bottom
-- Full transcription text visible (no line limit, auto-expands)
+- Full transcription text visible (no line limit, auto-expands, auto-scrolls)
+- Dynamic window sizing — NSWindow resizes to fit SwiftUI content on every state transition
 - Smart auto-hide: 1.5s base + scales with text length, max 4s
 - Glassmorphic dark background with accent glow borders
 - Animated scanner bar during processing
@@ -103,7 +109,7 @@
 
 ## Setup Wizard
 
-- 6-step walkthrough: Welcome → Accessibility → Microphone → Model → Pedal → Ready
+- Multi-step walkthrough: Welcome → Model → Activation → Customize (LLM, Streaming, Silence) → Ready
 - Progress dots showing current step with back navigation
 - Accessibility + microphone permission checks with direct System Settings links
 - Model picker with 3 options (size, speed, quality comparison)

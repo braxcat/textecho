@@ -40,6 +40,9 @@ final class AppLogger {
                     }
                 } else {
                     try? data.write(to: self.logFileURL)
+                    // Restrict log file to owner-only — logs may contain dictated text.
+                    try? FileManager.default.setAttributes(
+                        [.posixPermissions: 0o600], ofItemAtPath: self.logFileURL.path)
                 }
             }
         }

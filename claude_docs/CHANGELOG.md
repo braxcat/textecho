@@ -1,5 +1,39 @@
 # Changelog
 
+## v2.6.0 (2026-04-06) — LLM Review Mode + Dynamic Overlay
+
+### LLM Review Workflow
+
+- **Pre-send review** — after transcription, overlay shows text + current LLM mode. Enter to send, Ctrl+Shift+M to cycle modes, ESC to cancel
+- **LLM mode cycling** — Ctrl+Shift+M cycles Grammar Fix → Rephrase → Answer. Menu bar indicator shows current mode (click to cycle)
+- **ESC cancels LLM generation** — thread-safe CancellationFlag with NSLock stops MLX generation mid-stream
+- **Thinking/responding labels** — overlay shows "THINKING..." (purple) → "RESPONDING" (green) → "LLM READY" as tokens stream
+- **Post-review** — Enter to paste LLM response, ESC to discard
+
+### Dynamic Overlay
+
+- **NSWindow resizes to fit content** — `resizeWindowToFit()` reads `NSHostingView.fittingSize` on every state transition
+- **Wider for LLM** — 560px overlay width for LLM content (vs 420px for normal transcription)
+- **Scrollable results** — 300px max height with auto-scroll as tokens stream in via ScrollViewReader
+
+### Bug Fixes
+
+- **Post-wizard race condition** — config change notification triggered `reloadTranscriber()` before `onClose` callback, causing `finalizeFirstLaunchSetup()` to skip LLM loading. Fixed by making finalization idempotent.
+- **Setup wizard LLM persistence** — wizard now correctly sets `llmEngine="mlx"` so LLM is available immediately
+- **Stale text in overlay** — previous LLM response cleared on new recording
+- **Clean test script** — `clean_test.sh --force --debug` removes config, models, logs, MLX cache for fresh testing
+
+### Security
+
+- **Log file permissions** — app.log written with 0600 (owner-only)
+- **Register file permissions** — clipboard registers written with 0600
+- **No verbatim text in logs** — transcription content not logged
+- **CI SHA-pinned** — GitHub Actions workflows use commit SHA instead of tags
+
+### Credits
+
+- Code by [@braxcat](https://github.com/braxcat) & Claude
+
 ## v2.5.0 (2026-04-06) — Streaming Transcription + Silence Skip Removal
 
 ### Streaming Transcription (PR #41)

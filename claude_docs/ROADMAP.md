@@ -18,7 +18,11 @@
 | 11    | COMPLETE | Streaming Transcription — real-time partial text via EOU 120M model            |
 | 11.5  | COMPLETE | Silence Skip Removal — quiet/whispered speech no longer discarded pre-model    |
 | 12    | COMPLETE | LLM Review Mode — pre-send review, mode cycling, ESC cancel, dynamic overlay   |
-| 13    | PLANNED  | Enhanced Transcription — multi-language, speaker diarization                   |
+| 13    | PLANNED  | Quick Wins — search across history, custom vocabulary, homebrew cask           |
+| 14    | PLANNED  | Streaming Benchmarking — WER comparison EOU vs Parakeet TDT, test corpus       |
+| 15    | PLANNED  | Enhanced Transcription — multi-language, speaker diarization                   |
+| 16    | PLANNED  | System Integration — Shortcuts.app App Intents, Spotlight indexing             |
+| 17    | PLANNED  | iPhone App — keyboard extension, shared Swift transcription package            |
 
 ## Phase 10: Parakeet TDT Integration (v2.2.0)
 

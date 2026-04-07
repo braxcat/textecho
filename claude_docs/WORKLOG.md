@@ -1,5 +1,18 @@
 # Worklog
 
+## 2026-04-07 — Post-release: Dependency triage + cleanup
+
+**Focus:** Dependabot PR triage, repo cleanup, release v2.6.0
+
+- Merged PR #42 (v2.6.0) after waiting for clean CI (Swift CI + CodeQL both green)
+- Created GitHub release v2.6.0
+- Filed issue #43: CodeQL needs `on.push` trigger for Security tab default branch scanning
+- Merged Dependabot #46: FluidAudio 0.13.4 → 0.13.6 (critical use-after-free fix)
+- Merged Dependabot #45: WhisperKit 0.17.0 → 0.18.0 (verified no struct→class breakage in our code)
+- Closed Dependabot #44: CodeQL action PR would remove SHA pinning + break xcodebuild step
+- Pruned stale worktree (agent-ae8a8815), deleted 6 merged local branches
+- Confirmed GitHub Pages live and up to date
+
 ## 2026-04-06 — v2.6.0: LLM Review Mode + Dynamic Overlay
 
 **Focus:** LLM pre-send review workflow, mode cycling, ESC cancellation, dynamic overlay sizing, post-wizard race fix

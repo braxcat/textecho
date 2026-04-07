@@ -1,5 +1,11 @@
 # Changelog
 
+## Post-v2.6.0 Dependency Updates (2026-04-07)
+
+- **FluidAudio 0.13.4 → 0.13.6** — critical use-after-free fix (concurrent mic + system transcription), Swift 6 concurrency fixes, Japanese + Mandarin ASR support
+- **WhisperKit 0.17.0 → 0.18.0** — ModelManager refactoring, lazy model loading, TranscriptionResult struct→class, SpeakerKit diarization improvements
+- **CodeQL action PR #44 closed** — Dependabot removed SHA pinning and replaced xcodebuild with autobuild (would break CI)
+
 ## v2.6.0 (2026-04-06) — LLM Review Mode + Dynamic Overlay
 
 ### LLM Review Workflow

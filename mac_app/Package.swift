@@ -12,7 +12,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.13.0"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "2.29.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.31.3"),
     ],
     targets: [
         .executableTarget(
